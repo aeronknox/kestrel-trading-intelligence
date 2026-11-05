@@ -6,7 +6,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.llm import narrate_analysis
+from app.ai.llm import narrate_analysis, rule_based_narrative
 from app.ai.ml_model import predict_direction
 from app.ai.patterns import classify_trend, detect_patterns, support_resistance
 from app.ai.signals import assess_risks, combine, score_components
@@ -61,8 +61,10 @@ def build_summary(symbol: str, timeframe: str, result: dict) -> str:
 
 
 async def run_analysis(
-    session: AsyncSession, asset: Asset, timeframe: str, user_id: int | None = None
+    session: AsyncSession, asset: Asset, timeframe: str, user_id: int | None = None, *, narrate: bool = True
 ) -> AIAnalysisResult:
+    """Run and persist an analysis. `narrate=False` skips the (optional, paid) LLM call,
+    e.g. when the assistant already phrases the result itself."""
     market = MarketDataService(session)
     series = await market.get_candles(asset, timeframe, limit=ANALYSIS_BARS)
     closed = series.closed()
@@ -82,7 +84,10 @@ async def run_analysis(
         "signal": result["signal"],
         "risks": result["risks"],
     }
-    narrative, narrative_source = await narrate_analysis(facts)
+    if narrate:
+        narrative, narrative_source = await narrate_analysis(facts)
+    else:
+        narrative, narrative_source = rule_based_narrative(facts), "rule_based"
 
     analysis = AIAnalysisResult(
         user_id=user_id,

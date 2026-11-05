@@ -132,16 +132,27 @@ cp .env.example .env.local      # BACKEND_INTERNAL_URL / NEXT_PUBLIC_WS_URL
 npm run dev                     # http://localhost:3000
 ```
 
+### Admin accounts
+
+```bash
+cd backend && python -m app.cli promote-admin you@example.com    # or demote-admin
+# Docker: docker compose exec backend python -m app.cli promote-admin you@example.com
+```
+
 ### Tests
 
 ```bash
-cd backend  && pytest                  # 48 tests: indicators, backtester, ML leakage, signals,
-                                       # auth/RBAC, paper-trading accounting, API flows
+cd backend  && pytest                  # 75 tests: indicators (incl. Wilder reference values),
+                                       # backtester, ML leakage, signals, auth/RBAC, rate limiting,
+                                       # paper-trading accounting, market data + Coinbase parsing,
+                                       # OpenAI tool loop (fake client), WebSocket, API flows
 cd frontend && npm test                # rule-builder logic + formatters (Vitest)
 cd frontend && npm run typecheck && npm run build
+cd frontend && npx playwright install chromium && npm run e2e
+                                       # 23 browser flows against a running stack (:3000 + :8000)
 ```
 
-Backend tests run against SQLite with the sample provider and need no network access.
+Backend tests run against SQLite with the sample provider and need no network access. See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
 
 ---
 
@@ -159,7 +170,10 @@ All settings are environment variables; see [.env.example](.env.example).
 | `PAPER_STARTING_BALANCE`, `PAPER_FEE_BPS`, `PAPER_SLIPPAGE_BPS` | 100000 / 10 / 5 | Simulation parameters |
 | `RATE_LIMIT_PER_MINUTE`, `AUTH_RATE_LIMIT_PER_MINUTE`, `COMPUTE_RATE_LIMIT_PER_MINUTE` | 240 / 15 / 30 | Per-IP limits |
 | `CORS_ORIGINS` | `http://localhost:3000` | Also used for the WebSocket origin check |
-| `ADMIN_EMAILS` | empty | Comma-separated emails granted the admin role at registration |
+| `ADMIN_EMAILS` | empty | Comma-separated emails granted the admin role at registration (unverified, so use only before exposing the app; prefer the CLI below) |
+| `TRUST_PROXY_HEADERS` (frontend), `PROXY_SHARED_SECRET` (both) | `false` / empty | Set both only when a reverse proxy in front of Next.js sets `X-Forwarded-For`; the API then trusts the client IP for rate limiting and audit |
+| `TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` | Peers whose `X-Forwarded-For` is trusted without the secret |
+| `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES` | 10 / 15 | Per-account lockout after repeated failed sign-ins |
 | `COOKIE_SECURE` | `false` | Set `true` behind HTTPS (also enables HSTS) |
 | `LOG_JSON` | `false` | Structured JSON logs (on by default in Compose) |
 | `BACKEND_INTERNAL_URL` | `http://localhost:8000` | Where the Next.js proxy sends API calls (read at runtime) |

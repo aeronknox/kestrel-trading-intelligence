@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.analysis_engine import run_analysis
-from app.ai.llm import GROUNDING_RULES, get_client
+from app.ai.llm import GROUNDING_RULES, chat_completion, get_client
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
@@ -162,7 +162,8 @@ class AssistantTools:
             .limit(1)
         )
         self._note_source()
-        return recent or await run_analysis(self.session, asset, timeframe, self.user.id)
+        # The assistant phrases results itself, so skip the nested LLM narration call.
+        return recent or await run_analysis(self.session, asset, timeframe, self.user.id, narrate=False)
 
     @staticmethod
     def _analysis_facts(a: AIAnalysisResult) -> dict:
@@ -321,8 +322,8 @@ async def answer_with_llm(tools: AssistantTools, history: list[dict], question: 
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}, *history, {"role": "user", "content": question}]
     used: list[str] = []
     for _ in range(MAX_TOOL_ROUNDS):
-        resp = await client.chat.completions.create(
-            model=model, messages=messages, tools=TOOL_SPECS, temperature=0.2, max_tokens=900
+        resp = await chat_completion(
+            client, model=model, messages=messages, tools=TOOL_SPECS, temperature=0.2, max_completion_tokens=1200
         )
         msg = resp.choices[0].message
         if not msg.tool_calls:

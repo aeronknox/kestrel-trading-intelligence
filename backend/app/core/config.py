@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     session_cookie_name: str = "ti_session"
     cookie_secure: bool = False
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
+    # X-Forwarded-For is honoured only from these peers, or from a proxy presenting
+    # PROXY_SHARED_SECRET (the Next.js server sends it). Prevents rate-limit spoofing.
+    trusted_proxies: Annotated[list[str], NoDecode] = ["127.0.0.1/32", "::1/128"]
+    proxy_shared_secret: str | None = None
+    login_max_failures: int = 10
+    login_lockout_minutes: int = 15
     admin_emails: Annotated[list[str], NoDecode] = []
 
     # Persistence
@@ -54,7 +60,7 @@ class Settings(BaseSettings):
     paper_fee_bps: float = 10.0
     paper_slippage_bps: float = 5.0
 
-    @field_validator("cors_origins", "admin_emails", mode="before")
+    @field_validator("cors_origins", "admin_emails", "trusted_proxies", mode="before")
     @classmethod
     def _split_csv(cls, value: object) -> object:
         if isinstance(value, str):
@@ -66,7 +72,7 @@ class Settings(BaseSettings):
     def _lower_emails(cls, value: list[str]) -> list[str]:
         return [v.lower() for v in value]
 
-    @field_validator("redis_url", "openai_api_key", "openai_base_url", mode="before")
+    @field_validator("redis_url", "openai_api_key", "openai_base_url", "proxy_shared_secret", mode="before")
     @classmethod
     def _empty_to_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():

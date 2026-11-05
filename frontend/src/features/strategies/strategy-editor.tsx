@@ -15,7 +15,7 @@ import { api } from "@/services/api";
 import { type RiskParams, type RuleSet, type Strategy, TIMEFRAMES, type Timeframe } from "@/types/api";
 
 import { RuleSetBuilder } from "./rule-builder";
-import { DEFAULT_RISK, describeRisk, describeRuleSet, emptyRuleSet, validateStrategy } from "./rules";
+import { DEFAULT_RISK, describeRisk, describeRuleSet, emptyRuleSet, normalizeRisk, validateStrategy } from "./rules";
 
 export interface StrategyDraft {
   name: string;
@@ -67,11 +67,11 @@ export function StrategyEditor({ initial, strategyId }: { initial: StrategyDraft
   const set = <K extends keyof StrategyDraft>(k: K, v: StrategyDraft[K]) => setD((prev) => ({ ...prev, [k]: v }));
   const setRisk = <K extends keyof RiskParams>(k: K, v: RiskParams[K]) => setD((prev) => ({ ...prev, risk: { ...prev.risk, [k]: v } }));
 
-  const validation = !d.name.trim() ? "Give the strategy a name." : validateStrategy(d.entry, d.exit, d.risk);
+  const validation = !d.name.trim() ? "Give the strategy a name." : validateStrategy(d.entry, d.exit, normalizeRisk(d.risk));
 
   const save = useMutation({
     mutationFn: () => {
-      const body = { name: d.name.trim(), description: d.description, config: { symbol: d.symbol, timeframe: d.timeframe, entry: d.entry, exit: d.exit, risk: d.risk } };
+      const body = { name: d.name.trim(), description: d.description, config: { symbol: d.symbol, timeframe: d.timeframe, entry: d.entry, exit: d.exit, risk: normalizeRisk(d.risk) } };
       return strategyId ? api.strategies.update(strategyId, body) : api.strategies.create(body);
     },
     onSuccess: (s) => {

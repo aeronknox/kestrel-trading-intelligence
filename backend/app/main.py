@@ -49,6 +49,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if app.state.background:
         ws.broadcaster.start()
         jobs.start()
+    if settings.is_production and not settings.cookie_secure:
+        logger.warning("insecure_cookies_in_production", hint="Serve over HTTPS and set COOKIE_SECURE=true")
+    if settings.admin_emails:
+        logger.warning("admin_emails_enabled", hint="Unverified emails get admin on registration; prefer `python -m app.cli promote-admin`")
     provider = get_provider()
     logger.info(
         "startup_complete",

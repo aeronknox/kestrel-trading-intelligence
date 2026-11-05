@@ -1,0 +1,214 @@
+// End-to-end UI flows against a running stack (frontend :3000 + backend :8000).
+// Usage: npm run e2e  [BASE=http://host:3000]   Exits non-zero if any step fails.
+import { chromium } from "playwright";
+
+const BASE = process.env.BASE ?? "http://localhost:3000";
+const email = `audit${Date.now()}@example.com`;
+const results = [];
+const errors = [];
+
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const page = await ctx.newPage();
+page.on("pageerror", (e) => errors.push(`[pageerror] ${page.url()} ${e.message}`));
+page.on("console", (m) => m.type() === "error" && !m.text().includes("401") && errors.push(`[console] ${page.url()} ${m.text()}`));
+
+async function step(name, fn) {
+  try {
+    await fn();
+    results.push(`PASS ${name}`);
+  } catch (e) {
+    results.push(`FAIL ${name}: ${String(e.message).split("\n")[0]}`);
+    await page.screenshot({ path: `e2e/fail_${name.replace(/\W+/g, "_")}.png` }).catch(() => {});
+  }
+}
+const toast = (re) => page.locator("[data-sonner-toast]").filter({ hasText: re }).first().waitFor({ timeout: 20000 });
+
+await step("register", async () => {
+  await page.goto(`${BASE}/register`);
+  await page.fill("#name", "Audit User");
+  await page.fill("#email", email);
+  await page.fill("#password", "audit-passw0rd1");
+  await page.click("button[type=submit]");
+  await page.waitForURL("**/dashboard", { timeout: 15000 });
+  await page.getByText("Virtual portfolio value").waitFor();
+});
+
+await step("unauthenticated redirect after logout+login cycle", async () => {
+  await page.getByLabel("Account menu").click();
+  await page.getByText("Sign out").click();
+  await page.waitForURL("**/login");
+  await page.goto(`${BASE}/dashboard`);
+  await page.waitForURL("**/login", { timeout: 10000 });
+  await page.fill("#email", email);
+  await page.fill("#password", "audit-passw0rd1");
+  await page.click("button[type=submit]");
+  await page.waitForURL("**/dashboard");
+});
+
+await step("dashboard run AI analysis button", async () => {
+  await page.getByRole("button", { name: /Run AI analysis/ }).click();
+  await toast(/Analysis complete/);
+});
+
+await step("markets watchlist star toggle", async () => {
+  await page.goto(`${BASE}/markets`);
+  await page.getByLabel("Add DOT-USD to watchlist").click();
+  await toast(/DOT-USD added/);
+  await page.getByLabel("Remove DOT-USD from watchlist").click();
+  await toast(/DOT-USD removed/);
+});
+
+await step("markets track-asset catalog search", async () => {
+  await page.getByRole("button", { name: /Track asset/ }).click();
+  await page.getByPlaceholder(/ATOM/).fill("ATOM");
+  await page.getByRole("dialog").getByText("ATOM-USD", { exact: true }).first().waitFor({ timeout: 20000 });
+  await page.keyboard.press("Escape");
+});
+
+await step("asset detail timeframe + overlay toggles", async () => {
+  await page.goto(`${BASE}/markets/ETH-USD`);
+  await page.getByRole("tab", { name: "15m" }).click();
+  await page.getByRole("button", { name: "MACD" }).click();
+  await page.waitForTimeout(2500);
+  if ((await page.locator("canvas").count()) < 2) throw new Error("chart canvas missing");
+});
+
+await step("header asset search navigates", async () => {
+  await page.getByLabel("Search assets").fill("sol");
+  await page.getByRole("button", { name: /SOL-USD/ }).first().click();
+  await page.waitForURL("**/markets/SOL-USD");
+});
+
+await step("analysis page run + history", async () => {
+  await page.goto(`${BASE}/analysis?symbol=SOL-USD&timeframe=1h`);
+  await page.getByRole("button", { name: /Run analysis/ }).first().click();
+  await page.getByText("Why this signal").waitFor({ timeout: 30000 });
+  await page.getByText("Signal history").waitFor();
+});
+
+await step("strategy create from template via UI", async () => {
+  await page.goto(`${BASE}/strategies`);
+  await page.getByRole("link", { name: /MACD momentum/ }).click();
+  await page.waitForURL("**/strategies/new?template=macd_momentum");
+  await page.getByRole("button", { name: /Create strategy/ }).click();
+  await page.waitForURL(/\/strategies\/\d+$/, { timeout: 15000 });
+});
+
+await step("strategy edit adds condition and saves new version", async () => {
+  await page.getByRole("button", { name: /Add condition/ }).first().click();
+  await page.getByRole("button", { name: /Save new version/ }).click();
+  await toast(/Saved as version 2/);
+});
+
+await step("strategy validation blocks zero stop-loss", async () => {
+  const stop = page.getByLabel(/Stop-loss/);
+  await stop.fill("0");
+  await page.getByRole("button", { name: /Save new version/ }).click();
+  await page.waitForTimeout(1500);
+  const bad = await page.locator("[data-sonner-toast]").filter({ hasText: /stop_loss|greater than/i }).count();
+  if (bad) throw new Error("server rejected 0 with a 422 instead of treating it as 'off'");
+});
+
+await step("run backtest from dialog", async () => {
+  await page.goto(page.url());
+  await page.getByRole("button", { name: /^Backtest$/ }).first().click();
+  await page.getByRole("dialog").getByRole("button", { name: /Run backtest/ }).click();
+  await page.waitForURL(/\/backtests\/\d+$/, { timeout: 30000 });
+  await page.getByText("Equity curve").waitFor();
+});
+
+await step("backtest compare flow", async () => {
+  await page.goto(`${BASE}/strategies`);
+  await page.getByRole("link", { name: /RSI mean reversion/ }).click();
+  await page.waitForURL("**/strategies/new?template=rsi_mean_reversion");
+  await page.getByRole("button", { name: /Create strategy/ }).click();
+  await page.waitForURL(/\/strategies\/\d+$/);
+  await page.getByRole("button", { name: /^Backtest$/ }).first().click();
+  await page.getByRole("dialog").getByRole("button", { name: /Run backtest/ }).click();
+  await page.waitForURL(/\/backtests\/\d+$/, { timeout: 30000 });
+  await page.goto(`${BASE}/backtests`);
+  const boxes = page.locator("input[type=checkbox]:not([disabled])");
+  await boxes.nth(0).check();
+  await boxes.nth(1).check();
+  await page.getByRole("button", { name: /Compare/ }).click();
+  await page.waitForURL("**/backtests/compare?ids=*");
+  await page.getByText("Cumulative return").waitFor();
+});
+
+await step("paper market buy via ticket", async () => {
+  await page.goto(`${BASE}/paper-trading?symbol=ETH-USD`);
+  await page.getByPlaceholder("0.00").fill("1000");
+  await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
+  await toast(/Filled: buy/);
+  await page.getByRole("button", { name: "Close" }).first().waitFor();
+});
+
+await step("paper limit order + cancel", async () => {
+  await page.getByRole("tab", { name: "Limit" }).click();
+  await page.getByLabel(/Limit price/).fill("1");
+  await page.getByPlaceholder("0.00").fill("50");
+  await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
+  await toast(/Limit order placed/);
+  await page.getByLabel("Cancel order").first().click();
+  await toast(/Order cancelled/);
+});
+
+await step("paper close position", async () => {
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Close" }).first().click();
+  await toast(/Closed ETH-USD/);
+});
+
+await step("risk limits dialog saves", async () => {
+  await page.getByRole("button", { name: /Risk limits/ }).click();
+  await page.getByLabel(/Max open positions/).fill("5");
+  await page.getByRole("button", { name: /Save limits/ }).click();
+  await toast(/Risk limits updated/);
+});
+
+await step("portfolio page renders analytics", async () => {
+  await page.goto(`${BASE}/portfolio`);
+  await page.getByText("Equity history").waitFor();
+  await page.getByText("Trade statistics").waitFor();
+});
+
+await step("assistant chat answers", async () => {
+  await page.goto(`${BASE}/assistant`);
+  await page.getByRole("button", { name: "Compare BTC vs SOL" }).click();
+  await page.getByText(/Comparison/).waitFor({ timeout: 30000 });
+  await page.getByLabel("Message").fill("How is my portfolio doing?");
+  await page.keyboard.press("Enter");
+  await page.getByText(/Your simulated portfolio/).waitFor({ timeout: 30000 });
+});
+
+await step("settings save preferences", async () => {
+  await page.goto(`${BASE}/settings`);
+  await page.getByRole("button", { name: /Save preferences/ }).click();
+  await toast(/Preferences saved/);
+});
+
+await step("non-admin blocked from admin page", async () => {
+  await page.goto(`${BASE}/admin`);
+  await page.getByText("Administrator access required").waitFor();
+});
+
+await step("theme toggle", async () => {
+  await page.getByLabel("Toggle theme").click();
+  const cls = await page.evaluate(() => document.documentElement.className);
+  if (!cls.includes("light")) throw new Error("light class not applied");
+  await page.getByLabel("Toggle theme").click();
+});
+
+await step("expired session redirects to login", async () => {
+  await page.goto(`${BASE}/dashboard`);
+  await page.getByText("Virtual portfolio value").waitFor();
+  await ctx.clearCookies(); // simulate server-side expiry/revocation
+  await page.getByRole("link", { name: "Portfolio" }).first().click();
+  await page.waitForURL("**/login", { timeout: 10000 });
+});
+
+console.log(results.join("\n"));
+console.log(errors.length ? "\nBROWSER ERRORS:\n" + [...new Set(errors)].join("\n") : "\nNO_BROWSER_ERRORS");
+await browser.close();
+process.exit(results.some((r) => r.startsWith("FAIL")) || errors.length ? 1 : 0);

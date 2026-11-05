@@ -69,7 +69,8 @@ async def _service_and_portfolio(db, user_id: int, lock: bool = False):  # type:
 
 @router.get("/portfolio", response_model=PortfolioOut)
 async def get_portfolio(user: CurrentUser, db: DbSession) -> PortfolioOut:
-    svc, pf = await _service_and_portfolio(db, user.id)
+    # Matching resting orders mutates cash/positions, so take the same row lock as order placement.
+    svc, pf = await _service_and_portfolio(db, user.id, lock=True)
     await svc.process_open_orders(pf)
     await svc.record_snapshot(pf)
     return portfolio_out(await svc.summary(pf))

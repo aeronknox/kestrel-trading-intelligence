@@ -31,8 +31,42 @@ def sma(series: pd.Series, period: int) -> pd.Series:
     return series.rolling(window=period, min_periods=period).mean()
 
 
+def _seeded_smooth(series: pd.Series, period: int, alpha: float) -> pd.Series:
+    """Exponential smoothing seeded with the SMA of the first `period` valid values.
+
+    This is the textbook definition used by charting platforms (EMA: alpha=2/(n+1);
+    Wilder/RMA: alpha=1/n). Seeding with the first raw value instead (pandas
+    `ewm(adjust=False)`) biases the first ~4n bars — e.g. RSI(14) by up to 20 points.
+    Values before the seed are NaN; the output at t depends only on inputs <= t.
+    """
+    values = series.to_numpy(dtype=float)
+    out = np.full(len(values), np.nan)
+    run = 0
+    start = -1
+    for i, v in enumerate(values):
+        run = run + 1 if not np.isnan(v) else 0
+        if run == period:
+            start = i
+            break
+    if start < 0:
+        return pd.Series(out, index=series.index)
+    prev = float(values[start - period + 1 : start + 1].mean())
+    out[start] = prev
+    for i in range(start + 1, len(values)):
+        v = values[i]
+        if not np.isnan(v):
+            prev = alpha * v + (1 - alpha) * prev
+        out[i] = prev
+    return pd.Series(out, index=series.index)
+
+
 def ema(series: pd.Series, period: int) -> pd.Series:
-    return series.ewm(span=period, adjust=False, min_periods=period).mean()
+    return _seeded_smooth(series, period, 2.0 / (period + 1))
+
+
+def rma(series: pd.Series, period: int) -> pd.Series:
+    """Wilder's moving average (a.k.a. SMMA/RMA)."""
+    return _seeded_smooth(series, period, 1.0 / period)
 
 
 def rsi(close: pd.Series, period: int = 14) -> pd.Series:
@@ -40,8 +74,8 @@ def rsi(close: pd.Series, period: int = 14) -> pd.Series:
     delta = close.diff()
     gain = delta.clip(lower=0.0)
     loss = -delta.clip(upper=0.0)
-    avg_gain = gain.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
-    avg_loss = loss.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    avg_gain = rma(gain, period)
+    avg_loss = rma(loss, period)
     rs = avg_gain / avg_loss.replace(0.0, np.nan)
     out = 100.0 - (100.0 / (1.0 + rs))
     # No losses in window -> RSI 100; flat -> 50
@@ -52,7 +86,7 @@ def rsi(close: pd.Series, period: int = 14) -> pd.Series:
 
 def macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
     macd_line = ema(close, fast) - ema(close, slow)
-    signal_line = macd_line.ewm(span=signal, adjust=False, min_periods=signal).mean()
+    signal_line = ema(macd_line, signal)
     return pd.DataFrame({"macd": macd_line, "signal": signal_line, "hist": macd_line - signal_line})
 
 
@@ -71,7 +105,7 @@ def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     tr = pd.concat(
         [df["high"] - df["low"], (df["high"] - prev_close).abs(), (df["low"] - prev_close).abs()], axis=1
     ).max(axis=1)
-    return tr.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    return rma(tr, period)
 
 
 def obv(df: pd.DataFrame) -> pd.Series:

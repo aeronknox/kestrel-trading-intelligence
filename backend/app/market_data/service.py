@@ -94,6 +94,14 @@ class MarketDataService:
         self.provider = provider or get_provider()
         self.cache = get_cache()
 
+    def provider_for(self, asset: Asset) -> MarketDataProvider:
+        """Crypto assets use the configured crypto provider (so switching
+        MARKET_DATA_PROVIDER needs no data migration); other asset classes are routed
+        to the provider recorded on the asset (e.g. a future stocks/forex provider)."""
+        if asset.asset_class == AssetClass.CRYPTO:
+            return self.provider
+        return get_provider(asset.provider)
+
     # ----------------------------------------------------------------- assets
     async def ensure_default_assets(self) -> None:
         existing = set((await self.session.scalars(select(Asset.symbol))).all())
@@ -177,7 +185,8 @@ class MarketDataService:
         if timeframe not in TIMEFRAMES:
             raise ValidationFailedError(f"Unsupported timeframe '{timeframe}'", details={"allowed": list(TIMEFRAMES)})
         limit = max(10, min(limit, MAX_CANDLES))
-        key = f"candles:{self.provider.name}:{asset.provider_symbol}:{timeframe}:{limit}"
+        provider = self.provider_for(asset)
+        key = f"candles:{provider.name}:{asset.provider_symbol}:{timeframe}:{limit}"
         if use_cache:
             cached = await self.cache.get_json(key)
             if cached:
@@ -185,13 +194,13 @@ class MarketDataService:
                     symbol=asset.symbol,
                     timeframe=timeframe,
                     candles=_deserialize(cached["candles"]),
-                    source=self.provider.name,
-                    is_sample=self.provider.is_sample,
-                    attribution=self.provider.attribution,
+                    source=provider.name,
+                    is_sample=provider.is_sample,
+                    attribution=provider.attribution,
                     fetched_at=datetime.fromisoformat(cached["fetched_at"]),
                 )
         try:
-            candles = await self.provider.get_candles(asset.provider_symbol, timeframe, limit=limit)
+            candles = await provider.get_candles(asset.provider_symbol, timeframe, limit=limit)
         except ProviderError as exc:
             logger.warning("provider_candles_failed", symbol=asset.symbol, timeframe=timeframe, error=str(exc))
             stored = await self._stored_candles(asset, timeframe, limit)
@@ -201,20 +210,20 @@ class MarketDataService:
                 symbol=asset.symbol,
                 timeframe=timeframe,
                 candles=stored,
-                source=self.provider.name,
-                is_sample=self.provider.is_sample,
-                attribution=self.provider.attribution,
+                source=provider.name,
+                is_sample=provider.is_sample,
+                attribution=provider.attribution,
                 stale=True,
             )
         series = CandleSeries(
             symbol=asset.symbol,
             timeframe=timeframe,
             candles=candles,
-            source=self.provider.name,
-            is_sample=self.provider.is_sample,
-            attribution=self.provider.attribution,
+            source=provider.name,
+            is_sample=provider.is_sample,
+            attribution=provider.attribution,
         )
-        await self._persist(asset, timeframe, series.closed())
+        await self._persist(asset, timeframe, series.closed(), provider)
         await self.cache.set_json(
             key,
             {"candles": _serialize(candles), "fetched_at": series.fetched_at.isoformat()},
@@ -236,8 +245,8 @@ class MarketDataService:
             for r in reversed(rows)
         ]
 
-    async def _persist(self, asset: Asset, timeframe: str, candles: list[Candle]) -> None:
-        if not candles or self.provider.is_sample:
+    async def _persist(self, asset: Asset, timeframe: str, candles: list[Candle], provider: MarketDataProvider) -> None:
+        if not candles or provider.is_sample:
             return  # never store synthetic data alongside real history
         dialect = self.session.bind.dialect.name if self.session.bind else "sqlite"
         if dialect == "postgresql":
@@ -254,20 +263,26 @@ class MarketDataService:
                 "low": c.low,
                 "close": c.close,
                 "volume": c.volume,
-                "source": self.provider.name,
+                "source": provider.name,
             }
             for c in candles
         ]
+        # SAVEPOINT: on PostgreSQL a failed statement aborts the whole transaction, so the
+        # best-effort insert must be isolated from the caller's unit of work.
         try:
-            for i in range(0, len(rows), 500):
-                stmt = insert(MarketData).values(rows[i : i + 500])
-                await self.session.execute(stmt.on_conflict_do_nothing(index_elements=["asset_id", "timeframe", "ts"]))
+            async with self.session.begin_nested():
+                for i in range(0, len(rows), 500):
+                    stmt = insert(MarketData).values(rows[i : i + 500])
+                    await self.session.execute(
+                        stmt.on_conflict_do_nothing(index_elements=["asset_id", "timeframe", "ts"])
+                    )
         except Exception as exc:  # noqa: BLE001 - persistence is best-effort, never break reads
             logger.warning("candle_persist_failed", symbol=asset.symbol, error=str(exc))
 
     # ---------------------------------------------------------------- tickers
     async def get_ticker(self, asset: Asset) -> Ticker:
-        key = f"ticker:{self.provider.name}:{asset.provider_symbol}"
+        provider = self.provider_for(asset)
+        key = f"ticker:{provider.name}:{asset.provider_symbol}"
         cached = await self.cache.get_json(key)
         if cached:
             return Ticker(
@@ -280,7 +295,7 @@ class MarketDataService:
                 ts=datetime.fromisoformat(cached["ts"]),
             )
         try:
-            ticker = await self.provider.get_ticker(asset.provider_symbol)
+            ticker = await provider.get_ticker(asset.provider_symbol)
         except ProviderError as exc:
             raise UpstreamError(f"Live price for {asset.symbol} is currently unavailable") from exc
         await self.cache.set_json(key, ticker.to_dict(), ttl=4)

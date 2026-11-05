@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { IndicatorSpec, RuleSet } from "@/types/api";
 
-import { defaultOperand, describeCondition, describeRuleSet, validateStrategy } from "./rules";
+import { DEFAULT_RISK, defaultOperand, describeCondition, describeRuleSet, normalizeRisk, validateStrategy } from "./rules";
 
 const catalog: IndicatorSpec[] = [
   { name: "rsi", params: { period: { default: 14, min: 2, max: 100 } }, fields: [] },
@@ -35,5 +35,10 @@ describe("strategy rules", () => {
     expect(validateStrategy(one, empty, {})).toMatch(/exit/);
     expect(validateStrategy(one, empty, { stop_loss_pct: 5 })).toBeNull();
     expect(validateStrategy(one, one, { position_size_pct: 150 })).toMatch(/Position size/);
+  });
+
+  it("treats zero/blank optional exits as off", () => {
+    const r = normalizeRisk({ ...DEFAULT_RISK, stop_loss_pct: 0, take_profit_pct: Number.NaN, trailing_stop_pct: 2, max_bars_in_trade: -1 });
+    expect(r).toEqual({ position_size_pct: 100, stop_loss_pct: null, take_profit_pct: null, trailing_stop_pct: 2, max_bars_in_trade: null });
   });
 });

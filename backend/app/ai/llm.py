@@ -37,6 +37,21 @@ def get_client() -> Any | None:
     return _client
 
 
+async def chat_completion(client: Any, **kwargs: Any) -> Any:
+    """Chat Completions call that works across model generations.
+
+    Uses `max_completion_tokens` (the deprecated `max_tokens` is rejected by reasoning
+    models) and retries once without `temperature` for models that only accept the default.
+    """
+    try:
+        return await client.chat.completions.create(**kwargs)
+    except Exception as exc:  # noqa: BLE001 - inspect, then re-raise
+        if "temperature" in kwargs and "temperature" in str(exc).lower():
+            kwargs = {k: v for k, v in kwargs.items() if k != "temperature"}
+            return await client.chat.completions.create(**kwargs)
+        raise
+
+
 async def narrate_analysis(facts: dict) -> tuple[str, str]:
     """Return (narrative, source) where source is 'openai:<model>' or 'rule_based'."""
     client = get_client()
@@ -44,10 +59,11 @@ async def narrate_analysis(facts: dict) -> tuple[str, str]:
         return rule_based_narrative(facts), "rule_based"
     model = get_settings().openai_model
     try:
-        resp = await client.chat.completions.create(
+        resp = await chat_completion(
+            client,
             model=model,
             temperature=0.2,
-            max_tokens=450,
+            max_completion_tokens=600,
             messages=[
                 {
                     "role": "system",

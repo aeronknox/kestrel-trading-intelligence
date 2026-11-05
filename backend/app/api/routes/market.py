@@ -104,7 +104,14 @@ async def candles(
         ],
         indicators={col: series_to_points(visible, col) for col in INDICATOR_COLUMNS},
         latest=latest_snapshot(df),
-        meta=_meta(svc, series.stale, series.fetched_at),
+        # Provenance of *this* series (an asset may be served by a non-default provider).
+        meta=DataMeta(
+            source=series.source,
+            is_sample=series.is_sample,
+            attribution=series.attribution,
+            stale=series.stale,
+            fetched_at=series.fetched_at,
+        ),
     )
 
 

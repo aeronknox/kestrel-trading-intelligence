@@ -63,7 +63,7 @@ async def test_role_based_access(client) -> None:  # type: ignore[no-untyped-def
 async def test_change_password(client) -> None:  # type: ignore[no-untyped-def]
     await register(client)
     bad = await client.post("/api/v1/auth/change-password", json={"current_password": "nope", "new_password": "an0ther-passw0rd"})
-    assert bad.status_code == 401
+    assert bad.status_code == 422
     ok = await client.post("/api/v1/auth/change-password", json={"current_password": "s3cure-passw0rd", "new_password": "an0ther-passw0rd"})
     assert ok.status_code == 200
     client.cookies.clear()
@@ -74,3 +74,14 @@ async def test_change_password(client) -> None:  # type: ignore[no-untyped-def]
 async def test_unauthenticated_endpoints_protected(client) -> None:  # type: ignore[no-untyped-def]
     for path in ("/api/v1/dashboard", "/api/v1/paper/portfolio", "/api/v1/strategies", "/api/v1/market/overview"):
         assert (await client.get(path)).status_code == 401, path
+
+
+async def test_cli_promotes_admin(client) -> None:  # type: ignore[no-untyped-def]
+    from app.cli import set_role
+    from app.models.enums import UserRole
+
+    await register(client, email="ops@example.com")
+    assert (await client.get("/api/v1/admin/users")).status_code == 403
+    assert await set_role("ops@example.com", UserRole.ADMIN) == 0
+    assert (await client.get("/api/v1/admin/users")).status_code == 200
+    assert await set_role("missing@example.com", UserRole.ADMIN) == 1

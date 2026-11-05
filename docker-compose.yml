@@ -41,6 +41,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       LOG_JSON: ${LOG_JSON:-true}
+      PROXY_SHARED_SECRET: ${PROXY_SHARED_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,6 +58,8 @@ services:
     restart: unless-stopped
     environment:
       BACKEND_INTERNAL_URL: http://backend:8000
+      PROXY_SHARED_SECRET: ${PROXY_SHARED_SECRET:-}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
     depends_on:
       backend:
         condition: service_healthy

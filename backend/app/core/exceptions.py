@@ -3,6 +3,7 @@
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.logging import get_logger
@@ -101,6 +102,15 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=_error_body("validation_failed", "Request validation failed", request, details),
+        )
+
+    @app.exception_handler(IntegrityError)
+    async def _integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
+        # Unique-constraint races (e.g. two concurrent registrations) are conflicts, not 500s.
+        logger.info("integrity_conflict", path=request.url.path)
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content=_error_body("conflict", "The request conflicts with existing data", request),
         )
 
     @app.exception_handler(Exception)

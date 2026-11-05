@@ -80,6 +80,18 @@ export function describeRisk(r: Partial<RiskParams>): string[] {
   return out;
 }
 
+/** Optional exits use null for "off"; treat 0, negatives and NaN the same way. */
+export function normalizeRisk(r: RiskParams): RiskParams {
+  const opt = (v: number | null) => (v === null || !Number.isFinite(v) || v <= 0 ? null : v);
+  return {
+    position_size_pct: r.position_size_pct,
+    stop_loss_pct: opt(r.stop_loss_pct),
+    take_profit_pct: opt(r.take_profit_pct),
+    trailing_stop_pct: opt(r.trailing_stop_pct),
+    max_bars_in_trade: opt(r.max_bars_in_trade),
+  };
+}
+
 /** Client-side validation mirroring the backend's rules (the server re-validates). */
 export function validateStrategy(entry: RuleSet, exit: RuleSet, risk: Partial<RiskParams>): string | null {
   if (!entry.conditions.length) return "Add at least one entry condition.";

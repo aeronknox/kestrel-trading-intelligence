@@ -329,7 +329,12 @@ class PaperTradingService:
         return order
 
     async def process_open_orders(self, portfolio: PaperPortfolio) -> int:
-        """Fill any resting limit orders whose price has been reached. Returns fills."""
+        """Fill any resting limit orders whose price has been reached. Returns fills.
+
+        Callers must hold the portfolio row lock (`get_or_create_portfolio(lock=True)` or
+        SELECT ... FOR UPDATE); otherwise concurrent requests could fill the same order
+        twice or overwrite each other's cash balance.
+        """
         orders = (
             await self.session.scalars(
                 select(SimulatedOrder)

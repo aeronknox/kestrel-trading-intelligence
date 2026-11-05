@@ -1,5 +1,7 @@
 """Shared FastAPI dependencies: DB session, current user, RBAC, rate limits."""
 
+import hmac
+import ipaddress
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -13,15 +15,42 @@ from app.models.enums import UserRole
 from app.models.user import User, UserSession
 from app.services.auth import resolve_session
 
-DbSession = Annotated[AsyncSession, Depends(get_db)]
+# scope="function": the commit in get_db runs *before* the response is sent, so a failed
+# commit becomes an error response instead of a false 200 (FastAPI's default runs yield
+# teardown after the response has gone out).
+DbSession = Annotated[AsyncSession, Depends(get_db, scope="function")]
+
+
+def _peer_is_trusted(request: Request) -> bool:
+    settings = get_settings()
+    secret = settings.proxy_shared_secret
+    presented = request.headers.get("x-proxy-secret")
+    if secret and presented and hmac.compare_digest(secret, presented):
+        return True
+    peer = request.client.host if request.client else None
+    if not peer:
+        return False
+    try:
+        addr = ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    for cidr in settings.trusted_proxies:
+        try:
+            if addr in ipaddress.ip_network(cidr, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def client_ip(request: Request) -> str:
-    # Trust X-Forwarded-For only from the first hop (our Next.js proxy / reverse proxy).
+    """Client address for rate limiting/audit. X-Forwarded-For is only believed when the
+    immediate peer is a trusted proxy; otherwise any client could spoof its identity."""
+    peer = request.client.host if request.client else "unknown"
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()[:64]
-    return request.client.host if request.client else "unknown"
+    if forwarded and _peer_is_trusted(request):
+        return forwarded.split(",")[0].strip()[:64] or peer
+    return peer
 
 
 async def get_current_session(request: Request, db: DbSession) -> tuple[User, UserSession]:

@@ -96,10 +96,16 @@ export function Field({ label, htmlFor, hint, error, children, className }: {
   children: React.ReactNode;
   className?: string;
 }) {
+  // Associate the label with its control (accessibility + click-to-focus) when the
+  // child is a single element without its own id.
+  const autoId = React.useId();
+  const only = React.Children.count(children) === 1 && React.isValidElement<{ id?: string }>(children) ? children : null;
+  const controlId = htmlFor ?? only?.props.id ?? autoId;
+  const control = only && !only.props.id && !htmlFor ? React.cloneElement(only, { id: controlId }) : children;
   return (
     <div className={cn("grid gap-1.5", className)}>
-      <Label htmlFor={htmlFor}>{label}</Label>
-      {children}
+      <Label htmlFor={controlId}>{label}</Label>
+      {control}
       {error ? <p className="text-xs text-loss">{error}</p> : hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
     </div>
   );

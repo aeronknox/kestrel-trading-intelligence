@@ -21,10 +21,11 @@ async def dashboard(user: CurrentUser, db: DbSession) -> dict:
     """One round-trip for the main dashboard. Each section degrades independently."""
     market = MarketDataService(db)
     paper = PaperTradingService(db, market)
-    pf = await paper.get_or_create_portfolio(user.id)
+    pf = await paper.get_or_create_portfolio(user.id, lock=True)  # order matching mutates it
     await paper.process_open_orders(pf)
     await paper.record_snapshot(pf)
     summary = await paper.summary(pf)
+    await db.commit()  # release the portfolio lock before slower read-only sections
 
     assets = await market.list_assets()
     tickers = await market.get_tickers(assets)
