@@ -1,0 +1,90 @@
+"""Application configuration loaded from environment variables."""
+
+from functools import lru_cache
+from typing import Literal
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from typing_extensions import Annotated
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=(".env", "../.env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    app_name: str = "Trading Intelligence Platform"
+    environment: Literal["development", "production", "test"] = "development"
+    log_level: str = "INFO"
+    log_json: bool = False
+    api_prefix: str = "/api/v1"
+
+    # Security
+    secret_key: str = Field(default="dev-insecure-secret-change-me", min_length=16)
+    session_ttl_hours: int = 72
+    session_cookie_name: str = "ti_session"
+    cookie_secure: bool = False
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
+    admin_emails: Annotated[list[str], NoDecode] = []
+
+    # Persistence
+    database_url: str = "sqlite+aiosqlite:///./data/dev.db"
+    redis_url: str | None = None
+
+    # Rate limiting
+    rate_limit_per_minute: int = 240
+    auth_rate_limit_per_minute: int = 15
+    compute_rate_limit_per_minute: int = 30  # analysis, backtests, assistant
+
+    # Market data
+    market_data_provider: Literal["coinbase", "sample"] = "coinbase"
+    market_ws_poll_seconds: float = 5.0
+    coinbase_base_url: str = "https://api.exchange.coinbase.com"
+    sentiment_url: str = "https://api.alternative.me/fng/"
+
+    # AI
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4.1-mini"
+    openai_base_url: str | None = None
+
+    # Paper trading
+    paper_starting_balance: float = 100_000.0
+    paper_fee_bps: float = 10.0
+    paper_slippage_bps: float = 5.0
+
+    @field_validator("cors_origins", "admin_emails", mode="before")
+    @classmethod
+    def _split_csv(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("admin_emails")
+    @classmethod
+    def _lower_emails(cls, value: list[str]) -> list[str]:
+        return [v.lower() for v in value]
+
+    @field_validator("redis_url", "openai_api_key", "openai_base_url", mode="before")
+    @classmethod
+    def _empty_to_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
+
+    @property
+    def ai_enabled(self) -> bool:
+        return bool(self.openai_api_key)
+
+
+@lru_cache
+def get_settings() -> Settings:
+    settings = Settings()
+    if settings.is_production and settings.secret_key.startswith("dev-insecure"):
+        raise RuntimeError("SECRET_KEY must be set in production")
+    return settings
