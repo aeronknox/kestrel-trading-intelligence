@@ -26,6 +26,10 @@ class Component:
         return asdict(self)
 
 
+def _fmt_price(v: float) -> str:
+    return f"{v:,.2f}" if abs(v) >= 1 else f"{v:.6g}"
+
+
 def _clip(x: float) -> float:
     return float(np.clip(x, -1.0, 1.0))
 
@@ -159,11 +163,11 @@ def assess_risks(
     if close and levels.get("resistances"):
         r = levels["resistances"][0]["price"]
         if (r - close) / close < 0.01:
-            risks.append({"level": "low", "title": "Near resistance", "detail": f"Price is within 1% of resistance near {r:,.4g}."})
+            risks.append({"level": "low", "title": "Near resistance", "detail": f"Price is within 1% of resistance near {_fmt_price(r)}."})
     if close and levels.get("supports"):
         s = levels["supports"][0]["price"]
         if (close - s) / close < 0.01:
-            risks.append({"level": "low", "title": "Near support", "detail": f"Price is within 1% of support near {s:,.4g}."})
+            risks.append({"level": "low", "title": "Near support", "detail": f"Price is within 1% of support near {_fmt_price(s)}."})
     if stale:
         risks.append({"level": "high", "title": "Stale data", "detail": "The live provider was unavailable; analysis used stored candles."})
     if is_sample:

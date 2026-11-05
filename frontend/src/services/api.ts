@@ -1,0 +1,187 @@
+/**
+ * Typed API client. Requests go to the same-origin `/api/v1/*` proxy (see
+ * `src/app/api/v1/[...path]/route.ts`), so the httpOnly session cookie is sent
+ * automatically and never exposed to JavaScript.
+ */
+import type {
+  Analysis,
+  AuditLog,
+  Backtest,
+  BacktestSummary,
+  CandlesResponse,
+  CatalogEntry,
+  ChatMessage,
+  Conversation,
+  ConversationSummary,
+  Dashboard,
+  IndicatorSpec,
+  MarketOverview,
+  Asset,
+  Order,
+  OrderSide,
+  OrderStatus,
+  OrderType,
+  Portfolio,
+  PortfolioAnalytics,
+  RiskLimits,
+  Sentiment,
+  Signal,
+  Snapshot,
+  Strategy,
+  StrategyInput,
+  StrategyTemplate,
+  Ticker,
+  Timeframe,
+  Trade,
+  User,
+  UserSettings,
+  Watchlist,
+} from "@/types/api";
+
+const BASE = "/api/v1";
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public code: string,
+    message: string,
+    public details?: unknown,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+type Query = Record<string, string | number | boolean | null | undefined>;
+
+function qs(query?: Query): string {
+  if (!query) return "";
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) {
+    if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+  }
+  const s = params.toString();
+  return s ? `?${s}` : "";
+}
+
+async function request<T>(method: string, path: string, body?: unknown, query?: Query): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}${qs(query)}`, {
+      method,
+      credentials: "same-origin",
+      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError(0, "network_error", "Unable to reach the server. Check your connection.");
+  }
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    const err = (data as { error?: { code?: string; message?: string; details?: unknown } } | null)?.error;
+    let message = err?.message ?? `Request failed (${res.status})`;
+    // Surface the first field error for validation failures.
+    if (err?.code === "validation_failed" && Array.isArray(err.details) && err.details[0]?.msg) {
+      const d = err.details[0] as { loc?: (string | number)[]; msg: string };
+      const field = d.loc?.filter((x) => x !== "body").join(".");
+      message = field ? `${field}: ${d.msg}` : d.msg;
+    }
+    throw new ApiError(res.status, err?.code ?? "http_error", message, err?.details);
+  }
+  return data as T;
+}
+
+const get = <T>(path: string, query?: Query) => request<T>("GET", path, undefined, query);
+const post = <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {});
+const put = <T>(path: string, body: unknown) => request<T>("PUT", path, body);
+const patch = <T>(path: string, body: unknown) => request<T>("PATCH", path, body);
+const del = <T>(path: string) => request<T>("DELETE", path);
+
+export const api = {
+  auth: {
+    me: () => get<User>("/auth/me"),
+    login: (email: string, password: string) => post<User>("/auth/login", { email, password }),
+    register: (email: string, password: string, full_name: string) =>
+      post<User>("/auth/register", { email, password, full_name }),
+    logout: () => post<{ message: string }>("/auth/logout"),
+    changePassword: (current_password: string, new_password: string) =>
+      post<{ message: string }>("/auth/change-password", { current_password, new_password }),
+  },
+  users: {
+    updateProfile: (full_name: string) => patch<User>("/users/me", { full_name }),
+    settings: () => get<UserSettings>("/users/me/settings"),
+    updateSettings: (body: Partial<UserSettings>) => patch<UserSettings>("/users/me/settings", body),
+  },
+  admin: {
+    users: () => get<User[]>("/admin/users"),
+    updateUser: (id: number, body: { role?: string; is_active?: boolean }) => patch<User>(`/admin/users/${id}`, body),
+    auditLogs: (query?: { action?: string; user_id?: number }) => get<AuditLog[]>("/admin/audit-logs", query),
+  },
+  market: {
+    overview: () => get<MarketOverview>("/market/overview"),
+    assets: (q?: string) => get<Asset[]>("/market/assets", { q }),
+    catalog: (q: string) => get<CatalogEntry[]>("/market/catalog", { q }),
+    track: (symbol: string) => post<Asset>("/market/assets", { symbol }),
+    ticker: (symbol: string) => get<Ticker>(`/market/assets/${encodeURIComponent(symbol)}/ticker`),
+    candles: (symbol: string, timeframe: Timeframe, limit = 300) =>
+      get<CandlesResponse>(`/market/assets/${encodeURIComponent(symbol)}/candles`, { timeframe, limit }),
+    sentiment: () => get<Sentiment>("/market/sentiment"),
+  },
+  watchlist: {
+    get: () => get<Watchlist>("/watchlists/default"),
+    add: (symbol: string) => post<Watchlist>("/watchlists/default/items", { symbol }),
+    remove: (symbol: string) => del<Watchlist>(`/watchlists/default/items/${encodeURIComponent(symbol)}`),
+  },
+  analysis: {
+    run: (symbol: string, timeframe: Timeframe) => post<Analysis>("/analysis", { symbol, timeframe }),
+    list: (symbol?: string, limit = 20) => get<Analysis[]>("/analysis", { symbol, limit }),
+    get: (id: number) => get<Analysis>(`/analysis/${id}`),
+    signals: (symbol?: string, limit = 50) => get<Signal[]>("/signals", { symbol, limit }),
+  },
+  strategies: {
+    list: (includeArchived = false) => get<Strategy[]>("/strategies", { include_archived: includeArchived }),
+    get: (id: number) => get<Strategy>(`/strategies/${id}`),
+    create: (body: StrategyInput) => post<Strategy>("/strategies", body),
+    update: (id: number, body: Partial<StrategyInput> & { is_archived?: boolean }) =>
+      patch<Strategy>(`/strategies/${id}`, body),
+    remove: (id: number) => del<void>(`/strategies/${id}`),
+    templates: () => get<{ templates: StrategyTemplate[] }>("/strategies/templates"),
+    indicators: () => get<{ indicators: IndicatorSpec[]; operators: string[] }>("/strategies/indicators"),
+  },
+  backtests: {
+    run: (body: { strategy_id: number; bars: number; initial_capital: number; fee_bps: number; slippage_bps: number }) =>
+      post<Backtest>("/backtests", body),
+    list: (strategyId?: number) => get<BacktestSummary[]>("/backtests", { strategy_id: strategyId }),
+    get: (id: number) => get<Backtest>(`/backtests/${id}`),
+    compare: (ids: number[]) => get<Backtest[]>("/backtests/compare", { ids: ids.join(",") }),
+    remove: (id: number) => del<void>(`/backtests/${id}`),
+  },
+  paper: {
+    portfolio: () => get<Portfolio>("/paper/portfolio"),
+    placeOrder: (body: { symbol: string; side: OrderSide; order_type: OrderType; quantity: number; limit_price?: number | null }) =>
+      post<Order>("/paper/orders", body),
+    orders: (status?: OrderStatus) => get<Order[]>("/paper/orders", { status }),
+    cancelOrder: (id: number) => post<Order>(`/paper/orders/${id}/cancel`),
+    trades: () => get<Trade[]>("/paper/trades"),
+    history: () => get<Snapshot[]>("/paper/history"),
+    analytics: () => get<PortfolioAnalytics>("/paper/analytics"),
+    updateRiskLimits: (body: RiskLimits) => put<Portfolio>("/paper/portfolio/risk-limits", body),
+    reset: () => post<Portfolio>("/paper/portfolio/reset"),
+  },
+  dashboard: () => get<Dashboard>("/dashboard"),
+  assistant: {
+    chat: (message: string, conversation_id?: number | null) =>
+      post<{ conversation_id: number; message: ChatMessage }>("/assistant/chat", { message, conversation_id }),
+    conversations: () => get<ConversationSummary[]>("/assistant/conversations"),
+    conversation: (id: number) => get<Conversation>(`/assistant/conversations/${id}`),
+    remove: (id: number) => del<void>(`/assistant/conversations/${id}`),
+  },
+};

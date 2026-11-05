@@ -79,6 +79,8 @@ class PortfolioOut(BaseModel):
     risk_limits: RiskLimits
     positions: list[PositionOut]
     prices_complete: bool
+    fee_bps: float
+    slippage_bps: float
     simulated: bool = True
 
 

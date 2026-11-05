@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Query
 
 from app.api.deps import CurrentUser, DbSession, rate_limit
+from app.core.config import get_settings
 from app.market_data.service import MarketDataService
 from app.models.enums import OrderStatus
 from app.paper_trading.service import PaperTradingService
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/paper", tags=["paper-trading"])
 
 def portfolio_out(summary: dict) -> PortfolioOut:
     pf = summary["portfolio"]
+    settings = get_settings()
     equity = summary["equity"] or 1.0
     return PortfolioOut(
         id=pf.id,
@@ -54,6 +56,8 @@ def portfolio_out(summary: dict) -> PortfolioOut:
             for v in summary["positions"]
         ],
         prices_complete=summary["prices_complete"],
+        fee_bps=settings.paper_fee_bps,
+        slippage_bps=settings.paper_slippage_bps,
     )
 
 
