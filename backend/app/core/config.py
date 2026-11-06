@@ -33,7 +33,19 @@ class Settings(BaseSettings):
     proxy_shared_secret: str | None = None
     login_max_failures: int = 10
     login_lockout_minutes: int = 15
-    admin_emails: Annotated[list[str], NoDecode] = []
+    admin_emails: Annotated[list[str], NoDecode] = []  # granted admin once the address is verified
+
+    # Email (verification and password reset). "console" logs messages instead of sending them.
+    email_backend: Literal["console", "smtp"] = "console"
+    email_from: str = "Kestrel Intelligence <no-reply@localhost>"
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
+    public_app_url: str = "http://localhost:3000"  # base for links in emails
+    email_verification_ttl_hours: int = 48
+    password_reset_ttl_minutes: int = 60
 
     # Persistence
     database_url: str = "sqlite+aiosqlite:///./data/dev.db"
@@ -75,7 +87,8 @@ class Settings(BaseSettings):
     def _lower_emails(cls, value: list[str]) -> list[str]:
         return [v.lower() for v in value]
 
-    @field_validator("redis_url", "openai_api_key", "openai_base_url", "proxy_shared_secret", mode="before")
+    @field_validator("redis_url", "openai_api_key", "openai_base_url", "proxy_shared_secret", "smtp_host",
+                     "smtp_username", "smtp_password", mode="before")  # fmt: skip
     @classmethod
     def _empty_to_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():
@@ -96,4 +109,6 @@ def get_settings() -> Settings:
     settings = Settings()
     if settings.is_production and settings.secret_key.startswith("dev-insecure"):
         raise RuntimeError("SECRET_KEY must be set in production")
+    if settings.email_backend == "smtp" and not settings.smtp_host:
+        raise RuntimeError("EMAIL_BACKEND=smtp requires SMTP_HOST")
     return settings

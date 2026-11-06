@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from fastapi import APIRouter, Request, Response, status
+from sqlalchemy import select
 
 from app.api.deps import CurrentSession, CurrentUser, DbSession, auth_rate_limit, client_ip
 from app.core.config import get_settings
@@ -6,11 +9,24 @@ from app.core.cache import get_cache
 from app.core.exceptions import AuthenticationError, RateLimitedError, ValidationFailedError
 from app.core.security import hash_password, verify_password
 from app.schemas.common import Message
-from app.schemas.user import ChangePasswordRequest, LoginRequest, RegisterRequest, UserOut
+from app.models.user import User
+from app.schemas.user import (
+    ChangePasswordRequest,
+    EmailRequest,
+    LoginRequest,
+    RegisterRequest,
+    ResetPasswordRequest,
+    TokenRequest,
+    UserOut,
+)
 from app.services import auth as auth_service
 from app.services.audit import audit
+from app.services.email import password_reset_email, send_email, verification_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+EMAIL_COOLDOWN_SECONDS = 60  # per address, so the endpoints can't be used to flood someone's inbox
+FORGOT_MESSAGE = "If an account exists for that email, we sent a link to reset the password."
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -38,8 +54,64 @@ async def register(body: RegisterRequest, request: Request, response: Response, 
         db, user, ip_address=client_ip(request), user_agent=request.headers.get("user-agent")
     )
     await audit(db, "user.register", user_id=user.id, entity_type="user", entity_id=user.id, ip_address=client_ip(request))
+    await _send_verification(db, user)
     _set_session_cookie(response, token)
     return user
+
+
+async def _cooldown(key: str) -> bool:
+    """True if `key` was used within the cooldown window (and starts a new window otherwise)."""
+    return await get_cache().incr_window(key, EMAIL_COOLDOWN_SECONDS) > 1
+
+
+async def _send_verification(db, user: User) -> bool:  # type: ignore[no-untyped-def]
+    ttl = timedelta(hours=get_settings().email_verification_ttl_hours)
+    token = await auth_service.issue_token(db, user, auth_service.VERIFY_EMAIL, ttl)
+    return await send_email(verification_email(user.email, user.full_name, token))
+
+
+@router.post("/verify-email/resend", response_model=Message, dependencies=[auth_rate_limit()])
+async def resend_verification(user: CurrentUser, db: DbSession) -> Message:
+    if user.email_verified:
+        return Message(message="Your email address is already verified")
+    if await _cooldown(f"email-cooldown:verify:{user.id}"):
+        raise RateLimitedError("A verification email was just sent; wait a minute before asking again")
+    if not await _send_verification(db, user):
+        raise ValidationFailedError("We could not send the email right now; try again later")
+    return Message(message=f"Verification email sent to {user.email}")
+
+
+@router.post("/verify-email", response_model=Message, dependencies=[auth_rate_limit()])
+async def verify_email(body: TokenRequest, request: Request, db: DbSession) -> Message:
+    """Works without a session, so the link can be opened in any browser."""
+    user = await auth_service.consume_token(db, body.token, auth_service.VERIFY_EMAIL)
+    promoted = auth_service.mark_email_verified(user)
+    await audit(db, "user.email_verified", user_id=user.id, ip_address=client_ip(request), details={"granted_admin": promoted})
+    return Message(message="Email address verified")
+
+
+@router.post("/forgot-password", response_model=Message, status_code=status.HTTP_202_ACCEPTED, dependencies=[auth_rate_limit()])
+async def forgot_password(body: EmailRequest, request: Request, db: DbSession) -> Message:
+    """Same response whether or not the account exists, so it can't be used to discover accounts."""
+    email = body.email.lower()
+    user = await db.scalar(select(User).where(User.email == email))
+    if user is not None and user.is_active and not await _cooldown(f"email-cooldown:reset:{email}"):
+        ttl = timedelta(minutes=get_settings().password_reset_ttl_minutes)
+        token = await auth_service.issue_token(db, user, auth_service.RESET_PASSWORD, ttl)
+        await send_email(password_reset_email(user.email, user.full_name, token))
+        await audit(db, "auth.password_reset_requested", user_id=user.id, ip_address=client_ip(request))
+    return Message(message=FORGOT_MESSAGE)
+
+
+@router.post("/reset-password", response_model=Message, dependencies=[auth_rate_limit()])
+async def reset_password(body: ResetPasswordRequest, request: Request, db: DbSession) -> Message:
+    user = await auth_service.consume_token(db, body.token, auth_service.RESET_PASSWORD)
+    user.hashed_password = hash_password(body.new_password)
+    auth_service.mark_email_verified(user)  # the link proves the user controls the address
+    await auth_service.revoke_all_sessions(db, user.id)
+    await get_cache().delete(f"login-fail:{user.email}")
+    await audit(db, "auth.password_reset", user_id=user.id, ip_address=client_ip(request))
+    return Message(message="Password updated. Sign in with your new password.")
 
 
 @router.post("/login", response_model=UserOut, dependencies=[auth_rate_limit()])

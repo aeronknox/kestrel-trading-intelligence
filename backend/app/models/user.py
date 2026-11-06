@@ -23,12 +23,17 @@ class User(IdMixin, TimestampMixin, Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     settings: Mapped["UserSettings"] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan", lazy="selectin"
     )
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     watchlists: Mapped[list["Watchlist"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+    @property
+    def email_verified(self) -> bool:
+        return self.email_verified_at is not None
 
 
 class UserSettings(IdMixin, TimestampMixin, Base):
@@ -59,3 +64,17 @@ class UserSession(IdMixin, Base):
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class AuthToken(IdMixin, Base):
+    """Single-use emailed token (email verification, password reset). Only a keyed hash is stored."""
+
+    __tablename__ = "auth_tokens"
+    __table_args__ = (Index("ix_auth_tokens_user_purpose", "user_id", "purpose"),)
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    purpose: Mapped[str] = mapped_column(String(24))  # "verify_email" | "reset_password"
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)

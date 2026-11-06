@@ -3,8 +3,8 @@
     python -m app.cli promote-admin user@example.com
     python -m app.cli demote-admin user@example.com
 
-Prefer this over ADMIN_EMAILS on publicly reachable deployments: ADMIN_EMAILS grants the
-role at registration and emails are not verified, so whoever registers first gets it.
+ADMIN_EMAILS grants the role only after the address is verified by email; this command
+promotes an existing account directly (for example before email delivery is configured).
 """
 
 import asyncio

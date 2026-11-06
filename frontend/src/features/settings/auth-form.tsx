@@ -65,6 +65,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             onChange={(e) => setPassword(e.target.value)}
           />
         </Field>
+        {!isRegister && (
+          <Link href="/forgot-password" className="-mt-2 justify-self-end text-xs font-medium text-primary hover:underline">
+            Forgot password?
+          </Link>
+        )}
         {error && <p className="rounded-md bg-loss-soft px-3 py-2 text-xs text-loss" role="alert">{error}</p>}
         <Button type="submit" loading={pending} disabled={!email || !password || (isRegister && (!name || !!passwordHint))}>
           {isRegister ? "Create account" : "Sign in"}

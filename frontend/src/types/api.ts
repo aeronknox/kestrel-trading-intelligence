@@ -17,6 +17,7 @@ export interface User {
   full_name: string;
   role: Role;
   is_active: boolean;
+  email_verified: boolean;
   created_at: string;
   last_login_at: string | null;
   settings: UserSettings | null;

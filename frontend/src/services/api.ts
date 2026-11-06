@@ -119,6 +119,11 @@ export const api = {
     logout: () => post<{ message: string }>("/auth/logout"),
     changePassword: (current_password: string, new_password: string) =>
       post<{ message: string }>("/auth/change-password", { current_password, new_password }),
+    forgotPassword: (email: string) => post<{ message: string }>("/auth/forgot-password", { email }),
+    resetPassword: (token: string, new_password: string) =>
+      post<{ message: string }>("/auth/reset-password", { token, new_password }),
+    verifyEmail: (token: string) => post<{ message: string }>("/auth/verify-email", { token }),
+    resendVerification: () => post<{ message: string }>("/auth/verify-email/resend"),
   },
   users: {
     updateProfile: (full_name: string) => patch<User>("/users/me", { full_name }),

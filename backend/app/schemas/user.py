@@ -37,6 +37,20 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class EmailRequest(BaseModel):
+    email: EmailStr
+
+
+class TokenRequest(BaseModel):
+    token: str = Field(min_length=16, max_length=128)
+
+
+class ResetPasswordRequest(TokenRequest):
+    new_password: str = Field(max_length=128)
+
+    _pw = field_validator("new_password")(_validate_password)
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(max_length=128)
@@ -64,6 +78,7 @@ class UserOut(ORMModel):
     full_name: str
     role: UserRole
     is_active: bool
+    email_verified: bool = False
     created_at: datetime
     last_login_at: datetime | None
     settings: UserSettingsOut | None = None

@@ -12,7 +12,7 @@ from app.models.paper import (
     SimulatedTrade,
 )
 from app.models.strategy import Strategy, StrategyConfiguration
-from app.models.user import User, UserSession, UserSettings
+from app.models.user import AuthToken, User, UserSession, UserSettings
 
 __all__ = [
     "AIAnalysisResult",
@@ -20,6 +20,7 @@ __all__ = [
     "AIMessage",
     "Asset",
     "AuditLog",
+    "AuthToken",
     "BacktestResult",
     "BacktestSession",
     "ResearchRun",

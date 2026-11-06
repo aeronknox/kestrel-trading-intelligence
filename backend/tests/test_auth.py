@@ -53,7 +53,12 @@ async def test_role_based_access(client) -> None:  # type: ignore[no-untyped-def
     assert (await client.get("/api/v1/admin/users")).status_code == 403
     client.cookies.clear()
     admin = await register(client, email="admin@example.com")
-    assert admin["role"] == "admin"
+    assert admin["role"] == "user"  # ADMIN_EMAILS applies only after the address is verified
+    assert (await client.get("/api/v1/admin/users")).status_code == 403
+    from tests.test_email import last_token
+
+    assert (await client.post("/api/v1/auth/verify-email", json={"token": last_token("admin@example.com")})).status_code == 200
+    assert (await client.get("/api/v1/auth/me")).json()["role"] == "admin"
     users = await client.get("/api/v1/admin/users")
     assert users.status_code == 200 and len(users.json()) == 2
     logs = await client.get("/api/v1/admin/audit-logs")

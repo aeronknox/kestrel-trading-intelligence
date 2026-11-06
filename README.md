@@ -102,7 +102,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-- App: <http://localhost:3000> (register an account; emails listed in `ADMIN_EMAILS` become admins)
+- App: <http://localhost:3000> (register an account; emails listed in `ADMIN_EMAILS` become admins once verified. With the default `EMAIL_BACKEND=console`, the verification link is printed in the backend log.)
 - API docs: <http://localhost:8000/docs> · readiness: <http://localhost:8000/health/ready>
 
 Migrations run automatically when the backend container starts.
@@ -180,7 +180,9 @@ All settings are environment variables; see [.env.example](.env.example).
 | `PAPER_STARTING_BALANCE`, `PAPER_FEE_BPS`, `PAPER_SLIPPAGE_BPS` | 100000 / 10 / 5 | Simulation parameters |
 | `RATE_LIMIT_PER_MINUTE`, `AUTH_RATE_LIMIT_PER_MINUTE`, `COMPUTE_RATE_LIMIT_PER_MINUTE` | 240 / 15 / 30 | Per-IP limits |
 | `CORS_ORIGINS` | `http://localhost:3000` | Also used for the WebSocket origin check |
-| `ADMIN_EMAILS` | empty | Comma-separated emails granted the admin role at registration (unverified, so use only before exposing the app; prefer the CLI below) |
+| `ADMIN_EMAILS` | empty | Comma-separated emails granted the admin role once the address is verified by email (or use the CLI below) |
+| `EMAIL_BACKEND` | `console` | `console` logs emails and their links (development); `smtp` delivers them via `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SECURITY` from `EMAIL_FROM` |
+| `PUBLIC_APP_URL` | `http://localhost:3000` | Base URL for links in verification and password-reset emails |
 | `TRUST_PROXY_HEADERS` (frontend), `PROXY_SHARED_SECRET` (both) | `false` / empty | Set both only when a reverse proxy in front of Next.js sets `X-Forwarded-For`; the API then trusts the client IP for rate limiting and audit |
 | `TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` | Peers whose `X-Forwarded-For` is trusted without the secret |
 | `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES` | 10 / 15 | Per-account lockout after repeated failed sign-ins |

@@ -64,7 +64,7 @@ The status reflects the state **after** this audit's fixes. "Found" lists what w
 | P2 | Stocks/forex provider routing not functional; wrong provenance on candles | `MarketDataService.provider_for(asset)`; per-series metadata | `test_non_crypto_assets_route_to_their_own_provider` |
 | P2 | Unique-constraint races returned 500 | `IntegrityError` → 409 | `test_integrity_errors_map_to_409` |
 | P2 | `0` in optional risk fields → 422 | `normalizeRisk` treats ≤0 as off | Vitest plus e2e |
-| P2 | `ADMIN_EMAILS` trusts unverified emails | `python -m app.cli promote-admin` plus a startup warning | `test_cli_promotes_admin` |
+| P2 | `ADMIN_EMAILS` trusts unverified emails | `python -m app.cli promote-admin`; *since 2026-11-06* the role is granted only after email verification | `test_cli_promotes_admin`, `test_role_based_access` |
 
 ## Remaining issues (not fixed, by priority)
 
@@ -72,7 +72,7 @@ The status reflects the state **after** this audit's fixes. "Found" lists what w
 2. **Single-replica constraint.** Background jobs and the WebSocket broadcaster run in-process, so a second replica would double-run jobs. Move them to a worker with a Redis lock before scaling out.
 3. ~~**Open limit buys don't reserve cash.**~~ *Fixed 2026-11-06:* open limit buys reserve their worst-case cost and open limit sells reserve quantity; the API exposes `reserved_cash` and `available_cash`.
 4. ~~**Risk limits are only partly re-checked at fill time.**~~ *Fixed 2026-11-06:* position-size, open-position and daily-loss limits are re-checked before a resting buy fills; a breach rejects the order with an "At fill time" reason.
-5. **No email verification or password reset.**
+5. ~~**No email verification or password reset.**~~ *Fixed 2026-11-06:* single-use, expiring emailed tokens (stored as keyed hashes) for verification and password reset; reset revokes all sessions; the forgot-password response does not reveal whether an account exists; per-address cooldown against inbox flooding; console or SMTP delivery.
 6. **Upstream prices are polled** (every 5s by default) rather than streamed from an exchange WebSocket.
 7. **Backtests** are long-only and single-asset, with 24/7 annualization (equities would need a trading calendar). *Update 2026-11-06:* the 2,000-bar cap is now 20,000 bars, backed by stored, backfilled history.
 8. **The rate-limit bucket is shared without a reverse proxy.** When the browser reaches Next.js directly (default Compose), the API sees every user as the Next.js container, so the per-IP limits are shared. Per-account lockout still applies. Put a reverse proxy in front and set `TRUST_PROXY_HEADERS`/`PROXY_SHARED_SECRET` for per-client limits.

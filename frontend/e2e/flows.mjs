@@ -11,7 +11,13 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 const page = await ctx.newPage();
 page.on("pageerror", (e) => errors.push(`[pageerror] ${page.url()} ${e.message}`));
-page.on("console", (m) => m.type() === "error" && !m.text().includes("401") && errors.push(`[console] ${page.url()} ${m.text()}`));
+// Statuses a step deliberately provokes (e.g. a bad link -> 422); 401 is the normal signed-out probe.
+let expectedStatuses = [];
+page.on("console", (m) => {
+  const text = m.text();
+  if (m.type() !== "error" || text.includes("401") || expectedStatuses.some((s) => text.includes(`status of ${s}`))) return;
+  errors.push(`[console] ${page.url()} ${text}`);
+});
 
 async function step(name, fn) {
   try {
@@ -32,6 +38,13 @@ await step("register", async () => {
   await page.click("button[type=submit]");
   await page.waitForURL("**/dashboard", { timeout: 15000 });
   await page.getByText("Virtual portfolio value").waitFor();
+});
+
+await step("unverified email banner resends link", async () => {
+  await page.getByText("Confirm your email address").waitFor();
+  await page.getByRole("button", { name: "Resend email" }).click();
+  await toast(/Verification email sent to/);
+  await page.getByRole("button", { name: "Email sent" }).waitFor();
 });
 
 await step("unauthenticated redirect after logout+login cycle", async () => {
@@ -229,6 +242,29 @@ await step("expired session redirects to login", async () => {
   await ctx.clearCookies(); // simulate server-side expiry/revocation
   await page.getByRole("link", { name: "Portfolio" }).first().click();
   await page.waitForURL("**/login", { timeout: 10000 });
+});
+
+await step("forgot password request", async () => {
+  await page.goto(`${BASE}/login`);
+  await page.getByRole("link", { name: "Forgot password?" }).click();
+  await page.waitForURL("**/forgot-password");
+  await page.fill("#email", email);
+  await page.getByRole("button", { name: "Send reset link" }).click();
+  await page.getByText("Check your email").waitFor();
+  await page.getByText(/If an account exists/).waitFor();
+});
+
+await step("invalid reset and verification links are explained", async () => {
+  expectedStatuses = [422];
+  await page.goto(`${BASE}/reset-password?token=not-a-real-token-0123456789`);
+  await page.fill("#password", "brand-new-passw0rd1");
+  if (page.url().includes("token=")) throw new Error("token left in the address bar");
+  await page.fill("#confirm", "brand-new-passw0rd1");
+  await page.getByRole("button", { name: "Update password" }).click();
+  await page.getByText(/invalid or has expired/).waitFor();
+  await page.goto(`${BASE}/verify-email?token=not-a-real-token-0123456789`);
+  await page.getByText("We couldn't verify your email").waitFor();
+  expectedStatuses = [];
 });
 
 console.log(results.join("\n"));

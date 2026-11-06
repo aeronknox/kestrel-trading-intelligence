@@ -4,7 +4,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.exceptions import AuthenticationError, ConflictError
+from app.core.exceptions import AuthenticationError, ConflictError, ValidationFailedError
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
     hash_password,
@@ -15,7 +15,7 @@ from app.core.security import (
 )
 from app.models.enums import UserRole
 from app.models.market import Asset, Watchlist, WatchlistItem
-from app.models.user import User, UserSession, UserSettings
+from app.models.user import AuthToken, User, UserSession, UserSettings
 
 SESSION_TOUCH_INTERVAL = timedelta(minutes=5)
 
@@ -24,8 +24,8 @@ async def register_user(session: AsyncSession, email: str, password: str, full_n
     email = email.lower()
     if await session.scalar(select(User.id).where(User.email == email)):
         raise ConflictError("An account with this email already exists")
-    role = UserRole.ADMIN if email in get_settings().admin_emails else UserRole.USER
-    user = User(email=email, hashed_password=hash_password(password), full_name=full_name, role=role)
+    # ADMIN_EMAILS is applied only once the address is verified (see mark_email_verified).
+    user = User(email=email, hashed_password=hash_password(password), full_name=full_name, role=UserRole.USER)
     user.settings = UserSettings()
     session.add(user)
     await session.flush()
@@ -96,3 +96,55 @@ async def revoke_all_sessions(session: AsyncSession, user_id: int, *, except_id:
     if except_id is not None:
         stmt = stmt.where(UserSession.id != except_id)
     await session.execute(stmt.values(revoked_at=datetime.now(UTC)))
+
+
+# ------------------------------------------------------------ emailed tokens
+VERIFY_EMAIL = "verify_email"
+RESET_PASSWORD = "reset_password"
+INVALID_LINK = "This link is invalid or has expired. Request a new one."
+
+
+async def issue_token(session: AsyncSession, user: User, purpose: str, ttl: timedelta) -> str:
+    """Create a single-use token; any earlier unused token for the same purpose stops working."""
+    now = datetime.now(UTC)
+    await session.execute(
+        update(AuthToken)
+        .where(AuthToken.user_id == user.id, AuthToken.purpose == purpose, AuthToken.used_at.is_(None))
+        .values(used_at=now)
+    )
+    token = new_session_token()
+    session.add(AuthToken(user_id=user.id, purpose=purpose, token_hash=hash_session_token(token), created_at=now,
+                          expires_at=now + ttl))  # fmt: skip
+    await session.flush()
+    return token
+
+
+async def consume_token(session: AsyncSession, token: str, purpose: str) -> User:
+    """Atomically mark a valid token used and return its user; raises if invalid, expired or already used."""
+    now = datetime.now(UTC)
+    # A single conditional UPDATE makes the token single-use even under concurrent requests.
+    user_id = await session.scalar(
+        update(AuthToken)
+        .where(
+            AuthToken.token_hash == hash_session_token(token),
+            AuthToken.purpose == purpose,
+            AuthToken.used_at.is_(None),
+            AuthToken.expires_at > now,
+        )
+        .values(used_at=now)
+        .returning(AuthToken.user_id)
+    )
+    user = await session.get(User, user_id) if user_id is not None else None
+    if user is None or not user.is_active:
+        raise ValidationFailedError(INVALID_LINK)
+    return user
+
+
+def mark_email_verified(user: User) -> bool:
+    """Record verification and apply ADMIN_EMAILS. Returns True if the user was just granted admin."""
+    if user.email_verified_at is None:
+        user.email_verified_at = datetime.now(UTC)
+    if user.role == UserRole.USER and user.email in get_settings().admin_emails:
+        user.role = UserRole.ADMIN
+        return True
+    return False
