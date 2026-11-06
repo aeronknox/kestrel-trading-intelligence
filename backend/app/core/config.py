@@ -104,11 +104,16 @@ class Settings(BaseSettings):
         return bool(self.openai_api_key)
 
 
+def _weak_secret(key: str) -> bool:
+    """The built-in default, the .env.example placeholder, or too short to be a random key."""
+    return key.startswith("dev-insecure") or "change-me" in key.lower() or len(key) < 32
+
+
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
-    if settings.is_production and settings.secret_key.startswith("dev-insecure"):
-        raise RuntimeError("SECRET_KEY must be set in production")
+    if settings.is_production and _weak_secret(settings.secret_key):
+        raise RuntimeError("SECRET_KEY must be a random value of 32+ characters in production (e.g. openssl rand -hex 32)")
     if settings.email_backend == "smtp" and not settings.smtp_host:
         raise RuntimeError("EMAIL_BACKEND=smtp requires SMTP_HOST")
     return settings

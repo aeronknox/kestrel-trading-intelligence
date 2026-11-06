@@ -100,3 +100,30 @@ async def test_failed_commit_is_reported_not_silently_ok(auth_client, monkeypatc
     monkeypatch.undo()
     wl = (await auth_client.get("/api/v1/watchlists/default")).json()
     assert all(i["asset"]["symbol"] != "DOT-USD" for i in wl["items"])
+
+
+@pytest.mark.parametrize(
+    ("key", "ok"),
+    [
+        ("dev-insecure-secret-change-me", False),
+        ("change-me-to-a-long-random-string", False),  # the .env.example placeholder
+        ("short-but-random-1234", False),
+        ("9f2c4e7a1b3d5f60718293a4b5c6d7e8f9012345", True),
+    ],
+)
+def test_production_rejects_placeholder_secret_keys(monkeypatch, key, ok) -> None:  # type: ignore[no-untyped-def]
+    from app.core import config
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("SECRET_KEY", key)
+    config.get_settings.cache_clear()
+    try:
+        if ok:
+            assert config.get_settings().is_production
+        else:
+            with pytest.raises(RuntimeError, match="SECRET_KEY"):
+                config.get_settings()
+    finally:
+        monkeypatch.undo()
+        config.get_settings.cache_clear()
+        config.get_settings()  # restore the test settings for other tests

@@ -123,3 +123,62 @@ jobs:
       - name: Stop
         if: always()
         run: docker compose down --volumes
+
+  https:
+    name: HTTPS deployment (Caddy) + browser flows
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    env:
+      DOMAIN: localhost
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write .env
+        run: |
+          cp .env.example .env
+          sed -i "s|^SECRET_KEY=.*|SECRET_KEY=$(openssl rand -hex 32)|" .env
+          sed -i "s|^PROXY_SHARED_SECRET=.*|PROXY_SHARED_SECRET=$(openssl rand -hex 32)|" .env
+          sed -i "s|^MARKET_DATA_PROVIDER=.*|MARKET_DATA_PROVIDER=sample|" .env
+          sed -i "s|^AUTH_RATE_LIMIT_PER_MINUTE=.*|AUTH_RATE_LIMIT_PER_MINUTE=100|" .env
+      - name: Build and start (production override)
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build --detach --wait --wait-timeout 300
+      - name: HTTPS, redirect and exposure checks
+        run: |
+          # The local CA's certificate is self-signed, hence -k.
+          curl -kfsS -o /dev/null https://localhost/login
+          curl -sS -o /dev/null -w "%{http_code} %{redirect_url}" http://localhost/login | tee /dev/stderr | grep -q "^308 https://localhost/login"
+          curl -ksI https://localhost/login | grep -qi "^strict-transport-security"
+          # Only Caddy is published: the API, web server, database and Redis are internal.
+          for port in 8000 3000 5432 6379; do
+            if curl -s --max-time 3 -o /dev/null "http://localhost:$port"; then echo "port $port is exposed"; exit 1; fi
+          done
+          # Secure session cookie over HTTPS.
+          curl -ksS -D - -o /dev/null -H "Content-Type: application/json" \
+            -d '{"email":"ci@example.com","password":"ci-passw0rd-1234","full_name":"CI"}' \
+            https://localhost/api/v1/auth/register | grep -i "^set-cookie" | grep -qi "secure"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Browser flows over HTTPS
+        working-directory: frontend
+        env:
+          BASE: https://localhost
+          IGNORE_HTTPS_ERRORS: "1"
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run e2e
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --no-color --tail 200
+      - name: Upload failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: https-e2e-failure-screenshots
+          path: frontend/e2e/fail_*.png
+          if-no-files-found: ignore
+      - name: Stop
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml down --volumes

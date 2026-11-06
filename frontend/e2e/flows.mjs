@@ -1,5 +1,5 @@
 // End-to-end UI flows against a running stack (frontend :3000 + backend :8000).
-// Usage: npm run e2e  [BASE=http://host:3000]   Exits non-zero if any step fails.
+// Usage: npm run e2e  [BASE=http://host:3000] [IGNORE_HTTPS_ERRORS=1]   Exits non-zero if any step fails.
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE ?? "http://localhost:3000";
@@ -8,7 +8,8 @@ const results = [];
 const errors = [];
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+// IGNORE_HTTPS_ERRORS=1 accepts the self-signed certificate of a local HTTPS trial (Caddy with DOMAIN=localhost).
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: process.env.IGNORE_HTTPS_ERRORS === "1" });
 const page = await ctx.newPage();
 page.on("pageerror", (e) => errors.push(`[pageerror] ${page.url()} ${e.message}`));
 // Statuses a step deliberately provokes (e.g. a bad link -> 422); 401 is the normal signed-out probe.

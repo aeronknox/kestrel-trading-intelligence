@@ -107,6 +107,26 @@ docker compose up --build
 
 Migrations run automatically when the backend container starts.
 
+### Deploying with HTTPS
+
+[`docker-compose.prod.yml`](docker-compose.prod.yml) adds [Caddy](https://caddyserver.com) in front of the stack:
+
+- Caddy gets and renews a Let's Encrypt certificate for your domain and redirects HTTP to HTTPS.
+- Only ports 80 and 443 are published. The API, web server, PostgreSQL and Redis stay on the internal Docker network.
+- The live price stream is routed to the API over `wss://`, and everything else to Next.js.
+- Caddy replaces any client-sent `X-Forwarded-For` with the real client address. With `PROXY_SHARED_SECRET`, the API trusts it, so each visitor gets their own rate limit.
+- The override switches on production mode, secure cookies, the right CORS/WebSocket origin and `https://` links in emails.
+
+```bash
+cp .env.example .env
+# Required: SECRET_KEY and PROXY_SHARED_SECRET, each from: openssl rand -hex 32
+# Recommended: EMAIL_BACKEND=smtp plus SMTP_* so verification and reset emails are delivered
+# Point your domain's DNS A/AAAA record at this server, then:
+DOMAIN=trading.example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+To try it locally first, use `DOMAIN=localhost` and open <https://localhost>. Caddy then uses its own local certificate authority, so the browser shows a certificate warning. Production mode refuses to start with the example `SECRET_KEY` or any key shorter than 32 characters.
+
 ### Option B — Local development (no Docker)
 
 Requirements: Python 3.13+ (tested on 3.14) and Node.js 22+ (tested on 24). PostgreSQL and Redis are optional: the backend falls back to SQLite and an in-process cache.
@@ -161,7 +181,10 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 - **Backend:** Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
 - **Frontend:** typecheck, unit tests, production build.
-- **Docker:** `docker compose up --build --wait`, health checks, then the 25 browser flows against the containerized stack. See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
+- **Docker:** `docker compose up --build --wait`, health checks, then the 28 browser flows against the containerized stack.
+- **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
+
+See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
 
 ---
 

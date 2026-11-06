@@ -1,0 +1,32 @@
+# Public entry point: automatic HTTPS (Let's Encrypt for a real domain, a local
+# CA for "localhost"), HTTP->HTTPS redirect, and routing to the two app services.
+#
+# Caddy ignores X-Forwarded-For sent by clients (none of them are trusted proxies)
+# and sets it to the real client address, so per-client rate limits can't be spoofed.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# The live price stream connects straight to the API.
+	@ws path /api/v1/ws/*
+	handle @ws {
+		reverse_proxy backend:8000 {
+			header_up X-Proxy-Secret {$PROXY_SHARED_SECRET}
+		}
+	}
+
+	# Pages and the same-origin /api/v1 proxy are served by Next.js.
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
