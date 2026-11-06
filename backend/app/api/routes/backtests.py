@@ -14,6 +14,7 @@ from app.models.backtest import BacktestResult, BacktestSession
 from app.models.enums import BacktestStatus
 from app.schemas.strategy import BacktestOut, BacktestRequest, BacktestSummary
 from app.services.audit import audit
+from app.services.export import csv_response, iso, safe_filename
 from app.services.strategies import get_owned_strategy, summarize_backtest
 from app.strategies.definition import StrategyDefinition
 
@@ -143,18 +144,44 @@ async def compare(user: CurrentUser, db: DbSession, ids: str = Query(..., descri
     return [_out(by_id[i]) for i in id_list if i in by_id]
 
 
+async def _owned(db, backtest_id: int, user_id: int) -> BacktestSession:  # type: ignore[no-untyped-def]
+    b = await db.get(BacktestSession, backtest_id)
+    if b is None or b.user_id != user_id:
+        raise NotFoundError("Backtest not found")
+    return b
+
+
 @router.get("/{backtest_id}", response_model=BacktestOut)
 async def get_backtest(backtest_id: int, user: CurrentUser, db: DbSession) -> BacktestOut:
-    b = await db.get(BacktestSession, backtest_id)
-    if b is None or b.user_id != user.id:
-        raise NotFoundError("Backtest not found")
-    return _out(b)
+    return _out(await _owned(db, backtest_id, user.id))
+
+
+TRADE_COLUMNS = ("entry_time", "entry_price", "quantity", "entry_fee", "exit_time", "exit_price", "exit_fee",
+                 "exit_reason", "pnl", "return_pct", "bars_held")  # fmt: skip
+
+
+@router.get("/{backtest_id}/trades.csv")
+async def export_trades(backtest_id: int, user: CurrentUser, db: DbSession) -> Response:
+    b = await _owned(db, backtest_id, user.id)
+    trades = b.result.trades if b.result else []
+    rows = (
+        [iso(t["entry_time"]) if c == "entry_time" else iso(t["exit_time"]) if c == "exit_time" else t.get(c) for c in TRADE_COLUMNS]
+        for t in trades
+    )
+    return csv_response(safe_filename("backtest", b.id, b.strategy.name, b.asset.symbol, b.timeframe, "trades"), TRADE_COLUMNS, rows)
+
+
+@router.get("/{backtest_id}/equity.csv")
+async def export_equity(backtest_id: int, user: CurrentUser, db: DbSession) -> Response:
+    """The stored equity curve (sampled to at most ~500 points), with buy-and-hold when available."""
+    b = await _owned(db, backtest_id, user.id)
+    curve = b.result.equity_curve if b.result else []
+    header = ("time", "equity", "drawdown_pct", "buy_and_hold_equity")
+    rows = ((iso(p["time"]), p["equity"], p["drawdown_pct"], p.get("benchmark")) for p in curve)
+    return csv_response(safe_filename("backtest", b.id, b.strategy.name, b.asset.symbol, b.timeframe, "equity"), header, rows)
 
 
 @router.delete("/{backtest_id}", status_code=204)
 async def delete_backtest(backtest_id: int, user: CurrentUser, db: DbSession) -> Response:
-    b = await db.get(BacktestSession, backtest_id)
-    if b is None or b.user_id != user.id:
-        raise NotFoundError("Backtest not found")
-    await db.delete(b)
+    await db.delete(await _owned(db, backtest_id, user.id))
     return Response(status_code=204)

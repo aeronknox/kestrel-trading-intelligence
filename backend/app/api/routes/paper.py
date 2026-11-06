@@ -1,6 +1,6 @@
 """Paper trading API — SIMULATED ONLY. No brokerage connectivity exists."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 
 from app.api.deps import CurrentUser, DbSession, rate_limit
 from app.core.config import get_settings
@@ -10,6 +10,7 @@ from app.paper_trading.service import PaperTradingService
 from app.schemas.market import AssetOut
 from app.schemas.paper import OrderCreate, OrderOut, PortfolioOut, PositionOut, RiskLimits, SnapshotOut, TradeOut
 from app.services.audit import audit
+from app.services.export import csv_response, safe_filename
 
 router = APIRouter(prefix="/paper", tags=["paper-trading"])
 
@@ -139,3 +140,24 @@ async def equity_history(user: CurrentUser, db: DbSession, limit: int = Query(10
 async def analytics(user: CurrentUser, db: DbSession) -> dict:
     svc, pf = await _service_and_portfolio(db, user.id)
     return await svc.analytics(pf)
+
+
+EXPORT_LIMIT = 100_000
+
+
+@router.get("/trades.csv")
+async def export_trades(user: CurrentUser, db: DbSession) -> Response:
+    svc, pf = await _service_and_portfolio(db, user.id)
+    trades = await svc.list_trades(pf, EXPORT_LIMIT)
+    header = ("executed_at", "symbol", "side", "quantity", "price", "fee", "realized_pnl", "order_id", "simulated")
+    rows = ((t.executed_at, t.asset.symbol, t.side.value, t.quantity, t.price, t.fee, t.realized_pnl, t.order_id, True)
+            for t in reversed(trades))  # fmt: skip
+    return csv_response(safe_filename("paper", "trades"), header, rows)
+
+
+@router.get("/history.csv")
+async def export_history(user: CurrentUser, db: DbSession) -> Response:
+    svc, pf = await _service_and_portfolio(db, user.id)
+    snaps = await svc.equity_history(pf, EXPORT_LIMIT)
+    header = ("time", "equity", "cash", "positions_value")
+    return csv_response(safe_filename("paper", "equity"), header, ((s.ts, s.equity, s.cash, s.positions_value) for s in snaps))

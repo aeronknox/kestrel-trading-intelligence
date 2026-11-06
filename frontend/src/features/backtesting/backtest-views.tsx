@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { DownloadButton } from "@/components/common/download-button";
 import { Disclaimer, StatCard } from "@/components/common/finance";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/common/states";
 import { PageHeader } from "@/components/layout/page-header";
@@ -150,9 +151,17 @@ export function BacktestDetailView({ id }: { id: number }) {
         title={<>{bt.strategy_name} <span className="text-base font-normal text-muted-foreground">v{bt.strategy_version}</span></>}
         description={`${bt.asset.symbol} · ${bt.timeframe} · ${formatDate(bt.start_at)} – ${formatDate(bt.end_at)} · run ${formatDateTime(bt.created_at)}`}
         actions={
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/strategies/${bt.strategy_id}`}>Open strategy</Link>
-          </Button>
+          <>
+            {bt.status === "completed" && (
+              <>
+                <DownloadButton href={`/backtests/${bt.id}/trades.csv`} label="Download trades as CSV">Trades CSV</DownloadButton>
+                <DownloadButton href={`/backtests/${bt.id}/equity.csv`} label="Download equity curve as CSV">Equity CSV</DownloadButton>
+              </>
+            )}
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/strategies/${bt.strategy_id}`}>Open strategy</Link>
+            </Button>
+          </>
         }
       />
       <Disclaimer className="mb-4">

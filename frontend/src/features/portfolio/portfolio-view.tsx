@@ -7,6 +7,7 @@ import Link from "next/link";
 import { StatCard } from "@/components/common/finance";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/common/states";
 import { PageHeader } from "@/components/layout/page-header";
+import { DownloadButton } from "@/components/common/download-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/primitives";
@@ -64,7 +65,10 @@ export function PortfolioView() {
                 <CardTitle>Equity history</CardTitle>
                 <CardDescription>Snapshots recorded after each fill and every few minutes while positions are open</CardDescription>
               </div>
-              <Badge variant="outline">Simulated</Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">Simulated</Badge>
+                <DownloadButton href="/paper/history.csv" label="Download equity history as CSV">CSV</DownloadButton>
+              </div>
             </CardHeader>
             <CardContent className="space-y-2">
               <EquityAreaChart data={curve} baseline={p.starting_balance} height={260} />

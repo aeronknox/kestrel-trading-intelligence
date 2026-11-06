@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { DownloadButton } from "@/components/common/download-button";
 import { Disclaimer, StatCard } from "@/components/common/finance";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/common/states";
 import { PageHeader } from "@/components/layout/page-header";
@@ -315,9 +316,14 @@ export function ResearchDetailView({ id }: { id: number }) {
         title={<>{run.kind === "walk_forward" ? "Walk-forward test" : "Parameter sweep"} <span className="text-base font-normal text-muted-foreground">· {run.strategy_name} v{run.strategy_version}</span></>}
         description={`${run.asset.symbol} · ${run.timeframe} · ${formatDate(run.start_at)} – ${formatDate(run.end_at)} · run ${formatDateTime(run.created_at)}`}
         actions={
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/research/new?strategy=${run.strategy_id}`}>Run another</Link>
-          </Button>
+          <>
+            <DownloadButton href={`/research/${run.id}/results.csv`} label="Download results as CSV">
+              {run.kind === "sweep" ? "Grid CSV" : "Folds CSV"}
+            </DownloadButton>
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/research/new?strategy=${run.strategy_id}`}>Run another</Link>
+            </Button>
+          </>
         }
       />
       <Disclaimer className="mb-4">

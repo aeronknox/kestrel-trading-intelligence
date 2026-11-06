@@ -183,7 +183,7 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 - **Backend:** ruff lint and mypy type check, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
 - **Frontend:** ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
-- **Docker:** `docker compose up --build --wait`, health checks, then the 28 browser flows against the containerized stack.
+- **Docker:** `docker compose up --build --wait`, health checks, then the 30 browser flows against the containerized stack.
 - **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
 
 See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
@@ -238,9 +238,9 @@ Interactive docs are at `/docs`. All routes are under `/api/v1`.
 | `/watchlists/default` | get, add, remove |
 | `/analysis`, `/signals` | run analysis, history, signals |
 | `/strategies` | CRUD, `templates`, `indicators` |
-| `/backtests` | run, list, get, `compare`, delete |
-| `/research` | `parameters`, `sweeps`, `walk-forward`, list, get, delete |
-| `/paper` | `portfolio`, `orders`, `orders/{id}/cancel`, `trades`, `history`, `analytics`, `portfolio/risk-limits`, `portfolio/reset` |
+| `/backtests` | run, list, get, `compare`, delete, `{id}/trades.csv`, `{id}/equity.csv` |
+| `/research` | `parameters`, `sweeps`, `walk-forward`, list, get, delete, `{id}/results.csv` |
+| `/paper` | `portfolio`, `orders`, `orders/{id}/cancel`, `trades`, `history`, `analytics`, `portfolio/risk-limits`, `portfolio/reset`, `trades.csv`, `history.csv` |
 | `/dashboard` | aggregated dashboard payload |
 | `/assistant` | `chat`, `conversations` |
 | `/ws/market` | WebSocket ticker stream (`{"action":"subscribe","symbols":[…]}`) |

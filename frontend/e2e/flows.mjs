@@ -1,5 +1,7 @@
 // End-to-end UI flows against a running stack (frontend :3000 + backend :8000).
 // Usage: npm run e2e  [BASE=http://host:3000] [IGNORE_HTTPS_ERRORS=1]   Exits non-zero if any step fails.
+import { readFile } from "node:fs/promises";
+
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE ?? "http://localhost:3000";
@@ -19,6 +21,13 @@ page.on("console", (m) => {
   if (m.type() !== "error" || text.includes("401") || expectedStatuses.some((s) => text.includes(`status of ${s}`))) return;
   errors.push(`[console] ${page.url()} ${text}`);
 });
+
+/** Click a download link and return the downloaded file's text (BOM stripped). */
+async function download(locator) {
+  const [file] = await Promise.all([page.waitForEvent("download"), locator.click()]);
+  if (!file.suggestedFilename().endsWith(".csv")) throw new Error(`unexpected file ${file.suggestedFilename()}`);
+  return (await readFile(await file.path(), "utf8")).replace(/^\ufeff/, "");
+}
 
 async function step(name, fn) {
   try {
@@ -150,6 +159,16 @@ await step("backtest compare flow", async () => {
   await page.getByText("Cumulative return").waitFor();
 });
 
+await step("backtest CSV export", async () => {
+  await page.goto(`${BASE}/backtests`);
+  await page.locator('a[href^="/backtests/"]').filter({ hasNotText: /compare/i }).first().click();
+  await page.waitForURL(/\/backtests\/\d+$/);
+  const csv = await download(page.getByRole("link", { name: "Download trades as CSV" }));
+  if (!csv.startsWith("entry_time,entry_price,quantity")) throw new Error(`bad header: ${csv.slice(0, 60)}`);
+  const equity = await download(page.getByRole("link", { name: "Download equity curve as CSV" }));
+  if (equity.trim().split("\n").length < 50) throw new Error("equity CSV too short");
+});
+
 await step("walk-forward test via optimization page", async () => {
   await page.goto(`${BASE}/research/new`);
   await page.getByText("Parameter 1").waitFor({ timeout: 15000 });
@@ -195,6 +214,13 @@ await step("paper close position", async () => {
   page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Close" }).first().click();
   await toast(/Closed ETH-USD/);
+});
+
+await step("paper trades CSV export", async () => {
+  await page.goto(`${BASE}/paper-trading`);
+  const csv = await download(page.getByRole("link", { name: "Download trade history as CSV" }));
+  const lines = csv.trim().split("\n");
+  if (!lines[0].startsWith("executed_at,symbol,side") || lines.length < 3) throw new Error(`unexpected CSV: ${lines.length} lines`);
 });
 
 await step("risk limits dialog saves", async () => {

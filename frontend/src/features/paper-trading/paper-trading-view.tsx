@@ -9,6 +9,7 @@ import { toast } from "sonner";
 
 import { AssetIcon, Disclaimer, StatCard } from "@/components/common/finance";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/common/states";
+import { DownloadButton } from "@/components/common/download-button";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -189,6 +190,7 @@ export function PaperTradingView() {
         actions={
           p && (
             <>
+              <DownloadButton href="/paper/trades.csv" label="Download trade history as CSV">Trades CSV</DownloadButton>
               <RiskLimitsDialog limits={p.risk_limits} />
               <Button variant="outline" size="sm" loading={reset.isPending} onClick={() => window.confirm("Reset the paper portfolio? All simulated positions, orders and trade history will be deleted.") && reset.mutate()}>
                 <RotateCcw /> Reset

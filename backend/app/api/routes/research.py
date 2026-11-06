@@ -16,6 +16,7 @@ from app.models.backtest import ResearchRun
 from app.models.strategy import Strategy
 from app.schemas.research import ResearchOut, ResearchRequest, ResearchSummary, TunableParameter, WalkForwardRequest
 from app.services.audit import audit
+from app.services.export import csv_response, iso, safe_filename
 from app.services.strategies import get_owned_strategy
 
 router = APIRouter(prefix="/research", tags=["research"])
@@ -136,6 +137,43 @@ async def _owned(db, run_id: int, user_id: int) -> ResearchRun:  # type: ignore[
 @router.get("/{run_id}", response_model=ResearchOut)
 async def get_run(run_id: int, user: CurrentUser, db: DbSession) -> ResearchOut:
     return _out(await _owned(db, run_id, user.id))
+
+
+METRIC_COLUMNS = ("total_return_pct", "sharpe_ratio", "max_drawdown_pct", "num_trades", "win_rate", "profit_factor")
+
+
+@router.get("/{run_id}/results.csv")
+async def export_results(run_id: int, user: CurrentUser, db: DbSession) -> Response:
+    """Sweeps: one row per parameter combination. Walk-forward: one row per fold."""
+    run = await _owned(db, run_id, user.id)
+    r = run.result
+    labels = [p.get("label", p["path"]) for p in r["params"]]
+    name = safe_filename(run.kind.replace("_", "-"), run.id, run.strategy.name, run.asset.symbol, run.timeframe)
+    if run.kind == "sweep":
+        header = (*labels, "valid", "score", *METRIC_COLUMNS)
+        rows = (
+            (*c["values"], c["valid"], c["score"], *((c["metrics"] or {}).get(k) for k in METRIC_COLUMNS))
+            for c in r["cells"]
+        )
+        return csv_response(name, header, rows)
+    header = ("fold", "tuning_start", "tuning_end", "test_start", "test_end", *(f"chosen: {lb}" for lb in labels),
+              *(f"tuning_{k}" for k in METRIC_COLUMNS), *(f"test_{k}" for k in METRIC_COLUMNS), "untuned_test_return_pct")  # fmt: skip
+    paths = [p["path"] for p in r["params"]]
+    rows = (
+        (
+            f["fold"],
+            iso(f["in_sample"]["start"]),
+            iso(f["in_sample"]["end"]),
+            iso(f["out_of_sample"]["start"]),
+            iso(f["out_of_sample"]["end"]),
+            *((f["chosen"] or {}).get(p) for p in paths),
+            *(f["is_metrics"].get(k) for k in METRIC_COLUMNS),
+            *(f["oos_metrics"].get(k) for k in METRIC_COLUMNS),
+            f["baseline_oos_return_pct"],
+        )
+        for f in r["fold_results"]
+    )
+    return csv_response(name, header, rows)
 
 
 @router.delete("/{run_id}", status_code=204)
