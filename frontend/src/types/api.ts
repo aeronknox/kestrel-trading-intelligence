@@ -640,3 +640,45 @@ export interface HistoryCoverage {
   is_sample: boolean;
   max_bars: number;
 }
+
+// -------------------------------------------------------------------- alerts
+export interface AlertSettings {
+  enabled: boolean;
+  on_entry: boolean;
+  on_exit: boolean;
+  notify_email: boolean;
+}
+
+export interface StrategyAlert extends AlertSettings {
+  id: number;
+  strategy_id: number;
+  strategy_name: string;
+  symbol: string | null;
+  timeframe: Timeframe | null;
+  last_bar_at: string | null;
+  last_checked_at: string | null;
+  last_error: string | null;
+  created_at: string;
+}
+
+export interface AlertEvent {
+  id: number;
+  strategy_id: number;
+  strategy_version: number;
+  kind: "entry" | "exit";
+  symbol: string;
+  timeframe: Timeframe;
+  bar_at: string;
+  close_price: number;
+  message: string;
+  data_source: string;
+  created_at: string;
+  read_at: string | null;
+  emailed_at: string | null;
+}
+
+export interface AlertEventsPage {
+  events: AlertEvent[];
+  unread: number;
+  disclaimer: string;
+}

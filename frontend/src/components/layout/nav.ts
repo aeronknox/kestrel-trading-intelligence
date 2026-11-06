@@ -1,4 +1,5 @@
 import {
+  Bell,
   Bot,
   BrainCircuit,
   CandlestickChart,
@@ -41,6 +42,7 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { href: "/strategies", label: "Strategies", icon: Workflow },
       { href: "/backtests", label: "Backtests", icon: FlaskConical },
       { href: "/research", label: "Optimization", icon: SlidersHorizontal },
+      { href: "/alerts", label: "Alerts", icon: Bell },
     ],
   },
   {

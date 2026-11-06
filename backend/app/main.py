@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.api.routes import (
+    alerts,
     analysis,
     assistant,
     auth,
@@ -128,7 +129,7 @@ def create_app(*, background: bool = True) -> FastAPI:
     register_exception_handlers(app)
 
     api = APIRouter(prefix=settings.api_prefix)
-    for module in (auth, users, market, watchlists, analysis, strategies, backtests, research, paper, dashboard, assistant, ws):
+    for module in (auth, users, market, watchlists, analysis, strategies, backtests, research, alerts, paper, dashboard, assistant, ws):
         api.include_router(module.router)
     app.include_router(api)
 

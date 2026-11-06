@@ -4,6 +4,8 @@
  * automatically and never exposed to JavaScript.
  */
 import type {
+  AlertEventsPage,
+  AlertSettings,
   Analysis,
   AuditLog,
   Backtest,
@@ -32,6 +34,7 @@ import type {
   Signal,
   Snapshot,
   Strategy,
+  StrategyAlert,
   TunableParameter,
   StrategyInput,
   StrategyTemplate,
@@ -175,6 +178,14 @@ export const api = {
     get: (id: number) => get<Backtest>(`/backtests/${id}`),
     compare: (ids: number[]) => get<Backtest[]>("/backtests/compare", { ids: ids.join(",") }),
     remove: (id: number) => del<void>(`/backtests/${id}`),
+  },
+  alerts: {
+    list: () => get<StrategyAlert[]>("/alerts"),
+    get: (strategyId: number) => get<StrategyAlert | null>(`/alerts/strategy/${strategyId}`),
+    upsert: (strategyId: number, body: AlertSettings) => put<StrategyAlert>(`/alerts/strategy/${strategyId}`, body),
+    remove: (strategyId: number) => del<void>(`/alerts/strategy/${strategyId}`),
+    events: (limit = 50) => get<AlertEventsPage>("/alerts/events", { limit }),
+    markRead: (ids?: number[]) => post<AlertEventsPage>("/alerts/events/read", ids ? { ids } : {}),
   },
   research: {
     parameters: (strategyId: number) => get<TunableParameter[]>("/research/parameters", { strategy_id: strategyId }),

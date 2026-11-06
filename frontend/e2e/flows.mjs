@@ -133,6 +133,21 @@ await step("strategy validation blocks zero stop-loss", async () => {
   if (bad) throw new Error("server rejected 0 with a 422 instead of treating it as 'off'");
 });
 
+await step("strategy alerts switch on and are listed", async () => {
+  const url = page.url(); // still on the strategy page
+  await page.getByLabel("Alerts on").click();
+  await toast(/Alerts on/);
+  await page.getByText("Watching").waitFor();
+  await page.getByRole("button", { name: /^Alerts/ }).click(); // header bell
+  await page.getByText("Strategy alerts").waitFor();
+  await page.keyboard.press("Escape");
+  await page.goto(`${BASE}/alerts`);
+  await page.getByText("Watched strategies").waitFor();
+  await page.getByRole("cell", { name: "On", exact: true }).first().waitFor();
+  await page.goto(url);
+  await page.getByText("Watching").waitFor(); // persisted
+});
+
 await step("run backtest from dialog", async () => {
   await page.goto(page.url());
   await page.getByRole("button", { name: /^Backtest$/ }).first().click();

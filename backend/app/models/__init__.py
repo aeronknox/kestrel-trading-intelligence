@@ -1,6 +1,7 @@
 """Import all models so SQLAlchemy metadata (and Alembic autogenerate) sees them."""
 
 from app.models.ai import AIAnalysisResult, AIConversation, AIMessage, TradingSignal
+from app.models.alert import AlertEvent, StrategyAlert
 from app.models.audit import AuditLog
 from app.models.backtest import BacktestResult, BacktestSession, ResearchRun
 from app.models.market import Asset, MarketData, Watchlist, WatchlistItem
@@ -18,6 +19,7 @@ __all__ = [
     "AIAnalysisResult",
     "AIConversation",
     "AIMessage",
+    "AlertEvent",
     "Asset",
     "AuditLog",
     "AuthToken",
@@ -31,6 +33,7 @@ __all__ = [
     "SimulatedOrder",
     "SimulatedTrade",
     "Strategy",
+    "StrategyAlert",
     "StrategyConfiguration",
     "TradingSignal",
     "User",

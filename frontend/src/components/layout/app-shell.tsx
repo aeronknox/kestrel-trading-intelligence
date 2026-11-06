@@ -6,6 +6,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { AlertsBell } from "@/features/alerts/alerts-views";
+
 import { AssetIcon } from "@/components/common/finance";
 import { Button } from "@/components/ui/button";
 import {
@@ -210,6 +212,7 @@ export function AppShell({ user, children }: { user: User; children: React.React
             <Badge variant="outline" className="hidden md:inline-flex">
               Paper trading
             </Badge>
+            <AlertsBell />
             <Button variant="ghost" size="icon-sm" onClick={toggle} aria-label="Toggle theme">
               {theme === "dark" ? <Sun /> : <Moon />}
             </Button>

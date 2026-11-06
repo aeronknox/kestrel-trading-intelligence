@@ -12,6 +12,7 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 | Strategy Builder | Visual rule builder (13 indicators, 6 operators, ALL/ANY logic), risk exits, templates, immutable versioning |
 | Backtesting | Next-bar execution, fees, slippage, gap-aware stops; return, max drawdown, Sharpe/Sortino, a buy-and-hold benchmark with the same costs (overlaid on the equity curve, with excess return and beta), win rate, profit factor, CAGR, exposure; side-by-side comparison |
 | Optimization | Parameter sweeps over 1–2 settings (heatmap of every combination, robustness stats) and walk-forward tests that tune on one window and score only on the next, unseen one, against the untuned strategy and buy-and-hold, with a rule-based verdict |
+| Alerts | Notifications when a saved strategy's entry or exit rules fire on a newly closed live candle, checked every minute with the same rule engine as the backtester. Fires once when a rule becomes true, never replays history, and caps catch-up after downtime. Shown in the header and on an alerts page, with optional email to verified addresses. Never places orders |
 | Paper Trading | $100k virtual balance, market and limit orders (open limit orders reserve cash or quantity; exposure limits are re-checked at fill time), positions, realized/unrealized P&L, risk limits, order and trade history, reset |
 | Portfolio | Equity and drawdown history, allocation, trade statistics |
 | Assistant | Chat grounded in platform data through tool calls; reports missing data as unavailable |
@@ -183,7 +184,7 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 - **Backend:** ruff lint and mypy type check, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
 - **Frontend:** ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
-- **Docker:** `docker compose up --build --wait`, health checks, then the 30 browser flows against the containerized stack.
+- **Docker:** `docker compose up --build --wait`, health checks, then the 31 browser flows against the containerized stack.
 - **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
 
 See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
@@ -240,6 +241,7 @@ Interactive docs are at `/docs`. All routes are under `/api/v1`.
 | `/strategies` | CRUD, `templates`, `indicators` |
 | `/backtests` | run, list, get, `compare`, delete, `{id}/trades.csv`, `{id}/equity.csv` |
 | `/research` | `parameters`, `sweeps`, `walk-forward`, list, get, delete, `{id}/results.csv` |
+| `/alerts` | list, `strategy/{id}` (get, put, delete), `events`, `events/read` |
 | `/paper` | `portfolio`, `orders`, `orders/{id}/cancel`, `trades`, `history`, `analytics`, `portfolio/risk-limits`, `portfolio/reset`, `trades.csv`, `history.csv` |
 | `/dashboard` | aggregated dashboard payload |
 | `/assistant` | `chat`, `conversations` |
@@ -247,7 +249,7 @@ Interactive docs are at `/docs`. All routes are under `/api/v1`.
 
 ## Known limitations and next steps
 
-- Background jobs (limit-order matching every 15s, equity snapshots every 5 min) and the WebSocket broadcaster run inside the API process, so run one backend replica or move them to a dedicated worker before scaling out.
+- Background jobs (limit-order matching every 15s, equity snapshots every 5 min, strategy alerts every minute, history backfill) and the WebSocket broadcaster run inside the API process, so run one backend replica or move them to a dedicated worker before scaling out.
 - Live prices are polled from the provider every `MARKET_WS_POLL_SECONDS` (default 5s) and fanned out over WebSocket. An upstream exchange WebSocket feed would lower latency.
 - Backtests are long-only, unleveraged and single-asset. They can use up to 20,000 bars (about 2.3 years of 1h candles): history is stored in PostgreSQL, filled in by a background job for tracked assets (1h/6h/1d), and downloaded on demand otherwise, so the first long run on a new asset can take about half a minute. Research runs are capped at 2,000,000 simulated bars per request.
 - Paper trading is spot and long-only; short selling is rejected by design.

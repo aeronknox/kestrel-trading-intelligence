@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { Badge } from "@/components/ui/primitives";
+import { StrategyAlertCard } from "@/features/alerts/alerts-views";
 import { RunBacktestDialog } from "@/features/backtesting/run-backtest-dialog";
 import { formatPct, formatNumber, pnlClass, timeAgo } from "@/lib/format";
 import { api } from "@/services/api";
@@ -66,6 +67,7 @@ export function EditStrategyView({ id }: { id: number }) {
         }
       />
       <StrategyEditor key={`${s.id}-${s.current_version}`} initial={draftFromStrategy(s)} strategyId={s.id} />
+      <StrategyAlertCard strategyId={s.id} />
       <Card className="mt-4">
         <CardHeader><CardTitle>Backtest history</CardTitle></CardHeader>
         <CardContent className="px-2">

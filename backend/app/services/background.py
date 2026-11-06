@@ -1,4 +1,4 @@
-"""Background jobs: limit-order matching, periodic equity snapshots and history backfill."""
+"""Background jobs: limit-order matching, equity snapshots, history backfill and strategy alerts."""
 
 import asyncio
 import contextlib
@@ -13,12 +13,14 @@ from app.models.enums import OrderStatus
 from app.models.market import Asset
 from app.models.paper import PaperPortfolio, SimulatedOrder
 from app.paper_trading.service import PaperTradingService
+from app.services.alerts import evaluate_alerts
 
 logger = get_logger(__name__)
 
 ORDER_INTERVAL_SECONDS = 15
 SNAPSHOT_INTERVAL_SECONDS = 300
 BACKFILL_INTERVAL_SECONDS = 60
+ALERT_INTERVAL_SECONDS = 60
 BACKFILL_TIMEFRAMES = ("1h", "6h", "1d")
 
 
@@ -94,6 +96,7 @@ class BackgroundJobs:
         self._tasks = [
             asyncio.create_task(self._loop(process_all_open_orders, ORDER_INTERVAL_SECONDS), name="paper-orders"),
             asyncio.create_task(self._loop(snapshot_all_portfolios, SNAPSHOT_INTERVAL_SECONDS), name="paper-snapshots"),
+            asyncio.create_task(self._loop(evaluate_alerts, ALERT_INTERVAL_SECONDS), name="strategy-alerts"),
         ]
         if get_settings().history_backfill_enabled:
             self._tasks.append(
