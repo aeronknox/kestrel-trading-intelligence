@@ -12,8 +12,10 @@ listed) are remembered for a day so they are not re-requested on every call.
 """
 
 import asyncio
+import itertools
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,8 +23,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import get_cache
 from app.core.exceptions import NotFoundError, UpstreamError, ValidationFailedError
 from app.core.logging import get_logger
-from app.models.enums import AssetClass
-from app.models.market import Asset, MarketData
 from app.market_data.providers.base import (
     TIMEFRAMES,
     Candle,
@@ -32,6 +32,8 @@ from app.market_data.providers.base import (
     timeframe_seconds,
 )
 from app.market_data.providers.registry import get_provider
+from app.models.enums import AssetClass
+from app.models.market import Asset, MarketData
 
 logger = get_logger(__name__)
 
@@ -264,14 +266,24 @@ class MarketDataService:
             raise ValidationFailedError(f"Unsupported timeframe '{timeframe}'", details={"allowed": list(TIMEFRAMES)})
         bars = max(10, min(bars, HISTORY_MAX_BARS))
         provider = self.provider_for(asset)
-        meta = {"symbol": asset.symbol, "timeframe": timeframe, "source": provider.name,
-                "is_sample": provider.is_sample, "attribution": provider.attribution}  # fmt: skip
+
+        def series_of(candles: list[Candle], **extra: Any) -> CandleSeries:
+            return CandleSeries(
+                symbol=asset.symbol,
+                timeframe=timeframe,
+                candles=candles,
+                source=provider.name,
+                is_sample=provider.is_sample,
+                attribution=provider.attribution,
+                **extra,
+            )
+
         if provider.is_sample:
             try:
                 candles = await provider.get_candles(asset.provider_symbol, timeframe, limit=bars + 1)
             except ProviderError as exc:
                 raise UpstreamError(f"Market data for {asset.symbol} is currently unavailable") from exc
-            series = CandleSeries(candles=candles, **meta)
+            series = series_of(candles)
             series.candles = series.closed()[-bars:]
             return series
 
@@ -289,17 +301,19 @@ class MarketDataService:
         rows = (
             await self.session.scalars(
                 select(MarketData)
-                .where(MarketData.asset_id == asset.id, MarketData.timeframe == timeframe,
-                       MarketData.ts >= datetime.fromtimestamp(first_k * tf, tz=UTC),
-                       MarketData.ts <= datetime.fromtimestamp(last_k * tf, tz=UTC))  # fmt: skip
+                .where(
+                    MarketData.asset_id == asset.id,
+                    MarketData.timeframe == timeframe,
+                    MarketData.ts >= datetime.fromtimestamp(first_k * tf, tz=UTC),
+                    MarketData.ts <= datetime.fromtimestamp(last_k * tf, tz=UTC),
+                )
                 .order_by(MarketData.ts)
             )
         ).all()
         if not rows:
             raise UpstreamError(f"Market data for {asset.symbol} is currently unavailable")
         candles = [Candle(ts=r.ts, open=r.open, high=r.high, low=r.low, close=r.close, volume=r.volume) for r in rows]
-        return CandleSeries(candles=candles, stale=stale, complete=complete and not stale, fetched_at=now,
-                            fetched_bars=self._fetched, **meta)  # fmt: skip
+        return series_of(candles, stale=stale, complete=complete and not stale, fetched_at=now, fetched_bars=self._fetched)
 
     async def _fill_missing(
         self, asset: Asset, timeframe: str, provider: MarketDataProvider, first_k: int, last_k: int, budget: int
@@ -359,7 +373,7 @@ class MarketDataService:
                 await self._persist(asset, timeframe, [c for _, c in inside], provider)
                 # Holes between returned candles have data on both sides, so they are real exchange
                 # gaps; remember them so later calls skip them (their runs will match these keys).
-                for (a, _), (b, _) in zip(inside, inside[1:], strict=False):
+                for (a, _), (b, _) in itertools.pairwise(inside):
                     if b - a > 1:
                         hole_key = f"history-gap:{provider.name}:{asset.provider_symbol}:{timeframe}:{a + 1}:{b - 1}"
                         await self.cache.set_json(hole_key, True, ttl=UNAVAILABLE_TTL)
@@ -399,10 +413,11 @@ class MarketDataService:
         if not candles or provider.is_sample:
             return  # never store synthetic data alongside real history
         dialect = self.session.bind.dialect.name if self.session.bind else "sqlite"
+        # Both dialects' insert() support on_conflict_do_nothing with the same signature.
         if dialect == "postgresql":
             from sqlalchemy.dialects.postgresql import insert
         else:
-            from sqlalchemy.dialects.sqlite import insert
+            from sqlalchemy.dialects.sqlite import insert  # type: ignore[assignment]
         rows = [
             {
                 "asset_id": asset.id,

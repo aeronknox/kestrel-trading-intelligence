@@ -78,11 +78,11 @@ def test_rsi_matches_wilder_reference() -> None:
 def _wilder_rsi_loop(closes: np.ndarray, n: int = 14) -> np.ndarray:
     """Straight transcription of Wilder (1978), used as an independent oracle."""
     d = np.diff(closes)
-    g, l = np.clip(d, 0, None), np.clip(-d, 0, None)
-    ag, al = g[:n].mean(), l[:n].mean()
+    g, losses = np.clip(d, 0, None), np.clip(-d, 0, None)
+    ag, al = g[:n].mean(), losses[:n].mean()
     out = [np.nan] * n + [100 - 100 / (1 + ag / al)]
     for i in range(n, len(d)):
-        ag, al = (ag * (n - 1) + g[i]) / n, (al * (n - 1) + l[i]) / n
+        ag, al = (ag * (n - 1) + g[i]) / n, (al * (n - 1) + losses[i]) / n
         out.append(100 - 100 / (1 + ag / al))
     return np.array(out)
 

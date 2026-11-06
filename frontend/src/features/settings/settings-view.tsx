@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/layout/page-header";
@@ -20,16 +20,12 @@ export function SettingsView() {
   const qc = useQueryClient();
   const { theme, toggle } = useTheme();
   const assets = useQuery({ queryKey: ["assets"], queryFn: () => api.market.assets(), staleTime: 300_000 });
-  const [name, setName] = useState("");
-  const [prefs, setPrefs] = useState<Partial<UserSettings>>({});
+  // Drafts stay null until edited, so the fields show the saved profile without copying it into state.
+  const [nameDraft, setName] = useState<string | null>(null);
+  const [prefsDraft, setPrefs] = useState<Partial<UserSettings> | null>(null);
+  const name = nameDraft ?? me.data?.full_name ?? "";
+  const prefs: Partial<UserSettings> = prefsDraft ?? me.data?.settings ?? {};
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
-
-  useEffect(() => {
-    if (me.data) {
-      setName(me.data.full_name);
-      setPrefs(me.data.settings ?? {});
-    }
-  }, [me.data]);
 
   const saveProfile = useMutation({
     mutationFn: () => api.users.updateProfile(name.trim()),

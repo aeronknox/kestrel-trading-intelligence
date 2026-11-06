@@ -1,0 +1,28 @@
+[tool.ruff]
+target-version = "py314"
+line-length = 130
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle, isort, bugbear, pyupgrade, async pitfalls, blind-except, simplify, ruff-specific
+select = ["F", "E", "W", "I", "B", "UP", "ASYNC", "BLE", "SIM", "RUF"]
+ignore = [
+    "UP037",   # quoted forward references are kept for SQLAlchemy relationship annotations
+    "E501",    # long lines are allowed where splitting hurts readability (`# fmt: skip` blocks)
+    "B008",    # FastAPI's Depends()/Query() in defaults is the framework idiom
+    "SIM108",  # nested ternaries are harder to read than the if/else blocks they replace
+    "RUF001", "RUF002", "RUF003",  # intentional typographic characters in user-facing text
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+
+[tool.mypy]
+python_version = "3.14"
+files = ["app"]
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = false
+warn_redundant_casts = true
+no_implicit_optional = true

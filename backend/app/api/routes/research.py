@@ -63,15 +63,17 @@ async def _execute(kind: str, body: ResearchRequest, user_id: int, db) -> Resear
     df = candles_to_frame(closed)
     config = BacktestConfig(body.initial_capital, body.fee_bps, body.slippage_bps, timeframe_seconds(cfg.timeframe))
     grid = [ParamGrid(p.path, p.values) for p in body.params]
-    common = {"objective": body.objective, "min_trades": body.min_trades}
     try:
         # CPU-bound (up to a few hundred backtests): keep it off the event loop.
         if isinstance(body, WalkForwardRequest):
             result = await asyncio.to_thread(
-                run_walk_forward, df, definition, grid, config, folds=body.folds, is_ratio=body.is_ratio, **common
-            )
+                run_walk_forward, df, definition, grid, config, folds=body.folds, is_ratio=body.is_ratio,
+                objective=body.objective, min_trades=body.min_trades,
+            )  # fmt: skip
         else:
-            result = await asyncio.to_thread(run_sweep, df, definition, grid, config, **common)
+            result = await asyncio.to_thread(
+                run_sweep, df, definition, grid, config, objective=body.objective, min_trades=body.min_trades
+            )
     except OptimizationError as exc:
         raise ValidationFailedError(str(exc)) from exc
 

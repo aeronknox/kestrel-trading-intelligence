@@ -50,9 +50,11 @@ def test_unsubscribed_client_receives_all_tracked_assets(client) -> None:  # typ
 
 
 def test_foreign_origin_rejected(client) -> None:  # type: ignore[no-untyped-def]
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect("/api/v1/ws/market", headers={"origin": "https://evil.example"}) as ws:
-            ws.receive_json()
+    with (
+        pytest.raises(WebSocketDisconnect) as exc,
+        client.websocket_connect("/api/v1/ws/market", headers={"origin": "https://evil.example"}) as ws,
+    ):
+        ws.receive_json()
     assert exc.value.code == 1008
 
 

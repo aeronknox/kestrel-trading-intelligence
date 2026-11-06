@@ -14,6 +14,15 @@ import { AllocationDonut, DrawdownChart, EquityAreaChart } from "@/features/char
 import { formatNumber, formatPct, formatUsd, pnlClass } from "@/lib/format";
 import { api } from "@/services/api";
 
+/** Percent below the running peak at each point. */
+function drawdownCurve(curve: { time: number; equity: number }[]): { time: number; drawdown_pct: number }[] {
+  let peak = 0;
+  return curve.map((c) => {
+    peak = Math.max(peak, c.equity);
+    return { time: c.time, drawdown_pct: peak ? (c.equity / peak - 1) * 100 : 0 };
+  });
+}
+
 export function PortfolioView() {
   const portfolio = useQuery({ queryKey: ["paper", "portfolio"], queryFn: api.paper.portfolio, refetchInterval: 30_000 });
   const history = useQuery({ queryKey: ["paper", "history"], queryFn: api.paper.history, refetchInterval: 60_000 });
@@ -25,12 +34,8 @@ export function PortfolioView() {
   const a = analytics.data;
 
   const curve = (history.data ?? []).map((s) => ({ time: Math.floor(new Date(s.ts).getTime() / 1000), equity: s.equity }));
-  if (curve.length < 2) curve.push({ time: Math.floor(Date.now() / 1000), equity: p.equity });
-  let peak = 0;
-  const dd = curve.map((c) => {
-    peak = Math.max(peak, c.equity);
-    return { time: c.time, drawdown_pct: peak ? (c.equity / peak - 1) * 100 : 0 };
-  });
+  if (curve.length < 2) curve.push({ time: Math.floor(portfolio.dataUpdatedAt / 1000), equity: p.equity });
+  const dd = drawdownCurve(curve);
   const allocation = [
     ...p.positions.map((pos) => ({ name: pos.asset.symbol, value: pos.market_value })),
     { name: "Cash", value: p.cash_balance },

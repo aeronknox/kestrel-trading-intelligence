@@ -108,7 +108,7 @@ async def create_backtest(body: BacktestRequest, user: CurrentUser, db: DbSessio
         session.status = BacktestStatus.COMPLETED
     except AppError as exc:
         session.status, session.error = BacktestStatus.FAILED, exc.message
-    except Exception as exc:  # noqa: BLE001 - record failure on the session, don't 500
+    except Exception as exc:
         logger.exception("backtest_failed", backtest_id=session.id)
         session.status, session.error = BacktestStatus.FAILED, f"Backtest failed: {type(exc).__name__}"
     session.completed_at = datetime.now(UTC)

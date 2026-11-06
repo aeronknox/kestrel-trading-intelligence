@@ -13,6 +13,7 @@ from app.strategies.definition import Condition, Operand, RuleSet
 
 def operand_series(df: pd.DataFrame, operand: Operand, cache: dict[str, pd.Series]) -> pd.Series:
     if operand.indicator is None:
+        assert operand.value is not None  # Operand's validator requires exactly one of indicator/value
         return pd.Series(float(operand.value), index=df.index)
     key = operand.label()
     if key in cache:

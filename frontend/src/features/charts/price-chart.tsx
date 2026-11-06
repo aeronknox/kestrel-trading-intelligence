@@ -161,7 +161,6 @@ export function PriceChart({
       chartRef.current = null;
       candleRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candles, indicators, overlays, timeframe, theme, levels, markers]);
 
   // Stream the live price into the forming bar without rebuilding the chart.

@@ -4,12 +4,12 @@ from fastapi import APIRouter, Request, Response, status
 from sqlalchemy import select
 
 from app.api.deps import CurrentSession, CurrentUser, DbSession, auth_rate_limit, client_ip
-from app.core.config import get_settings
 from app.core.cache import get_cache
+from app.core.config import get_settings
 from app.core.exceptions import AuthenticationError, RateLimitedError, ValidationFailedError
 from app.core.security import hash_password, verify_password
-from app.schemas.common import Message
 from app.models.user import User
+from app.schemas.common import Message
 from app.schemas.user import (
     ChangePasswordRequest,
     EmailRequest,

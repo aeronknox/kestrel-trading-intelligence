@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Change } from "@/components/common/finance";
@@ -25,11 +25,10 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
   const [type, setType] = useState<OrderType>("market");
   const [mode, setMode] = useState<"qty" | "usd">("usd");
   const [amount, setAmount] = useState("");
-  const [limit, setLimit] = useState("");
-
-  useEffect(() => {
-    setLimit("");
-  }, [symbol]);
+  // A limit price only makes sense for the symbol it was typed for.
+  const [limitState, setLimitState] = useState({ symbol, value: "" });
+  const limit = limitState.symbol === symbol ? limitState.value : "";
+  const setLimit = (value: string) => setLimitState({ symbol, value });
 
   const price = type === "limit" && Number(limit) > 0 ? Number(limit) : ticker?.price;
   const num = Number(amount);

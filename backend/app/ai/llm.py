@@ -45,7 +45,7 @@ async def chat_completion(client: Any, **kwargs: Any) -> Any:
     """
     try:
         return await client.chat.completions.create(**kwargs)
-    except Exception as exc:  # noqa: BLE001 - inspect, then re-raise
+    except Exception as exc:
         if "temperature" in kwargs and "temperature" in str(exc).lower():
             kwargs = {k: v for k, v in kwargs.items() if k != "temperature"}
             return await client.chat.completions.create(**kwargs)

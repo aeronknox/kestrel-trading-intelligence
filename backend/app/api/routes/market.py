@@ -67,7 +67,7 @@ async def overview(db: DbSession, _: CurrentUser) -> MarketOverview:
         assets=[
             AssetWithTicker(
                 asset=AssetOut.model_validate(a),
-                ticker=TickerOut(**tickers[a.symbol].to_dict()) if tickers.get(a.symbol) else None,
+                ticker=TickerOut(**t.to_dict()) if (t := tickers.get(a.symbol)) else None,
             )
             for a in assets
         ],

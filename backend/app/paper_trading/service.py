@@ -99,10 +99,7 @@ class PaperTradingService:
     async def position_views(self, portfolio: PaperPortfolio) -> list[PositionView]:
         positions = [p for p in portfolio.positions if p.quantity > QTY_EPSILON]
         tickers = await self.market.get_tickers([p.asset for p in positions]) if positions else {}
-        return [
-            PositionView(p, tickers.get(p.asset.symbol).price if tickers.get(p.asset.symbol) else None)
-            for p in positions
-        ]
+        return [PositionView(p, t.price if (t := tickers.get(p.asset.symbol)) else None) for p in positions]
 
     async def reservations(
         self, portfolio: PaperPortfolio, *, exclude_order_id: int | None = None
@@ -235,7 +232,7 @@ class PaperTradingService:
         self.session.add(order)
         await self.session.flush()
 
-        reference_price = limit_price if order_type == OrderType.LIMIT else ticker.price
+        reference_price = limit_price if limit_price is not None else ticker.price  # validated above for limits
         try:
             await self._check_risk(portfolio, asset, side, quantity, reference_price, order_id=order.id)
         except RiskLimitError as exc:

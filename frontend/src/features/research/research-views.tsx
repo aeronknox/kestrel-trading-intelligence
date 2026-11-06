@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Plus, SlidersHorizontal, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Disclaimer, StatCard } from "@/components/common/finance";
@@ -21,7 +21,7 @@ import { MultiLineChart } from "@/features/charts/recharts";
 import { formatDate, formatDateTime, formatNumber, formatPct, isNum, pnlClass, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
-import type { ResearchObjective, ResearchRun, RunSummaryMetrics, SweepResult, TunableParameter, WalkForwardResult } from "@/types/api";
+import type { ResearchObjective, ResearchRun, RunSummaryMetrics, SweepResult, WalkForwardResult } from "@/types/api";
 
 import { defaultRange, gridProblem, objectiveValue, preferredSecond, rangeValues, shortLabel } from "./grid";
 
@@ -116,18 +116,15 @@ export function NewResearchView() {
   const qc = useQueryClient();
   const search = useSearchParams();
   const strategies = useQuery({ queryKey: ["strategies"], queryFn: () => api.strategies.list() });
-  const [strategyId, setStrategyId] = useState<number | null>(Number(search.get("strategy")) || null);
+  const [chosenStrategy, setStrategyId] = useState<number | null>(Number(search.get("strategy")) || null);
+  const strategyId = chosenStrategy ?? strategies.data?.[0]?.id ?? null;
   const [mode, setMode] = useState<"walk_forward" | "sweep">("walk_forward");
-  const [rows, setRows] = useState<GridRow[]>([]);
+  const [edited, setEdited] = useState<{ strategyId: number | null; rows: GridRow[] } | null>(null);
   const [objective, setObjective] = useState<ResearchObjective>("sharpe_ratio");
   const [minTrades, setMinTrades] = useState(3);
   const [bars, setBars] = useState(2000);
   const [folds, setFolds] = useState(4);
   const [isRatio, setIsRatio] = useState(3);
-
-  useEffect(() => {
-    if (strategyId === null && strategies.data?.length) setStrategyId(strategies.data[0]!.id);
-  }, [strategies.data, strategyId]);
 
   const params = useQuery({
     queryKey: ["research-parameters", strategyId],
@@ -137,12 +134,13 @@ export function NewResearchView() {
   const selected = strategies.data?.find((s) => s.id === strategyId);
   const byPath = useMemo(() => new Map((params.data ?? []).map((p) => [p.path, p])), [params.data]);
 
-  // Start with the first threshold (usually the most interesting setting) whenever the strategy changes.
-  useEffect(() => {
-    if (!params.data?.length) return;
-    const first = params.data.find((p) => p.path.endsWith(".value")) ?? params.data[0]!;
-    setRows([{ path: first.path, ...defaultRange(first) }]);
+  // Each strategy starts with its first threshold (usually the most interesting setting) until edited.
+  const defaultRows = useMemo<GridRow[]>(() => {
+    const first = params.data?.find((p) => p.path.endsWith(".value")) ?? params.data?.[0];
+    return first ? [{ path: first.path, ...defaultRange(first) }] : [];
   }, [params.data]);
+  const rows = edited && edited.strategyId === strategyId ? edited.rows : defaultRows;
+  const setRows = (update: (rs: GridRow[]) => GridRow[]) => setEdited({ strategyId, rows: update(rows) });
 
   const grids = rows.map((r) => {
     const p = byPath.get(r.path);

@@ -111,13 +111,11 @@ def predict_direction(df: pd.DataFrame, horizon: int = 3, n_splits: int = 5) -> 
     # Per-feature contribution to the log-odds for the latest bar (explainability).
     scaler, clf = final.named_steps["standardscaler"], final.named_steps["logisticregression"]
     z = scaler.transform(latest[FEATURES].to_numpy())[0]
-    contributions = sorted(
-        (
-            {"feature": FEATURE_LABELS[f], "contribution": float(c * v)}
-            for f, c, v in zip(FEATURES, clf.coef_[0], z, strict=True)
-        ),
-        key=lambda d: -abs(d["contribution"]),
-    )[:5]
+    ranked = sorted(
+        ((f, float(c * v)) for f, c, v in zip(FEATURES, clf.coef_[0], z, strict=True)),
+        key=lambda fc: -abs(fc[1]),
+    )
+    contributions = [{"feature": FEATURE_LABELS[f], "contribution": c} for f, c in ranked[:5]]
 
     return base | {
         "available": True,
@@ -125,7 +123,7 @@ def predict_direction(df: pd.DataFrame, horizon: int = 3, n_splits: int = 5) -> 
         "oos_accuracy": accuracy,
         "baseline_accuracy": baseline,
         "skill": accuracy - baseline,
-        "n_train": int(len(train)),
+        "n_train": len(train),
         "n_test": int(total),
         "top_features": contributions,
     }

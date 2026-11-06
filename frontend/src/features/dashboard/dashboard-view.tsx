@@ -80,7 +80,7 @@ export function DashboardView() {
           const d = q.data;
           const p = d.portfolio;
           const history = d.equity_history.map((s) => ({ time: Math.floor(new Date(s.ts).getTime() / 1000), equity: s.equity }));
-          if (history.length < 2) history.push({ time: Math.floor(Date.now() / 1000), equity: p.equity });
+          if (history.length < 2) history.push({ time: Math.floor(q.dataUpdatedAt / 1000), equity: p.equity });
           const watchSymbols = d.watchlist.map((w) => w.asset.symbol);
           return (
             <div className="space-y-4">

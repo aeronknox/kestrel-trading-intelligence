@@ -22,7 +22,7 @@ import copy
 import itertools
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -90,11 +90,11 @@ def apply_params(definition: dict, values: dict[str, float]) -> StrategyDefiniti
     """A copy of `definition` with each path set; None if the result is not a valid strategy."""
     d = copy.deepcopy(definition)
     for path, value in values.items():
-        node: object = d
+        node: Any = d  # nested dicts and lists from the strategy JSON
         keys = path.split(".")
         for key in keys[:-1]:
-            node = node[int(key)] if isinstance(node, list) else node.setdefault(key, {})  # type: ignore[index,union-attr]
-        node[keys[-1]] = value  # type: ignore[index]
+            node = node[int(key)] if isinstance(node, list) else node.setdefault(key, {})
+        node[keys[-1]] = value
     try:
         return StrategyDefinition.model_validate(d)
     except ValidationError:
@@ -275,21 +275,23 @@ def run_walk_forward(
             is_scores.append(score(m, objective, min_trades))
             is_metrics.append(m)
         best = _best(is_scores)
+        # Invalid combinations never get a score, so `best` always points at a real strategy.
         chosen = strategies[best] if best is not None else original  # nothing qualified: keep the original
+        assert chosen is not None
         oos = run(chosen, oos_start, oos_end, capital)
         base = run(original, oos_start, oos_end, base_capital)
         capital, base_capital = float(oos.equity.iloc[-1]), float(base.equity.iloc[-1])
         oos_parts.append(oos.equity)
         base_parts.append(base.equity)
         oos_trades.extend(t.to_dict() for t in oos.trades)
-        is_m = is_metrics[best] if best is not None else run(original, is_start, oos_start, config.initial_capital).metrics
+        is_m = is_metrics[best] if best is not None else None
+        if is_m is None:
+            is_m = run(original, is_start, oos_start, config.initial_capital).metrics
         fold_rows.append(
             {
                 "fold": n + 1,
-                "in_sample": {"start": int(df["ts"].iloc[is_start].timestamp()), "end": int(df["ts"].iloc[oos_start - 1].timestamp()),
-                              "bars": oos_start - is_start},  # fmt: skip
-                "out_of_sample": {"start": int(df["ts"].iloc[oos_start].timestamp()), "end": int(df["ts"].iloc[oos_end - 1].timestamp()),
-                                  "bars": oos_end - oos_start},  # fmt: skip
+                "in_sample": _span(df, is_start, oos_start),
+                "out_of_sample": _span(df, oos_start, oos_end),
                 "chosen": dict(zip((g.path for g in grid), combos[best], strict=True)) if best is not None else None,
                 "is_score": is_scores[best] if best is not None else None,
                 "is_metrics": _summary(is_m),
@@ -329,6 +331,11 @@ def run_walk_forward(
         "verdict": _verdict(fold_rows, oos_metrics, efficiency, base_return),
         "equity_curve": _curve(oos_equity, base_equity, bench_equity),
     }
+
+
+def _span(df: pd.DataFrame, start: int, end: int) -> dict:
+    """Unix start/end times and bar count of the half-open bar range [start, end)."""
+    return {"start": int(df["ts"].iloc[start].timestamp()), "end": int(df["ts"].iloc[end - 1].timestamp()), "bars": end - start}
 
 
 def _efficiency(folds: list[dict]) -> float | None:
@@ -374,7 +381,11 @@ def _curve(equity: pd.Series, baseline: pd.Series, benchmark: pd.Series, max_poi
     if idx[-1] != len(equity) - 1:
         idx.append(len(equity) - 1)
     return [
-        {"time": int(equity.index[i]), "equity": float(equity.iloc[i]), "baseline": float(baseline.iloc[i]),
-         "benchmark": float(benchmark.iloc[i])}  # fmt: skip
+        {
+            "time": int(equity.index[i]),
+            "equity": float(equity.iloc[i]),
+            "baseline": float(baseline.iloc[i]),
+            "benchmark": float(benchmark.iloc[i]),
+        }
         for i in idx
     ]

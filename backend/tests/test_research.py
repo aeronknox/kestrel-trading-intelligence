@@ -1,5 +1,7 @@
 """Parameter sweeps and walk-forward analysis."""
 
+import itertools
+
 import numpy as np
 import pytest
 
@@ -103,7 +105,7 @@ def test_walk_forward_windows_are_contiguous_and_proportional() -> None:
     windows = walk_forward_windows(1000, folds=4, is_ratio=3)
     oos_len = 1000 // 7
     assert windows[0] == (0, 3 * oos_len, 4 * oos_len)
-    for (_, _, end), (_, nxt_start, _) in zip(windows, windows[1:], strict=False):
+    for (_, _, end), (_, nxt_start, _) in itertools.pairwise(windows):
         assert end == nxt_start  # test windows tile the period with no gaps or overlap
     with pytest.raises(OptimizationError, match="too few"):
         walk_forward_windows(200, folds=8, is_ratio=6)

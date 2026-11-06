@@ -33,7 +33,7 @@ logger = get_logger(__name__)
 ANALYSIS_REUSE_WINDOW = timedelta(minutes=15)
 MAX_TOOL_ROUNDS = 4
 
-TOOL_SPECS = [
+TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {

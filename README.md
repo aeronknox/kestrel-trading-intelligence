@@ -167,6 +167,8 @@ cd backend  && pytest                  # 99 tests: indicators (incl. Wilder refe
                                        # backtester, ML leakage, signals, auth/RBAC, rate limiting,
                                        # paper-trading accounting, market data + Coinbase parsing,
                                        # OpenAI tool loop (fake client), WebSocket, API flows
+cd backend  && ruff check . && mypy       # lint + type check
+cd frontend && npm run lint            # ESLint
 cd frontend && npm test                # rule-builder logic, formatters, sweep-grid helpers (Vitest)
 cd frontend && npm run typecheck && npm run build
 cd frontend && npx playwright install chromium && npm run e2e
@@ -179,8 +181,8 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to `main` and on pull requests:
 
-- **Backend:** Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
-- **Frontend:** typecheck, unit tests, production build.
+- **Backend:** ruff lint and mypy type check, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
+- **Frontend:** ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
 - **Docker:** `docker compose up --build --wait`, health checks, then the 28 browser flows against the containerized stack.
 - **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
 
