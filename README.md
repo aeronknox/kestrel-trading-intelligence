@@ -11,6 +11,7 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 | AI Analysis | Trend regression, support/resistance, pattern detection, a walk-forward ML model, an explainable composite signal with confidence, and a risk breakdown |
 | Strategy Builder | Visual rule builder (13 indicators, 6 operators, ALL/ANY logic), risk exits, templates, immutable versioning |
 | Backtesting | Next-bar execution, fees, slippage, gap-aware stops; return, max drawdown, Sharpe/Sortino, a buy-and-hold benchmark with the same costs (overlaid on the equity curve, with excess return and beta), win rate, profit factor, CAGR, exposure; side-by-side comparison |
+| Optimization | Parameter sweeps over 1–2 settings (heatmap of every combination, robustness stats) and walk-forward tests that tune on one window and score only on the next, unseen one, against the untuned strategy and buy-and-hold, with a rule-based verdict |
 | Paper Trading | $100k virtual balance, market and limit orders (open limit orders reserve cash or quantity; exposure limits are re-checked at fill time), positions, realized/unrealized P&L, risk limits, order and trade history, reset |
 | Portfolio | Equity and drawdown history, allocation, trade statistics |
 | Assistant | Chat grounded in platform data through tool calls; reports missing data as unavailable |
@@ -142,14 +143,14 @@ cd backend && python -m app.cli promote-admin you@example.com    # or demote-adm
 ### Tests
 
 ```bash
-cd backend  && pytest                  # 83 tests: indicators (incl. Wilder reference values),
+cd backend  && pytest                  # 99 tests: indicators (incl. Wilder reference values),
                                        # backtester, ML leakage, signals, auth/RBAC, rate limiting,
                                        # paper-trading accounting, market data + Coinbase parsing,
                                        # OpenAI tool loop (fake client), WebSocket, API flows
-cd frontend && npm test                # rule-builder logic + formatters (Vitest)
+cd frontend && npm test                # rule-builder logic, formatters, sweep-grid helpers (Vitest)
 cd frontend && npm run typecheck && npm run build
 cd frontend && npx playwright install chromium && npm run e2e
-                                       # 23 browser flows against a running stack (:3000 + :8000)
+                                       # 25 browser flows against a running stack (:3000 + :8000)
 ```
 
 Backend tests run against SQLite with the sample provider and need no network access. Set `TEST_DATABASE_URL=postgresql+psycopg://…` to run them against PostgreSQL.
@@ -160,7 +161,7 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 - **Backend:** Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
 - **Frontend:** typecheck, unit tests, production build.
-- **Docker:** `docker compose up --build --wait`, health checks, then the 23 browser flows against the containerized stack. See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
+- **Docker:** `docker compose up --build --wait`, health checks, then the 25 browser flows against the containerized stack. See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
 
 ---
 
@@ -210,6 +211,7 @@ Interactive docs are at `/docs`. All routes are under `/api/v1`.
 | `/analysis`, `/signals` | run analysis, history, signals |
 | `/strategies` | CRUD, `templates`, `indicators` |
 | `/backtests` | run, list, get, `compare`, delete |
+| `/research` | `parameters`, `sweeps`, `walk-forward`, list, get, delete |
 | `/paper` | `portfolio`, `orders`, `orders/{id}/cancel`, `trades`, `history`, `analytics`, `portfolio/risk-limits`, `portfolio/reset` |
 | `/dashboard` | aggregated dashboard payload |
 | `/assistant` | `chat`, `conversations` |

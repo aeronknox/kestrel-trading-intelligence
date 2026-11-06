@@ -524,3 +524,102 @@ export interface AuditLog {
   details: Record<string, unknown>;
   created_at: string;
 }
+
+// ------------------------------------------------------------------ research
+export interface TunableParameter {
+  path: string;
+  label: string;
+  current: number | null;
+  min: number | null;
+  max: number | null;
+  integer: boolean;
+}
+
+export type ResearchObjective = "sharpe_ratio" | "total_return_pct" | "return_over_drawdown";
+
+export interface RunSummaryMetrics {
+  total_return_pct: number;
+  sharpe_ratio: number | null;
+  max_drawdown_pct: number;
+  num_trades: number;
+  win_rate: number | null;
+  profit_factor: number | null;
+}
+
+export interface SweepCell {
+  values: number[];
+  valid: boolean;
+  metrics: RunSummaryMetrics | null;
+  score: number | null;
+}
+
+export interface SweepResult {
+  objective: ResearchObjective;
+  min_trades: number;
+  params: { path: string; label: string; values: number[] }[];
+  cells: SweepCell[];
+  best_index: number | null;
+  baseline: RunSummaryMetrics;
+  buy_hold_return_pct: number;
+  robustness: { valid_cells: number; profitable_share_pct: number | null; best_neighbors_mean_score: number | null };
+}
+
+export interface WalkForwardFold {
+  fold: number;
+  in_sample: { start: number; end: number; bars: number };
+  out_of_sample: { start: number; end: number; bars: number };
+  chosen: Record<string, number> | null;
+  is_score: number | null;
+  is_metrics: RunSummaryMetrics;
+  oos_metrics: RunSummaryMetrics;
+  oos_score: number | null;
+  baseline_oos_return_pct: number;
+}
+
+export interface WalkForwardResult {
+  objective: ResearchObjective;
+  min_trades: number;
+  folds: number;
+  is_ratio: number;
+  params: { path: string; label: string; values: number[] }[];
+  fold_results: WalkForwardFold[];
+  oos_metrics: BacktestMetrics;
+  baseline_oos_return_pct: number;
+  efficiency: number | null;
+  distinct_choices: number;
+  verdict: { level: "robust" | "weak" | "overfit" | "unprofitable" | "inconclusive"; headline: string; notes: string[] };
+  equity_curve: { time: number; equity: number; baseline: number; benchmark: number }[];
+}
+
+export interface ResearchSummary {
+  id: number;
+  kind: "sweep" | "walk_forward";
+  strategy_id: number;
+  strategy_name: string;
+  strategy_version: number;
+  asset: Asset;
+  timeframe: Timeframe;
+  start_at: string | null;
+  end_at: string | null;
+  data_source: string;
+  created_at: string;
+  headline: string | null;
+}
+
+export interface ResearchRequest {
+  strategy_id: number;
+  bars: number;
+  initial_capital: number;
+  fee_bps: number;
+  slippage_bps: number;
+  params: { path: string; values: number[] }[];
+  objective: ResearchObjective;
+  min_trades: number;
+  folds?: number;
+  is_ratio?: number;
+}
+
+export type ResearchRun = ResearchSummary & { request: ResearchRequest; disclaimer: string } & (
+    | { kind: "sweep"; result: SweepResult }
+    | { kind: "walk_forward"; result: WalkForwardResult }
+  );

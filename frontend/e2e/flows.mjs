@@ -136,6 +136,29 @@ await step("backtest compare flow", async () => {
   await page.getByText("Cumulative return").waitFor();
 });
 
+await step("walk-forward test via optimization page", async () => {
+  await page.goto(`${BASE}/research/new`);
+  await page.getByText("Parameter 1").waitFor({ timeout: 15000 });
+  await page.getByRole("button", { name: "Run walk-forward test" }).click();
+  await page.waitForURL(/\/research\/\d+$/, { timeout: 60000 });
+  await page.getByText("Out-of-sample equity").waitFor({ timeout: 15000 });
+  await page.getByRole("cell", { name: "1", exact: true }).first().waitFor();
+});
+
+await step("parameter sweep heatmap", async () => {
+  await page.goto(`${BASE}/research/new`);
+  await page.getByRole("tab", { name: "Parameter sweep" }).click();
+  await page.getByRole("button", { name: /Add a second parameter/ }).click();
+  await page.getByText("Parameter 2").waitFor();
+  await page.getByRole("button", { name: "Run sweep" }).click();
+  await page.waitForURL(/\/research\/\d+$/, { timeout: 60000 });
+  await page.getByText("Results grid").waitFor({ timeout: 15000 });
+  await page.getByRole("tab", { name: "Drawdown" }).click();
+  await page.goto(`${BASE}/research`);
+  await page.getByRole("cell", { name: "Sweep", exact: true }).first().waitFor({ timeout: 15000 });
+  await page.getByRole("cell", { name: "Walk-forward", exact: true }).first().waitFor();
+});
+
 await step("paper market buy via ticket", async () => {
   await page.goto(`${BASE}/paper-trading?symbol=ETH-USD`);
   await page.getByPlaceholder("0.00").fill("1000");

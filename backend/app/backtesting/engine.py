@@ -79,11 +79,24 @@ def buy_and_hold_equity(o: np.ndarray, c: np.ndarray, config: BacktestConfig) ->
     return equity
 
 
-def run_backtest(df: pd.DataFrame, strategy: StrategyDefinition, config: BacktestConfig) -> BacktestOutput:
-    if len(df) < 2:
+def run_backtest(
+    df: pd.DataFrame,
+    strategy: StrategyDefinition,
+    config: BacktestConfig,
+    *,
+    start: int = 0,
+    cache: dict[str, pd.Series] | None = None,
+) -> BacktestOutput:
+    """Simulate `strategy` on `df`, trading from bar `start` to the last bar.
+
+    Bars before `start` only warm up indicators: no signal before `start` is acted on,
+    and the equity curve and metrics cover `df[start:]`. `cache` may be shared between
+    runs on the same frame (keys include indicator parameters, so this is safe).
+    """
+    if len(df) - start < 2 or start < 0:
         raise ValueError("Backtest needs at least 2 bars")
     df = df.reset_index(drop=True)
-    cache: dict[str, pd.Series] = {}
+    cache = {} if cache is None else cache
     entry_sig = evaluate_rules(df, strategy.entry, cache).to_numpy()
     exit_sig = evaluate_rules(df, strategy.exit, cache).to_numpy()
     risk = strategy.risk
@@ -103,7 +116,7 @@ def run_backtest(df: pd.DataFrame, strategy: StrategyDefinition, config: Backtes
     hwm = 0.0
     pending: str | None = None  # "enter" | "exit:<reason>"
     trades: list[Trade] = []
-    equity = np.empty(len(df))
+    equity = np.empty(len(df) - start)
 
     def close_position(i: int, raw_price: float, reason: str) -> None:
         nonlocal cash, qty, trade
@@ -120,7 +133,7 @@ def run_backtest(df: pd.DataFrame, strategy: StrategyDefinition, config: Backtes
         trades.append(trade)
         qty, trade = 0.0, None
 
-    for i in range(len(df)):
+    for i in range(start, len(df)):
         # 1) Fill orders generated at the previous close, at this bar's open.
         if pending == "enter" and trade is None:
             price = o[i] * (1 + slip)
@@ -162,20 +175,21 @@ def run_backtest(df: pd.DataFrame, strategy: StrategyDefinition, config: Backtes
                 elif risk.max_bars_in_trade and i - entry_bar + 1 >= risk.max_bars_in_trade:
                     pending = "exit:time_limit"
 
-        equity[i] = cash + qty * c[i]
+        equity[i - start] = cash + qty * c[i]
 
     if trade is not None:
         close_position(len(df) - 1, c[-1], "end_of_data")
         equity[-1] = cash
 
-    equity_series = pd.Series(equity, index=times)
-    benchmark_series = pd.Series(buy_and_hold_equity(o, c, config), index=times)
+    window_times = times[start:]
+    equity_series = pd.Series(equity, index=window_times)
+    benchmark_series = pd.Series(buy_and_hold_equity(o[start:], c[start:], config), index=window_times)
     metrics = compute_metrics(
         equity_series,
         trades=[t.to_dict() for t in trades],
         initial_capital=config.initial_capital,
         timeframe_seconds=config.timeframe_seconds,
-        benchmark_start=float(o[0]),
+        benchmark_start=float(o[start]),
         benchmark_end=float(c[-1]),
         benchmark_equity=benchmark_series,
     )
@@ -185,8 +199,8 @@ def run_backtest(df: pd.DataFrame, strategy: StrategyDefinition, config: Backtes
         benchmark=benchmark_series,
         metrics=metrics,
         warmup_bars=max_warmup([strategy.entry, strategy.exit]),
-        bars=len(df),
-        signals={"entries": int(entry_sig.sum()), "exits": int(exit_sig.sum())},
+        bars=len(df) - start,
+        signals={"entries": int(entry_sig[start:].sum()), "exits": int(exit_sig[start:].sum())},
     )
 
 

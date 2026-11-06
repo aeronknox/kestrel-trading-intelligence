@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -56,7 +56,14 @@ export function EditStrategyView({ id }: { id: number }) {
       <PageHeader
         title={s.name}
         description={`Version ${s.current_version} · ${s.current_config?.asset.symbol} · ${s.current_config?.timeframe}`}
-        actions={<RunBacktestDialog strategyId={s.id} strategyName={s.name} />}
+        actions={
+          <>
+            <Button size="sm" variant="outline" asChild>
+              <Link href={`/research/new?strategy=${s.id}`}><SlidersHorizontal /> Optimize</Link>
+            </Button>
+            <RunBacktestDialog strategyId={s.id} strategyName={s.name} />
+          </>
+        }
       />
       <StrategyEditor key={`${s.id}-${s.current_version}`} initial={draftFromStrategy(s)} strategyId={s.id} />
       <Card className="mt-4">

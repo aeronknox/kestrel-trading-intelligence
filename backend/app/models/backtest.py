@@ -57,3 +57,27 @@ class BacktestResult(IdMixin, Base):
     trades: Mapped[list] = mapped_column(JSONType)
 
     session: Mapped[BacktestSession] = relationship(back_populates="result")
+
+
+class ResearchRun(IdMixin, Base):
+    """A saved parameter sweep or walk-forward analysis (both HYPOTHETICAL, like backtests)."""
+
+    __tablename__ = "research_runs"
+    __table_args__ = (Index("ix_research_runs_user_created", "user_id", "created_at"),)
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    strategy_id: Mapped[int] = mapped_column(ForeignKey("strategies.id", ondelete="CASCADE"), index=True)
+    strategy_config_id: Mapped[int] = mapped_column(ForeignKey("strategy_configurations.id", ondelete="CASCADE"))
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
+    kind: Mapped[str] = mapped_column(String(16))  # "sweep" | "walk_forward"
+    timeframe: Mapped[str] = mapped_column(String(8))
+    start_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    end_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    request: Mapped[dict] = mapped_column(JSONType)
+    result: Mapped[dict] = mapped_column(JSONType)
+    data_source: Mapped[str] = mapped_column(String(32), default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+
+    strategy: Mapped[Strategy] = relationship(lazy="selectin")
+    config: Mapped[StrategyConfiguration] = relationship(lazy="selectin")
+    asset: Mapped[Asset] = relationship(lazy="selectin")

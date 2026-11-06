@@ -2,7 +2,7 @@
 
 from app.models.ai import AIAnalysisResult, AIConversation, AIMessage, TradingSignal
 from app.models.audit import AuditLog
-from app.models.backtest import BacktestResult, BacktestSession
+from app.models.backtest import BacktestResult, BacktestSession, ResearchRun
 from app.models.market import Asset, MarketData, Watchlist, WatchlistItem
 from app.models.paper import (
     PaperPortfolio,
@@ -22,6 +22,7 @@ __all__ = [
     "AuditLog",
     "BacktestResult",
     "BacktestSession",
+    "ResearchRun",
     "MarketData",
     "PaperPortfolio",
     "PortfolioPosition",
