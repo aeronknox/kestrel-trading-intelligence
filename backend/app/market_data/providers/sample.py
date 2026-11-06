@@ -32,6 +32,10 @@ _BASE_PRICES = {
     "LINK": 15.0,
     "LTC": 80.0,
     "DOT": 6.0,
+    # Not tracked by default, so "Track asset" has something to add in sample mode.
+    "ATOM": 8.0,
+    "NEAR": 5.0,
+    "UNI": 7.0,
 }
 
 
