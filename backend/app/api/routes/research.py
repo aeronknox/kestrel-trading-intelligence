@@ -56,8 +56,8 @@ async def _execute(kind: str, body: ResearchRequest, user_id: int, db) -> Resear
     definition = _definition(strategy)
     cfg = strategy.current_config
     assert cfg is not None
-    series = await MarketDataService(db).get_candles(cfg.asset, cfg.timeframe, limit=body.bars + 1)
-    closed = series.closed()[-body.bars :]
+    series = await MarketDataService(db).get_history(cfg.asset, cfg.timeframe, body.bars)
+    closed = series.candles
     if len(closed) < 200:
         raise ValidationFailedError(f"Only {len(closed)} closed candles available; need at least 200")
     df = candles_to_frame(closed)
@@ -84,7 +84,7 @@ async def _execute(kind: str, body: ResearchRequest, user_id: int, db) -> Resear
         timeframe=cfg.timeframe,
         start_at=closed[0].ts,
         end_at=closed[-1].ts,
-        request=body.model_dump(),
+        request=body.model_dump() | {"bars_used": len(closed), "history_complete": series.complete},
         result=result,
         data_source=series.source + (":sample" if series.is_sample else "") + (":stale" if series.stale else ""),
     )

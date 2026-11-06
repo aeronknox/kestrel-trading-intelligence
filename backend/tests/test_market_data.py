@@ -133,3 +133,17 @@ async def test_non_crypto_assets_route_to_their_own_provider(app, auth_client) -
     body = resp.json()
     assert body["meta"]["source"] == "fakestocks" and body["meta"]["is_sample"] is False
     assert body["candles"][0]["open"] >= 100  # FakeRealProvider's series, not the crypto sample provider
+
+
+async def test_concurrent_candle_fetches_share_a_session_safely(app) -> None:  # type: ignore[no-untyped-def]
+    """Sentiment fetches all assets with asyncio.gather on one session; every series must persist."""
+    import asyncio
+
+    provider = FakeRealProvider()
+    async with get_sessionmaker()() as s:
+        svc = MarketDataService(s, provider)
+        assets = (await s.scalars(select(Asset).limit(6))).all()
+        await asyncio.gather(*(svc.get_candles(a, "1h", limit=30, use_cache=False) for a in assets))
+        await s.commit()
+        per_asset = (await s.execute(select(MarketData.asset_id, func.count()).group_by(MarketData.asset_id))).all()
+        assert sorted(n for _, n in per_asset) == [29] * len(assets)

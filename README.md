@@ -175,6 +175,7 @@ All settings are environment variables; see [.env.example](.env.example).
 | `DATABASE_URL` | SQLite file | `postgresql+psycopg://…` or `sqlite+aiosqlite:///…` |
 | `REDIS_URL` | empty | Cache and rate limits; empty uses in-process memory |
 | `MARKET_DATA_PROVIDER` | `coinbase` | `coinbase` (real) or `sample` (synthetic, labelled) |
+| `HISTORY_BACKFILL_ENABLED`, `HISTORY_BACKFILL_BARS_PER_MINUTE` | `true` / 3000 | Background download of long 1h/6h/1d history for tracked assets, and its rate |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | empty / `gpt-4.1-mini` | Optional LLM narration and assistant |
 | `PAPER_STARTING_BALANCE`, `PAPER_FEE_BPS`, `PAPER_SLIPPAGE_BPS` | 100000 / 10 / 5 | Simulation parameters |
 | `RATE_LIMIT_PER_MINUTE`, `AUTH_RATE_LIMIT_PER_MINUTE`, `COMPUTE_RATE_LIMIT_PER_MINUTE` | 240 / 15 / 30 | Per-IP limits |
@@ -221,5 +222,5 @@ Interactive docs are at `/docs`. All routes are under `/api/v1`.
 
 - Background jobs (limit-order matching every 15s, equity snapshots every 5 min) and the WebSocket broadcaster run inside the API process, so run one backend replica or move them to a dedicated worker before scaling out.
 - Live prices are polled from the provider every `MARKET_WS_POLL_SECONDS` (default 5s) and fanned out over WebSocket. An upstream exchange WebSocket feed would lower latency.
-- Backtests are long-only, unleveraged, single-asset, and limited to 2,000 bars per run (Coinbase candle pagination).
+- Backtests are long-only, unleveraged and single-asset. They can use up to 20,000 bars (about 2.3 years of 1h candles): history is stored in PostgreSQL, filled in by a background job for tracked assets (1h/6h/1d), and downloaded on demand otherwise, so the first long run on a new asset can take about half a minute. Research runs are capped at 2,000,000 simulated bars per request.
 - Paper trading is spot and long-only; short selling is rejected by design.

@@ -4,8 +4,14 @@ Flow for candles:
   1. Serve from cache when fresh.
   2. Otherwise fetch from the provider, persist *closed* candles to `market_data`.
   3. If the provider fails, fall back to stored candles and flag the series `stale`.
+
+Long history (`get_history`, up to HISTORY_MAX_BARS) is read from `market_data`.
+Missing ranges inside the requested window are fetched from the provider and
+stored first; ranges the provider has no data for (e.g. before an asset was
+listed) are remembered for a day so they are not re-requested on every call.
 """
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -30,6 +36,9 @@ from app.market_data.providers.registry import get_provider
 logger = get_logger(__name__)
 
 MAX_CANDLES = 2000
+HISTORY_MAX_BARS = 20_000
+HISTORY_CHUNK_BARS = 1500  # bars per provider call while backfilling (paged in 300s by Coinbase)
+UNAVAILABLE_TTL = 86_400
 
 DEFAULT_CRYPTO_ASSETS: list[tuple[str, str]] = [
     ("BTC", "Bitcoin"),
@@ -55,6 +64,8 @@ class CandleSeries:
     attribution: str
     stale: bool = False
     fetched_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    complete: bool = True  # False when history could not be fully loaded (provider error or fetch budget)
+    fetched_bars: int = 0  # bars requested from the provider while loading history
 
     def closed(self) -> list[Candle]:
         """Only candles whose interval has fully elapsed — analysis never uses a forming bar."""
@@ -93,6 +104,12 @@ class MarketDataService:
         self.session = session
         self.provider = provider or get_provider()
         self.cache = get_cache()
+
+    @property
+    def db_lock(self) -> asyncio.Lock:
+        """One lock per database session. Callers may fetch several assets concurrently
+        (asyncio.gather); network calls overlap, but session use must be serialized."""
+        return self.session.info.setdefault("market_data_lock", asyncio.Lock())
 
     def provider_for(self, asset: Asset) -> MarketDataProvider:
         """Crypto assets use the configured crypto provider (so switching
@@ -203,7 +220,8 @@ class MarketDataService:
             candles = await provider.get_candles(asset.provider_symbol, timeframe, limit=limit)
         except ProviderError as exc:
             logger.warning("provider_candles_failed", symbol=asset.symbol, timeframe=timeframe, error=str(exc))
-            stored = await self._stored_candles(asset, timeframe, limit)
+            async with self.db_lock:
+                stored = await self._stored_candles(asset, timeframe, limit)
             if not stored:
                 raise UpstreamError(f"Market data for {asset.symbol} is currently unavailable") from exc
             return CandleSeries(
@@ -223,13 +241,145 @@ class MarketDataService:
             is_sample=provider.is_sample,
             attribution=provider.attribution,
         )
-        await self._persist(asset, timeframe, series.closed(), provider)
+        async with self.db_lock:
+            await self._persist(asset, timeframe, series.closed(), provider)
         await self.cache.set_json(
             key,
             {"candles": _serialize(candles), "fetched_at": series.fetched_at.isoformat()},
             ttl=_candle_cache_ttl(timeframe),
         )
         return series
+
+    # ---------------------------------------------------------------- history
+    async def get_history(
+        self, asset: Asset, timeframe: str, bars: int, *, fetch_budget: int | None = None
+    ) -> CandleSeries:
+        """Up to `bars` most recent *closed* candles, oldest first.
+
+        Real providers: stored candles, after fetching and storing any missing ranges
+        (newest first, at most `fetch_budget` bars; default: as many as requested).
+        Sample provider: generated directly and never stored.
+        """
+        if timeframe not in TIMEFRAMES:
+            raise ValidationFailedError(f"Unsupported timeframe '{timeframe}'", details={"allowed": list(TIMEFRAMES)})
+        bars = max(10, min(bars, HISTORY_MAX_BARS))
+        provider = self.provider_for(asset)
+        meta = {"symbol": asset.symbol, "timeframe": timeframe, "source": provider.name,
+                "is_sample": provider.is_sample, "attribution": provider.attribution}  # fmt: skip
+        if provider.is_sample:
+            try:
+                candles = await provider.get_candles(asset.provider_symbol, timeframe, limit=bars + 1)
+            except ProviderError as exc:
+                raise UpstreamError(f"Market data for {asset.symbol} is currently unavailable") from exc
+            series = CandleSeries(candles=candles, **meta)
+            series.candles = series.closed()[-bars:]
+            return series
+
+        tf = timeframe_seconds(timeframe)
+        now = datetime.now(UTC)
+        last_k = int(now.timestamp() // tf) - 1  # newest candle whose interval has fully elapsed
+        first_k = last_k - bars + 1
+        stale = complete = False
+        self._fetched = 0
+        try:
+            complete = await self._fill_missing(asset, timeframe, provider, first_k, last_k, fetch_budget or bars)
+        except ProviderError as exc:
+            logger.warning("history_fetch_failed", symbol=asset.symbol, timeframe=timeframe, error=str(exc))
+            stale = True
+        rows = (
+            await self.session.scalars(
+                select(MarketData)
+                .where(MarketData.asset_id == asset.id, MarketData.timeframe == timeframe,
+                       MarketData.ts >= datetime.fromtimestamp(first_k * tf, tz=UTC),
+                       MarketData.ts <= datetime.fromtimestamp(last_k * tf, tz=UTC))  # fmt: skip
+                .order_by(MarketData.ts)
+            )
+        ).all()
+        if not rows:
+            raise UpstreamError(f"Market data for {asset.symbol} is currently unavailable")
+        candles = [Candle(ts=r.ts, open=r.open, high=r.high, low=r.low, close=r.close, volume=r.volume) for r in rows]
+        return CandleSeries(candles=candles, stale=stale, complete=complete and not stale, fetched_at=now,
+                            fetched_bars=self._fetched, **meta)  # fmt: skip
+
+    async def _fill_missing(
+        self, asset: Asset, timeframe: str, provider: MarketDataProvider, first_k: int, last_k: int, budget: int
+    ) -> bool:
+        """Fetch and store missing candles in [first_k, last_k] (candle index = ts // tf). True if nothing is left."""
+        tf = timeframe_seconds(timeframe)
+        have = {
+            int(ts.timestamp()) // tf
+            for ts in (
+                await self.session.scalars(
+                    select(MarketData.ts).where(
+                        MarketData.asset_id == asset.id,
+                        MarketData.timeframe == timeframe,
+                        MarketData.ts >= datetime.fromtimestamp(first_k * tf, tz=UTC),
+                    )
+                )
+            ).all()
+        }
+        floor_key = f"history-floor:{provider.name}:{asset.provider_symbol}:{timeframe}"
+        floor = await self.cache.get_json(floor_key)  # no data exists before this index
+        lo = max(first_k, int(floor)) if floor is not None else first_k
+        # Missing indices as (start, end) runs, newest first.
+        runs: list[tuple[int, int]] = []
+        k = last_k
+        while k >= lo:
+            if k in have:
+                k -= 1
+                continue
+            end = k
+            while k >= lo and k not in have:
+                k -= 1
+            runs.append((k + 1, end))
+        for start, end in runs:
+            gap_key = f"history-gap:{provider.name}:{asset.provider_symbol}:{timeframe}:{start}:{end}"
+            if await self.cache.get_json(gap_key):
+                continue  # already known to be unavailable
+            while end >= start:
+                if budget <= 0:
+                    return False
+                n = min(end - start + 1, HISTORY_CHUNK_BARS, budget)
+                chunk_start = end - n + 1
+                fetched = await provider.get_candles(
+                    asset.provider_symbol, timeframe, limit=n, end=datetime.fromtimestamp(end * tf, tz=UTC)
+                )
+                budget -= n
+                self._fetched += n
+                inside = sorted(
+                    {int(c.ts.timestamp()) // tf: c for c in fetched if chunk_start <= int(c.ts.timestamp()) // tf <= end}.items()
+                )
+                if not inside:
+                    if start == lo:
+                        # Nothing here and nothing older stored: the asset's history starts above this range.
+                        await self.cache.set_json(floor_key, end + 1, ttl=UNAVAILABLE_TTL)
+                        return True
+                    await self.cache.set_json(gap_key, True, ttl=UNAVAILABLE_TTL)  # an exchange outage gap
+                    break
+                await self._persist(asset, timeframe, [c for _, c in inside], provider)
+                # Holes between returned candles have data on both sides, so they are real exchange
+                # gaps; remember them so later calls skip them (their runs will match these keys).
+                for (a, _), (b, _) in zip(inside, inside[1:], strict=False):
+                    if b - a > 1:
+                        hole_key = f"history-gap:{provider.name}:{asset.provider_symbol}:{timeframe}:{a + 1}:{b - 1}"
+                        await self.cache.set_json(hole_key, True, ttl=UNAVAILABLE_TTL)
+                # Continue just below the oldest candle returned: a provider may stop paging early.
+                end = inside[0][0] - 1
+        return True
+
+    async def history_coverage(self, asset: Asset, timeframe: str) -> dict:
+        """How much real history is stored for an asset and timeframe."""
+        provider = self.provider_for(asset)
+        if provider.is_sample:
+            return {"stored_bars": None, "first": None, "last": None, "is_sample": True, "max_bars": HISTORY_MAX_BARS}
+        count, first, last = (
+            await self.session.execute(
+                select(func.count(), func.min(MarketData.ts), func.max(MarketData.ts)).where(
+                    MarketData.asset_id == asset.id, MarketData.timeframe == timeframe
+                )
+            )
+        ).one()
+        return {"stored_bars": int(count), "first": first, "last": last, "is_sample": False, "max_bars": HISTORY_MAX_BARS}
 
     async def _stored_candles(self, asset: Asset, timeframe: str, limit: int) -> list[Candle]:
         rows = (

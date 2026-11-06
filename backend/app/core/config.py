@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # Market data
     market_data_provider: Literal["coinbase", "sample"] = "coinbase"
     market_ws_poll_seconds: float = 5.0
+    # Gradually download long history for tracked assets (1h/6h/1d) so long backtests start fast.
+    history_backfill_enabled: bool = True
+    history_backfill_bars_per_minute: int = 3000  # ~10 Coinbase requests/minute
     coinbase_base_url: str = "https://api.exchange.coinbase.com"
     sentiment_url: str = "https://api.alternative.me/fng/"
 

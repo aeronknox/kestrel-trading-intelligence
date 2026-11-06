@@ -14,6 +14,7 @@ import type {
   Conversation,
   ConversationSummary,
   Dashboard,
+  HistoryCoverage,
   IndicatorSpec,
   MarketOverview,
   Asset,
@@ -138,6 +139,8 @@ export const api = {
     candles: (symbol: string, timeframe: Timeframe, limit = 300) =>
       get<CandlesResponse>(`/market/assets/${encodeURIComponent(symbol)}/candles`, { timeframe, limit }),
     sentiment: () => get<Sentiment>("/market/sentiment"),
+    history: (symbol: string, timeframe: Timeframe) =>
+      get<HistoryCoverage>(`/market/assets/${encodeURIComponent(symbol)}/history`, { timeframe }),
   },
   watchlist: {
     get: () => get<Watchlist>("/watchlists/default"),

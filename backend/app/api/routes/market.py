@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 
 from app.api.deps import CurrentUser, DbSession
+from app.core.exceptions import ValidationFailedError
 from app.indicators.technical import add_standard_indicators, candles_to_frame, latest_snapshot, series_to_points
 from app.market_data.providers.base import TIMEFRAMES
 from app.market_data.service import MarketDataService
@@ -113,6 +114,15 @@ async def candles(
             fetched_at=series.fetched_at,
         ),
     )
+
+
+@router.get("/assets/{symbol}/history")
+async def history_coverage(symbol: str, db: DbSession, _: CurrentUser, timeframe: str = Query("1h")) -> dict:
+    """How many closed candles are stored for long backtests (sample data is generated, not stored)."""
+    svc = MarketDataService(db)
+    if timeframe not in TIMEFRAMES:
+        raise ValidationFailedError(f"Unsupported timeframe '{timeframe}'", details={"allowed": list(TIMEFRAMES)})
+    return {"symbol": symbol.upper(), "timeframe": timeframe, **await svc.history_coverage(await svc.get_asset(symbol), timeframe)}
 
 
 @router.get("/sentiment", response_model=SentimentOut)

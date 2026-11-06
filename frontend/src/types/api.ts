@@ -340,6 +340,8 @@ export interface BacktestMetrics {
   period_years: number;
   warmup_bars: number;
   signal_counts: { entries: number; exits: number };
+  bars_requested?: number;
+  history_complete?: boolean;
   /** Buy-and-hold of the same capital with the same costs. Absent on backtests run before it existed. */
   benchmark?: {
     name: "buy_and_hold";
@@ -617,9 +619,23 @@ export interface ResearchRequest {
   min_trades: number;
   folds?: number;
   is_ratio?: number;
+  /** Set on saved runs: bars actually loaded, which can be fewer than requested near an asset's listing date. */
+  bars_used?: number;
+  history_complete?: boolean;
 }
 
 export type ResearchRun = ResearchSummary & { request: ResearchRequest; disclaimer: string } & (
     | { kind: "sweep"; result: SweepResult }
     | { kind: "walk_forward"; result: WalkForwardResult }
   );
+
+export interface HistoryCoverage {
+  symbol: string;
+  timeframe: Timeframe;
+  /** null for synthetic sample data, which is generated on demand and never stored */
+  stored_bars: number | null;
+  first: string | null;
+  last: string | null;
+  is_sample: boolean;
+  max_bars: number;
+}

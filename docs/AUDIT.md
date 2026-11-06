@@ -74,7 +74,7 @@ The status reflects the state **after** this audit's fixes. "Found" lists what w
 4. ~~**Risk limits are only partly re-checked at fill time.**~~ *Fixed 2026-11-06:* position-size, open-position and daily-loss limits are re-checked before a resting buy fills; a breach rejects the order with an "At fill time" reason.
 5. **No email verification or password reset.**
 6. **Upstream prices are polled** (every 5s by default) rather than streamed from an exchange WebSocket.
-7. **Backtests** are long-only and single-asset, capped at 2,000 bars, with 24/7 annualization (equities would need a trading calendar).
+7. **Backtests** are long-only and single-asset, with 24/7 annualization (equities would need a trading calendar). *Update 2026-11-06:* the 2,000-bar cap is now 20,000 bars, backed by stored, backfilled history.
 8. **The rate-limit bucket is shared without a reverse proxy.** When the browser reaches Next.js directly (default Compose), the API sees every user as the Next.js container, so the per-IP limits are shared. Per-account lockout still applies. Put a reverse proxy in front and set `TRUST_PROXY_HEADERS`/`PROXY_SHARED_SECRET` for per-client limits.
 9. ~~**First portfolio creation can race.**~~ *Fixed 2026-11-06:* a partial unique index (migration `0002`) allows one active portfolio per user, and the losing request reuses the winner's portfolio.
 

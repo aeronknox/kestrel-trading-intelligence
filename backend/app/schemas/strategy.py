@@ -57,7 +57,7 @@ class StrategyOut(ORMModel):
 
 class BacktestRequest(BaseModel):
     strategy_id: int
-    bars: int = Field(1000, ge=100, le=2000, description="Number of historical candles to test on")
+    bars: int = Field(1000, ge=100, le=20_000, description="Number of historical candles to test on")
     initial_capital: float = Field(10_000, gt=0, le=1e9)
     fee_bps: float = Field(10, ge=0, le=500)
     slippage_bps: float = Field(5, ge=0, le=500)

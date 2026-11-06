@@ -70,8 +70,8 @@ async def create_backtest(body: BacktestRequest, user: CurrentUser, db: DbSessio
 
     try:
         market = MarketDataService(db)
-        series = await market.get_candles(cfg.asset, cfg.timeframe, limit=body.bars + 1)
-        closed = series.closed()[-body.bars :]
+        series = await market.get_history(cfg.asset, cfg.timeframe, body.bars)
+        closed = series.candles
         if len(closed) < 100:
             raise ValidationFailedError(f"Only {len(closed)} closed candles available; need at least 100")
         df = candles_to_frame(closed)
@@ -88,6 +88,8 @@ async def create_backtest(body: BacktestRequest, user: CurrentUser, db: DbSessio
         m = output.metrics
         m["warmup_bars"] = output.warmup_bars
         m["signal_counts"] = output.signals
+        m["bars_requested"] = body.bars
+        m["history_complete"] = series.complete
         session.start_at, session.end_at = closed[0].ts, closed[-1].ts
         session.data_source = series.source + (":sample" if series.is_sample else "") + (":stale" if series.stale else "")
         session.result = BacktestResult(

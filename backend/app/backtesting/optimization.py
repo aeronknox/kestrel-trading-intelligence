@@ -38,6 +38,8 @@ MAX_PARAMS = 2
 MAX_VALUES_PER_PARAM = 12
 MAX_COMBINATIONS = 100
 MIN_OOS_BARS = 30
+# Upper bound on simulated bar-steps per request (~10-20s of CPU); keeps long histories responsive.
+MAX_WORK_BARS = 2_000_000
 
 RISK_BOUNDS: dict[str, tuple[float, float, bool]] = {
     "position_size_pct": (1, 100, False),
@@ -130,6 +132,13 @@ def _param_meta(definition: dict, grid: list[ParamGrid]) -> list[dict]:
     return [{"path": g.path, "label": labels[g.path], "values": g.values} for g in grid]
 
 
+def check_work(work: int) -> None:
+    if work > MAX_WORK_BARS:
+        raise OptimizationError(
+            f"This run would simulate {work:,} bars (limit {MAX_WORK_BARS:,}); use fewer combinations, folds or bars"
+        )
+
+
 def _combinations(grid: list[ParamGrid]) -> list[tuple[float, ...]]:
     return list(itertools.product(*(g.values for g in grid)))
 
@@ -167,6 +176,7 @@ def run_sweep(
     min_trades: int = 3,
 ) -> dict:
     validate_grid(definition, grid)
+    check_work(len(_combinations(grid)) * len(df))
     cache: dict[str, pd.Series] = {}
     cells: list[dict] = []
     for combo in _combinations(grid):
@@ -237,6 +247,8 @@ def run_walk_forward(
     df = df.reset_index(drop=True)
     windows = walk_forward_windows(len(df), folds, is_ratio)
     combos = _combinations(grid)
+    is_len = windows[0][1] - windows[0][0]
+    check_work(folds * len(combos) * is_len)
     strategies = [apply_params(definition, {g.path: v for g, v in zip(grid, c, strict=True)}) for c in combos]
     original = StrategyDefinition.model_validate(definition)
     caches: dict[int, dict[str, pd.Series]] = {}  # one indicator cache per frame length

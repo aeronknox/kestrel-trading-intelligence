@@ -31,3 +31,14 @@ describe("formatters", () => {
     expect(timeAgo("2025-12-30T12:00:00Z", now)).toBe("2d ago");
   });
 });
+
+describe("barsSpan", () => {
+  it("describes how much time a number of candles covers", async () => {
+    const { barsSpan } = await import("./format");
+    expect(barsSpan(20_000, "1h")).toBe("≈ 2.3 years");
+    expect(barsSpan(2000, "1h")).toBe("≈ 3 months");
+    expect(barsSpan(300, "1h")).toBe("≈ 13 days");
+    expect(barsSpan(30, "1m")).toBe("≈ 1 hour");
+    expect(barsSpan(5, "1h")).toBe("≈ 5 hours");
+  });
+});

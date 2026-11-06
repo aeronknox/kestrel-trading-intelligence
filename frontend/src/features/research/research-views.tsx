@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/overlays";
 import { Badge, Field, Input } from "@/components/ui/primitives";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
+import { HistoryHint } from "@/features/backtesting/history-hint";
 import { MultiLineChart } from "@/features/charts/recharts";
 import { formatDate, formatDateTime, formatNumber, formatPct, isNum, pnlClass, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -133,6 +134,7 @@ export function NewResearchView() {
     queryFn: () => api.research.parameters(strategyId!),
     enabled: strategyId !== null,
   });
+  const selected = strategies.data?.find((s) => s.id === strategyId);
   const byPath = useMemo(() => new Map((params.data ?? []).map((p) => [p.path, p])), [params.data]);
 
   // Start with the first threshold (usually the most interesting setting) whenever the strategy changes.
@@ -211,10 +213,11 @@ export function NewResearchView() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="History (bars)" hint="200 – 2,000 closed candles">
-                <Input type="number" min={200} max={2000} value={bars} onChange={(e) => setBars(Number(e.target.value))} />
+              <Field label="History (bars)" hint="200 – 20,000 closed candles">
+                <Input type="number" min={200} max={20000} value={bars} onChange={(e) => setBars(Number(e.target.value))} />
               </Field>
             </div>
+            <HistoryHint symbol={selected?.current_config?.asset.symbol} timeframe={selected?.current_config?.timeframe} bars={bars} />
 
             {strategies.data?.length === 0 && (
               <p className="text-sm text-muted-foreground">You have no strategies yet. <Link className="text-primary" href="/strategies/new">Create one first.</Link></p>
@@ -289,7 +292,7 @@ export function NewResearchView() {
               {mode === "walk_forward" ? ` × ${folds} folds = ${combos * folds} tuning runs` : ""}
             </div>
             {problem && rows.length > 0 && <p className="text-xs text-loss">{problem}</p>}
-            <Button className="w-full" loading={run.isPending} disabled={!strategyId || !!problem || bars < 200 || bars > 2000 || folds < 2 || folds > 8 || isRatio < 1 || isRatio > 6} onClick={() => run.mutate()}>
+            <Button className="w-full" loading={run.isPending} disabled={!strategyId || !!problem || bars < 200 || bars > 20_000 || folds < 2 || folds > 8 || isRatio < 1 || isRatio > 6} onClick={() => run.mutate()}>
               Run {mode === "sweep" ? "sweep" : "walk-forward test"}
             </Button>
           </CardContent>
@@ -322,6 +325,9 @@ export function ResearchDetailView({ id }: { id: number }) {
       <Disclaimer className="mb-4">
         {run.disclaimer}
         {run.data_source.includes("sample") && <strong> This run used SAMPLE (synthetic) data.</strong>}
+        {run.request.bars_used !== undefined && run.request.bars_used < run.request.bars && (
+          <> Only {run.request.bars_used.toLocaleString()} of the {run.request.bars.toLocaleString()} requested bars were available.</>
+        )}
       </Disclaimer>
       {run.kind === "sweep" ? <SweepView result={run.result} /> : <WalkForwardView run={run} result={run.result} />}
     </>

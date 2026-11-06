@@ -75,3 +75,15 @@ export function pnlClass(v: number | null | undefined): string {
   if (!isNum(v) || v === 0) return "text-muted-foreground";
   return v > 0 ? "text-gain" : "text-loss";
 }
+
+const TF_SECONDS: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "6h": 21600, "1d": 86400 };
+
+/** Human span of `bars` candles, e.g. "≈ 2.3 years". */
+export function barsSpan(bars: number, timeframe: string): string {
+  const days = (bars * (TF_SECONDS[timeframe] ?? 3600)) / 86400;
+  if (days >= 365) return `≈ ${(days / 365).toFixed(1)} years`;
+  if (days >= 60) return `≈ ${Math.round(days / 30)} months`;
+  if (days >= 2) return `≈ ${Math.round(days)} days`;
+  const hours = Math.max(1, Math.round(days * 24));
+  return `≈ ${hours} hour${hours === 1 ? "" : "s"}`;
+}

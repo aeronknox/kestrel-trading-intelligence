@@ -158,6 +158,9 @@ export function BacktestDetailView({ id }: { id: number }) {
       <Disclaimer className="mb-4">
         {bt.disclaimer}
         {isSample && <strong> This run used SAMPLE (synthetic) data.</strong>}
+        {bt.metrics?.bars_requested !== undefined && bt.metrics.bars < bt.metrics.bars_requested && (
+          <> Only {bt.metrics.bars.toLocaleString()} of the {bt.metrics.bars_requested.toLocaleString()} requested bars were available.</>
+        )}
       </Disclaimer>
 
       {bt.status === "failed" ? (

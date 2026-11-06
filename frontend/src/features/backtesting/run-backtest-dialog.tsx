@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FlaskConical } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, Input } from "@/components/ui/primitives";
 import { api } from "@/services/api";
 
+import { HistoryHint } from "./history-hint";
+
 export function RunBacktestDialog({ strategyId, strategyName, size = "sm", variant = "default" }: { strategyId: number; strategyName: string; size?: ButtonProps["size"]; variant?: ButtonProps["variant"] }) {
   const [open, setOpen] = useState(false);
   const [bars, setBars] = useState(1000);
@@ -19,6 +21,8 @@ export function RunBacktestDialog({ strategyId, strategyName, size = "sm", varia
   const [slip, setSlip] = useState(5);
   const router = useRouter();
   const qc = useQueryClient();
+  const strategy = useQuery({ queryKey: ["strategy", strategyId], queryFn: () => api.strategies.get(strategyId), enabled: open });
+  const cfg = strategy.data?.current_config;
 
   const run = useMutation({
     mutationFn: () => api.backtests.run({ strategy_id: strategyId, bars, initial_capital: capital, fee_bps: fee, slippage_bps: slip }),
@@ -36,7 +40,7 @@ export function RunBacktestDialog({ strategyId, strategyName, size = "sm", varia
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const valid = bars >= 100 && bars <= 2000 && capital > 0 && fee >= 0 && slip >= 0;
+  const valid = bars >= 100 && bars <= 20_000 && capital > 0 && fee >= 0 && slip >= 0;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -54,8 +58,8 @@ export function RunBacktestDialog({ strategyId, strategyName, size = "sm", varia
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="History (bars)" hint="100 – 2,000 closed candles">
-            <Input type="number" min={100} max={2000} value={bars} onChange={(e) => setBars(Number(e.target.value))} />
+          <Field label="History (bars)" hint="100 – 20,000 closed candles">
+            <Input type="number" min={100} max={20000} value={bars} onChange={(e) => setBars(Number(e.target.value))} />
           </Field>
           <Field label="Initial capital ($)">
             <Input type="number" min={1} value={capital} onChange={(e) => setCapital(Number(e.target.value))} />
@@ -67,6 +71,7 @@ export function RunBacktestDialog({ strategyId, strategyName, size = "sm", varia
             <Input type="number" min={0} max={500} value={slip} onChange={(e) => setSlip(Number(e.target.value))} />
           </Field>
         </div>
+        <HistoryHint symbol={cfg?.asset.symbol} timeframe={cfg?.timeframe} bars={bars} />
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
