@@ -100,7 +100,7 @@ async def create_backtest(body: BacktestRequest, user: CurrentUser, db: DbSessio
             num_trades=m["num_trades"],
             final_equity=m["final_equity"],
             metrics=m,
-            equity_curve=downsample_equity(output.equity),
+            equity_curve=downsample_equity(output.equity, benchmark=output.benchmark),
             trades=[t.to_dict() for t in output.trades],
         )
         session.status = BacktestStatus.COMPLETED

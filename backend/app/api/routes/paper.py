@@ -23,6 +23,8 @@ def portfolio_out(summary: dict) -> PortfolioOut:
         name=pf.name,
         starting_balance=pf.starting_balance,
         cash_balance=pf.cash_balance,
+        reserved_cash=summary["reserved_cash"],
+        available_cash=summary["available_cash"],
         positions_value=summary["positions_value"],
         equity=summary["equity"],
         realized_pnl=pf.realized_pnl,

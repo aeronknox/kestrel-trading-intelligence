@@ -110,7 +110,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
               onClick={() => {
                 if (!price) return;
                 if (side === "buy") {
-                  const usd = (portfolio.cash_balance * pct) / 100 / (1 + portfolio.fee_bps / 10_000) / (1 + portfolio.slippage_bps / 10_000);
+                  const usd = (portfolio.available_cash * pct) / 100 / (1 + portfolio.fee_bps / 10_000) / (1 + portfolio.slippage_bps / 10_000);
                   setMode("usd");
                   setAmount(String(Math.floor(usd * 100) / 100));
                 } else if (position) {
@@ -128,7 +128,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
           <div className="flex justify-between"><dt className="text-muted-foreground">Est. fill price (incl. {portfolio.slippage_bps} bps slippage)</dt><dd className="tabular">{formatPrice(execPrice || null)}</dd></div>
           <div className="flex justify-between"><dt className="text-muted-foreground">Est. fee ({portfolio.fee_bps} bps)</dt><dd className="tabular">{formatUsd(fee)}</dd></div>
           <div className="flex justify-between font-medium"><dt>Est. {side === "buy" ? "cost" : "proceeds"}</dt><dd className="tabular">{formatUsd(side === "buy" ? notional + fee : notional - fee)}</dd></div>
-          <div className="flex justify-between"><dt className="text-muted-foreground">{side === "buy" ? "Cash available" : "Position held"}</dt><dd className="tabular">{side === "buy" ? formatUsd(portfolio.cash_balance) : `${formatQty(position?.quantity ?? 0)} ${symbol.split("-")[0]}`}</dd></div>
+          <div className="flex justify-between"><dt className="text-muted-foreground">{side === "buy" ? "Cash available" : "Position held"}</dt><dd className="tabular">{side === "buy" ? formatUsd(portfolio.available_cash) : `${formatQty(position?.quantity ?? 0)} ${symbol.split("-")[0]}`}</dd></div>
         </dl>
         <Button className="w-full" variant={side === "buy" ? "gain" : "loss"} disabled={invalid} loading={place.isPending} onClick={() => place.mutate()}>
           {side === "buy" ? "Buy" : "Sell"} {symbol.split("-")[0]} (paper)

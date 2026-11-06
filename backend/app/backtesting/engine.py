@@ -10,6 +10,8 @@ Execution model (chosen to avoid look-ahead bias):
     bar, so a bar's own high can't retroactively tighten its stop.
   * Every fill pays `fee_bps` on notional and suffers `slippage_bps` adverse price.
   * Any position still open on the final bar is closed at its close and tagged.
+  * The benchmark is buy-and-hold of the same capital: bought at the first bar's
+    open and sold at the last close, paying the same fees and slippage.
 
 Results are HYPOTHETICAL — they describe how rules would have behaved on past
 data and are not a record of actual trading.
@@ -56,6 +58,7 @@ class Trade:
 class BacktestOutput:
     trades: list[Trade]
     equity: pd.Series  # indexed by unix time
+    benchmark: pd.Series  # buy-and-hold equity on the same index
     metrics: dict
     warmup_bars: int
     bars: int
@@ -64,6 +67,16 @@ class BacktestOutput:
 
 def _ts(value: object) -> int:
     return int(pd.Timestamp(value).timestamp())
+
+
+def buy_and_hold_equity(o: np.ndarray, c: np.ndarray, config: BacktestConfig) -> np.ndarray:
+    """Equity of buying at the first open and holding, net of entry and exit costs."""
+    fee = config.fee_bps / 10_000
+    slip = config.slippage_bps / 10_000
+    q = config.initial_capital / (o[0] * (1 + slip) * (1 + fee))
+    equity = q * c
+    equity[-1] = q * c[-1] * (1 - slip) * (1 - fee)
+    return equity
 
 
 def run_backtest(df: pd.DataFrame, strategy: StrategyDefinition, config: BacktestConfig) -> BacktestOutput:
@@ -156,6 +169,7 @@ def run_backtest(df: pd.DataFrame, strategy: StrategyDefinition, config: Backtes
         equity[-1] = cash
 
     equity_series = pd.Series(equity, index=times)
+    benchmark_series = pd.Series(buy_and_hold_equity(o, c, config), index=times)
     metrics = compute_metrics(
         equity_series,
         trades=[t.to_dict() for t in trades],
@@ -163,10 +177,12 @@ def run_backtest(df: pd.DataFrame, strategy: StrategyDefinition, config: Backtes
         timeframe_seconds=config.timeframe_seconds,
         benchmark_start=float(o[0]),
         benchmark_end=float(c[-1]),
+        benchmark_equity=benchmark_series,
     )
     return BacktestOutput(
         trades=trades,
         equity=equity_series,
+        benchmark=benchmark_series,
         metrics=metrics,
         warmup_bars=max_warmup([strategy.entry, strategy.exit]),
         bars=len(df),
@@ -174,14 +190,18 @@ def run_backtest(df: pd.DataFrame, strategy: StrategyDefinition, config: Backtes
     )
 
 
-def downsample_equity(equity: pd.Series, max_points: int = 500) -> list[dict]:
+def downsample_equity(equity: pd.Series, max_points: int = 500, benchmark: pd.Series | None = None) -> list[dict]:
     step = max(1, math.ceil(len(equity) / max_points))
     idx = list(range(0, len(equity), step))
     if idx[-1] != len(equity) - 1:
         idx.append(len(equity) - 1)
     peak = equity.cummax()
     dd = (equity / peak - 1) * 100
-    return [
+    points = [
         {"time": int(equity.index[i]), "equity": float(equity.iloc[i]), "drawdown_pct": float(dd.iloc[i])}
         for i in idx
     ]
+    if benchmark is not None:
+        for p, i in zip(points, idx, strict=True):
+            p["benchmark"] = float(benchmark.iloc[i])
+    return points

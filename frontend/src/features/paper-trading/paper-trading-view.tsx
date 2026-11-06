@@ -207,7 +207,7 @@ export function PaperTradingView() {
           <div className="min-w-0 space-y-4">
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
               <StatCard label="Equity" icon={Landmark} value={formatUsd(p.equity)} sub={<span className={pnlClass(p.total_return_pct)}>{formatPct(p.total_return_pct)} all-time</span>} />
-              <StatCard label="Cash" value={formatUsd(p.cash_balance)} sub={`Started with ${formatUsd(p.starting_balance)}`} />
+              <StatCard label="Cash" value={formatUsd(p.cash_balance)} sub={p.reserved_cash > 0 ? `${formatUsd(p.available_cash)} available · ${formatUsd(p.reserved_cash)} reserved` : `Started with ${formatUsd(p.starting_balance)}`} hint="Open limit buys reserve their worst-case cost (quantity × limit price + fee) until they fill or are cancelled." />
               <StatCard label="Unrealized P&L" value={<span className={pnlClass(p.unrealized_pnl)}>{formatUsd(p.unrealized_pnl, { sign: true })}</span>} sub={`Positions ${formatUsd(p.positions_value)}`} />
               <StatCard label="Realized P&L" value={<span className={pnlClass(p.realized_pnl)}>{formatUsd(p.realized_pnl, { sign: true })}</span>} sub={`Fees paid ${formatUsd(p.total_fees)}`} />
             </div>

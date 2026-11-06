@@ -8,12 +8,19 @@ Accounting:
   * Buy fees are capitalized into the position's average cost.
   * Sell fees reduce realized P&L.
   * Therefore: equity - starting_balance == realized_pnl + unrealized_pnl.
+
+Reservations: an open limit buy holds back its worst-case cost (quantity x limit
+price + fee) from available cash, and an open limit sell holds back its quantity,
+so resting orders can never together commit more than the portfolio has.
+Exposure limits (position size, open positions, daily loss) are checked when an
+order is placed and again when a resting order fills.
 """
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -66,12 +73,22 @@ class PaperTradingService:
         stmt = select(PaperPortfolio).where(PaperPortfolio.user_id == user_id, PaperPortfolio.is_active.is_(True))
         if lock:
             stmt = stmt.with_for_update()
-        portfolio = await self.session.scalar(stmt.order_by(PaperPortfolio.id).limit(1))
+        stmt = stmt.order_by(PaperPortfolio.id).limit(1)
+        portfolio = await self.session.scalar(stmt)
         if portfolio is None:
             balance = get_settings().paper_starting_balance
             portfolio = PaperPortfolio(user_id=user_id, name="Main", starting_balance=balance, cash_balance=balance)
-            self.session.add(portfolio)
-            await self.session.flush()
+            try:
+                # The partial unique index allows one active portfolio per user; if a
+                # concurrent first request won the race, use the portfolio it created.
+                async with self.session.begin_nested():
+                    self.session.add(portfolio)
+                    await self.session.flush()
+            except IntegrityError:
+                existing = await self.session.scalar(stmt)
+                if existing is None:
+                    raise
+                return existing
             self.session.add(
                 PortfolioSnapshot(portfolio_id=portfolio.id, equity=balance, cash=balance, positions_value=0.0)
             )
@@ -87,8 +104,29 @@ class PaperTradingService:
             for p in positions
         ]
 
+    async def reservations(
+        self, portfolio: PaperPortfolio, *, exclude_order_id: int | None = None
+    ) -> tuple[float, dict[int, float]]:
+        """Cash held back by open limit buys, and quantity per asset held back by open limit sells."""
+        await self.session.flush()  # autoflush is off; include status changes made in this request
+        stmt = select(SimulatedOrder).where(
+            SimulatedOrder.portfolio_id == portfolio.id, SimulatedOrder.status == OrderStatus.OPEN
+        )
+        if exclude_order_id is not None:
+            stmt = stmt.where(SimulatedOrder.id != exclude_order_id)
+        cash = 0.0
+        quantities: dict[int, float] = {}
+        for order in (await self.session.scalars(stmt)).all():
+            if order.side == OrderSide.BUY:
+                # A buy limit never fills above its limit, so this is the worst-case cost.
+                cash += order.quantity * (order.limit_price or 0.0) * (1 + self.fee_rate)
+            else:
+                quantities[order.asset_id] = quantities.get(order.asset_id, 0.0) + order.quantity
+        return cash, quantities
+
     async def summary(self, portfolio: PaperPortfolio) -> dict:
         views = await self.position_views(portfolio)
+        reserved_cash, _ = await self.reservations(portfolio)
         positions_value = sum(v.market_value for v in views)
         equity = portfolio.cash_balance + positions_value
         unrealized = sum(v.unrealized_pnl for v in views)
@@ -118,6 +156,8 @@ class PaperTradingService:
             "daily_pnl": equity - ref_equity,
             "daily_pnl_pct": (equity / ref_equity - 1) * 100 if ref_equity else 0.0,
             "prices_complete": all(v.price is not None for v in views),
+            "reserved_cash": reserved_cash,
+            "available_cash": portfolio.cash_balance - reserved_cash,
         }
 
     async def record_snapshot(self, portfolio: PaperPortfolio, *, force: bool = False) -> PortfolioSnapshot | None:
@@ -197,7 +237,7 @@ class PaperTradingService:
 
         reference_price = limit_price if order_type == OrderType.LIMIT else ticker.price
         try:
-            await self._check_risk(portfolio, asset, side, quantity, reference_price)
+            await self._check_risk(portfolio, asset, side, quantity, reference_price, order_id=order.id)
         except RiskLimitError as exc:
             order.status = OrderStatus.REJECTED
             order.reject_reason = exc.message
@@ -219,21 +259,39 @@ class PaperTradingService:
         return next((p for p in portfolio.positions if p.asset_id == asset_id), None)
 
     async def _check_risk(
-        self, portfolio: PaperPortfolio, asset: Asset, side: OrderSide, quantity: float, price: float
+        self,
+        portfolio: PaperPortfolio,
+        asset: Asset,
+        side: OrderSide,
+        quantity: float,
+        price: float,
+        *,
+        order_id: int | None = None,
     ) -> None:
         notional = quantity * price
         if notional < MIN_NOTIONAL:
             raise RiskLimitError(f"Order notional must be at least ${MIN_NOTIONAL:.2f}")
+        reserved_cash, reserved_qty = await self.reservations(portfolio, exclude_order_id=order_id)
         position = await self._position(portfolio, asset.id)
         if side == OrderSide.SELL:
             held = position.quantity if position else 0.0
-            if quantity > held + QTY_EPSILON:
-                raise RiskLimitError(f"Cannot sell {quantity:g} {asset.base_currency}; position is {held:g} (short selling is disabled)")
+            reserved = reserved_qty.get(asset.id, 0.0)
+            if quantity > held - reserved + QTY_EPSILON:
+                detail = f"; {reserved:g} is reserved by open sell orders" if reserved > QTY_EPSILON else ""
+                raise RiskLimitError(
+                    f"Cannot sell {quantity:g} {asset.base_currency}; position is {held:g}{detail} (short selling is disabled)"
+                )
             return
 
         cost = notional * (1 + self.slip_rate) * (1 + self.fee_rate)
-        if cost > portfolio.cash_balance + 1e-9:
-            raise RiskLimitError(f"Insufficient virtual cash: order needs ${cost:,.2f}, available ${portfolio.cash_balance:,.2f}")
+        available = portfolio.cash_balance - reserved_cash
+        if cost > available + 1e-9:
+            detail = f" (${reserved_cash:,.2f} reserved by open buy orders)" if reserved_cash > 1e-9 else ""
+            raise RiskLimitError(f"Insufficient virtual cash: order needs ${cost:,.2f}, available ${available:,.2f}{detail}")
+        await self._check_exposure(portfolio, asset, notional)
+
+    async def _check_exposure(self, portfolio: PaperPortfolio, asset: Asset, notional: float) -> None:
+        """Position-size, open-position and daily-loss limits for buying `notional` of `asset`."""
         summary = await self.summary(portfolio)
         equity = summary["equity"]
         current_value = next((v.market_value for v in summary["positions"] if v.position.asset_id == asset.id), 0.0)
@@ -350,6 +408,16 @@ class PaperTradingService:
             t = tickers.get(order.asset.symbol)
             if t is None or not self._is_marketable(order, t.price):
                 continue
+            if order.side == OrderSide.BUY:
+                # Prices and holdings may have moved since the order was placed.
+                assert order.limit_price is not None
+                fill_price = min(t.price * (1 + self.slip_rate), order.limit_price)
+                try:
+                    await self._check_exposure(portfolio, order.asset, order.quantity * fill_price)
+                except RiskLimitError as exc:
+                    order.status = OrderStatus.REJECTED
+                    order.reject_reason = f"At fill time: {exc.message}"[:255]
+                    continue
             await self._fill(portfolio, order, t.price)
             fills += order.status == OrderStatus.FILLED
         return fills

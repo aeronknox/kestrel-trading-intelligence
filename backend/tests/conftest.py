@@ -8,7 +8,8 @@ _tmp = Path(tempfile.mkdtemp(prefix="ti-tests-"))
 os.environ.update(
     {
         "ENVIRONMENT": "test",
-        "DATABASE_URL": f"sqlite+aiosqlite:///{(_tmp / 'test.db').as_posix()}",
+        # TEST_DATABASE_URL runs the suite against another database (CI uses PostgreSQL).
+        "DATABASE_URL": os.environ.get("TEST_DATABASE_URL") or f"sqlite+aiosqlite:///{(_tmp / 'test.db').as_posix()}",
         "REDIS_URL": "",
         "OPENAI_API_KEY": "",
         "MARKET_DATA_PROVIDER": "sample",

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Enum, Float, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Enum, Float, ForeignKey, Index, Integer, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, IdMixin, Money, TimestampMixin, UTCDateTime, utcnow
@@ -16,6 +16,16 @@ class PaperPortfolio(IdMixin, TimestampMixin, Base):
     """A purely simulated portfolio. It is never connected to a brokerage."""
 
     __tablename__ = "paper_portfolios"
+    __table_args__ = (
+        # One active portfolio per user, enforced by the database (closes the first-request race).
+        Index(
+            "uq_paper_portfolios_active_user",
+            "user_id",
+            unique=True,
+            sqlite_where=text("is_active"),
+            postgresql_where=text("is_active"),
+        ),
+    )
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(80), default="Main")

@@ -134,3 +134,49 @@ def test_strategy_validation() -> None:
                 "risk": {"stop_loss_pct": 5},
             }
         )
+
+
+def test_buy_and_hold_benchmark_without_costs() -> None:
+    closes = [100, 100, 105, 110, 120, 95, 90, 130]
+    df = make_frame(closes)
+    out = run_backtest(df, price_cross_strategy(102, 100), NO_COSTS)
+    m = out.metrics
+    assert out.benchmark.iloc[-1] == pytest.approx(1000 * 130 / df["open"][0])
+    assert m["benchmark"]["total_return_pct"] == pytest.approx(m["buy_hold_return_pct"])
+    assert m["excess_return_pct"] == pytest.approx(m["total_return_pct"] - m["benchmark"]["total_return_pct"])
+    assert m["benchmark"]["max_drawdown_pct"] == pytest.approx(max_drawdown_pct(out.benchmark))
+
+
+def test_benchmark_pays_the_same_costs() -> None:
+    df = make_frame([100, 100, 105, 110, 120, 95, 90, 130])
+    out = run_backtest(df, price_cross_strategy(102, 100), BacktestConfig(initial_capital=1000, fee_bps=50, slippage_bps=50))
+    expected = 1000 / (100 * 1.005 * 1.005) * 130 * 0.995 * 0.995
+    assert out.benchmark.iloc[-1] == pytest.approx(expected)
+    assert out.metrics["benchmark"]["total_return_pct"] < out.metrics["buy_hold_return_pct"]
+
+
+def test_flat_strategy_has_zero_beta_and_full_benchmark_in_curve() -> None:
+    from app.backtesting.engine import downsample_equity
+
+    df = make_frame(list(np.linspace(100, 150, 50)))
+    out = run_backtest(df, price_cross_strategy(10_000, 0), NO_COSTS)  # never enters
+    assert out.trades == []
+    assert out.metrics["beta"] == pytest.approx(0.0)
+    assert out.metrics["correlation"] is None  # undefined for a constant equity curve
+    points = downsample_equity(out.equity, max_points=10, benchmark=out.benchmark)
+    assert points[-1]["benchmark"] == pytest.approx(out.benchmark.iloc[-1])
+    assert all("benchmark" in p for p in points)
+
+
+def test_fully_invested_strategy_tracks_benchmark() -> None:
+    df = make_frame(list(100 + 10 * np.sin(np.linspace(0, 6, 80)) + np.linspace(0, 20, 80)))
+    always_in = StrategyDefinition.model_validate(
+        {
+            "entry": {"conditions": [{"left": {"indicator": "close"}, "op": ">", "right": {"value": 0}}]},
+            "exit": {"conditions": [{"left": {"indicator": "close"}, "op": "<", "right": {"value": 0}}]},
+            "risk": {"position_size_pct": 100},
+        }
+    )
+    m = run_backtest(df, always_in, NO_COSTS).metrics
+    assert m["beta"] == pytest.approx(1.0, abs=0.05)
+    assert m["correlation"] == pytest.approx(1.0, abs=0.05)

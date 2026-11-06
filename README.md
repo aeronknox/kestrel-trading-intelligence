@@ -10,8 +10,8 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 | Markets | Live prices over WebSocket, catalog search to track new assets, candlestick charts (1m–1d), SMA 20/50/200, Bollinger Bands, volume, RSI, MACD |
 | AI Analysis | Trend regression, support/resistance, pattern detection, a walk-forward ML model, an explainable composite signal with confidence, and a risk breakdown |
 | Strategy Builder | Visual rule builder (13 indicators, 6 operators, ALL/ANY logic), risk exits, templates, immutable versioning |
-| Backtesting | Next-bar execution, fees, slippage, gap-aware stops; return, buy-and-hold, max drawdown, Sharpe/Sortino, win rate, profit factor, CAGR, exposure; side-by-side comparison |
-| Paper Trading | $100k virtual balance, market and limit orders, positions, realized/unrealized P&L, risk limits, order and trade history, reset |
+| Backtesting | Next-bar execution, fees, slippage, gap-aware stops; return, max drawdown, Sharpe/Sortino, a buy-and-hold benchmark with the same costs (overlaid on the equity curve, with excess return and beta), win rate, profit factor, CAGR, exposure; side-by-side comparison |
+| Paper Trading | $100k virtual balance, market and limit orders (open limit orders reserve cash or quantity; exposure limits are re-checked at fill time), positions, realized/unrealized P&L, risk limits, order and trade history, reset |
 | Portfolio | Equity and drawdown history, allocation, trade statistics |
 | Assistant | Chat grounded in platform data through tool calls; reports missing data as unavailable |
 | Admin | Role management, account disabling, audit log viewer |
@@ -142,7 +142,7 @@ cd backend && python -m app.cli promote-admin you@example.com    # or demote-adm
 ### Tests
 
 ```bash
-cd backend  && pytest                  # 75 tests: indicators (incl. Wilder reference values),
+cd backend  && pytest                  # 83 tests: indicators (incl. Wilder reference values),
                                        # backtester, ML leakage, signals, auth/RBAC, rate limiting,
                                        # paper-trading accounting, market data + Coinbase parsing,
                                        # OpenAI tool loop (fake client), WebSocket, API flows
@@ -152,7 +152,15 @@ cd frontend && npx playwright install chromium && npm run e2e
                                        # 23 browser flows against a running stack (:3000 + :8000)
 ```
 
-Backend tests run against SQLite with the sample provider and need no network access. See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
+Backend tests run against SQLite with the sample provider and need no network access. Set `TEST_DATABASE_URL=postgresql+psycopg://…` to run them against PostgreSQL.
+
+### Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to `main` and on pull requests:
+
+- **Backend:** Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
+- **Frontend:** typecheck, unit tests, production build.
+- **Docker:** `docker compose up --build --wait`, health checks, then the 23 browser flows against the containerized stack. See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
 
 ---
 

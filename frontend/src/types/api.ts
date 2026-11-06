@@ -340,6 +340,17 @@ export interface BacktestMetrics {
   period_years: number;
   warmup_bars: number;
   signal_counts: { entries: number; exits: number };
+  /** Buy-and-hold of the same capital with the same costs. Absent on backtests run before it existed. */
+  benchmark?: {
+    name: "buy_and_hold";
+    total_return_pct: number;
+    max_drawdown_pct: number;
+    sharpe_ratio: number | null;
+    volatility_annual_pct: number | null;
+  };
+  excess_return_pct?: number;
+  beta?: number | null;
+  correlation?: number | null;
 }
 
 export interface Backtest {
@@ -360,7 +371,7 @@ export interface Backtest {
   created_at: string;
   completed_at: string | null;
   metrics: BacktestMetrics | null;
-  equity_curve: { time: number; equity: number; drawdown_pct: number }[] | null;
+  equity_curve: { time: number; equity: number; drawdown_pct: number; benchmark?: number }[] | null;
   trades: BacktestTrade[] | null;
   disclaimer: string;
 }
@@ -422,6 +433,9 @@ export interface Portfolio {
   name: string;
   starting_balance: number;
   cash_balance: number;
+  /** Worst-case cost of open limit buys, held back from new orders. */
+  reserved_cash: number;
+  available_cash: number;
   positions_value: number;
   equity: number;
   realized_pnl: number;

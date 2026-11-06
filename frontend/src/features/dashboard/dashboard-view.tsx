@@ -94,7 +94,7 @@ export function DashboardView() {
                   hint="Change in equity versus the snapshot closest to 24 hours ago."
                 />
                 <StatCard label="Total P&L" icon={TrendingUp} value={<span className={pnlClass(p.total_pnl)}>{formatUsd(p.total_pnl, { sign: true })}</span>} sub={`Realized ${formatUsd(p.realized_pnl, { sign: true })} · Unrealized ${formatUsd(p.unrealized_pnl, { sign: true })}`} />
-                <StatCard label="Buying power" icon={DollarSign} value={formatUsd(p.cash_balance)} sub={`${p.positions.length} open position${p.positions.length === 1 ? "" : "s"}`} />
+                <StatCard label="Buying power" icon={DollarSign} value={formatUsd(p.available_cash)} sub={`${p.positions.length} open position${p.positions.length === 1 ? "" : "s"}`} />
               </div>
 
               <div className="grid gap-4 xl:grid-cols-3">

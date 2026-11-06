@@ -112,13 +112,16 @@ export function BacktestListView() {
 // ------------------------------------------------------------------ detail
 function MetricsGrid({ bt }: { bt: Backtest }) {
   const m = bt.metrics!;
-  const beat = m.total_return_pct - m.buy_hold_return_pct;
+  // Older runs only stored the cost-free buy-and-hold return.
+  const bench = m.benchmark;
+  const benchReturn = bench?.total_return_pct ?? m.buy_hold_return_pct;
+  const beat = m.excess_return_pct ?? m.total_return_pct - benchReturn;
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
       <StatCard label="Total return" value={<span className={pnlClass(m.total_return_pct)}>{formatPct(m.total_return_pct)}</span>} sub={`${formatUsd(m.initial_capital)} → ${formatUsd(m.final_equity)}`} />
-      <StatCard label="Buy & hold" value={<span className={pnlClass(m.buy_hold_return_pct)}>{formatPct(m.buy_hold_return_pct)}</span>} sub={<span className={pnlClass(beat)}>{beat >= 0 ? "Outperformed" : "Underperformed"} by {formatPct(Math.abs(beat), 2, false)}</span>} hint="Passive benchmark: buy at the first bar's open, sell at the last close (no fees)." />
-      <StatCard label="Max drawdown" value={<span className="text-loss">{formatPct(m.max_drawdown_pct, 2, false)}</span>} sub="Peak-to-trough equity decline" />
-      <StatCard label="Sharpe ratio" value={formatNumber(m.sharpe_ratio)} sub={`Sortino ${formatNumber(m.sortino_ratio)}`} hint="Annualized from per-bar returns (365-day year, 0% risk-free rate)." />
+      <StatCard label="Buy & hold" value={<span className={pnlClass(benchReturn)}>{formatPct(benchReturn)}</span>} sub={<span className={pnlClass(beat)}>{beat >= 0 ? "Outperformed" : "Underperformed"} by {formatPct(Math.abs(beat), 2, false)}</span>} hint={bench ? "Benchmark: the same capital bought at the first bar's open and sold at the last close, paying the same fees and slippage." : "Passive benchmark: buy at the first bar's open, sell at the last close (no fees)."} />
+      <StatCard label="Max drawdown" value={<span className="text-loss">{formatPct(m.max_drawdown_pct, 2, false)}</span>} sub={bench ? `Buy & hold ${formatPct(bench.max_drawdown_pct, 1, false)}` : "Peak-to-trough equity decline"} />
+      <StatCard label="Sharpe ratio" value={formatNumber(m.sharpe_ratio)} sub={`Sortino ${formatNumber(m.sortino_ratio)}${bench ? ` · B&H ${formatNumber(bench.sharpe_ratio)}` : ""}`} hint="Annualized from per-bar returns (365-day year, 0% risk-free rate)." />
       <StatCard label="Win rate" value={formatPct(m.win_rate, 1, false)} sub={`${m.num_trades} trades`} />
       <StatCard label="Profit factor" value={isNum(m.profit_factor) ? formatNumber(m.profit_factor) : m.num_trades && !m.gross_loss ? "∞ (no losses)" : "—"} sub="Gross profit ÷ gross loss" />
       <StatCard label="CAGR" value={formatPct(m.cagr_pct, 1)} sub={`${formatNumber(m.period_years * 365, 0)} days tested`} hint="Annualized compound return; unreliable for short test periods." />
@@ -126,7 +129,7 @@ function MetricsGrid({ bt }: { bt: Backtest }) {
       <StatCard label="Avg trade" value={<span className={pnlClass(m.avg_trade_return_pct)}>{formatPct(m.avg_trade_return_pct)}</span>} sub={`Best ${formatPct(m.best_trade_pct, 1)} · Worst ${formatPct(m.worst_trade_pct, 1)}`} />
       <StatCard label="Avg holding" value={`${formatNumber(m.avg_bars_held, 1)} bars`} sub={bt.timeframe} />
       <StatCard label="Fees paid" value={formatUsd(m.total_fees)} sub={`${bt.fee_bps} bps fee · ${bt.slippage_bps} bps slippage`} />
-      <StatCard label="Volatility" value={formatPct(m.volatility_annual_pct, 1, false)} sub="Annualized equity volatility" />
+      <StatCard label="Volatility" value={formatPct(m.volatility_annual_pct, 1, false)} sub={isNum(m.beta) ? `Beta ${formatNumber(m.beta)} vs buy & hold` : "Annualized equity volatility"} hint="Beta: how much the strategy's per-bar returns move with buy-and-hold (1 = fully invested, 0 = no exposure)." />
     </div>
   );
 }
@@ -167,7 +170,7 @@ export function BacktestDetailView({ id }: { id: number }) {
               <CardHeader>
                 <div>
                   <CardTitle>Equity curve</CardTitle>
-                  <CardDescription>Marked to market at each bar close</CardDescription>
+                  <CardDescription>Marked to market at each bar close{bt.equity_curve.some((p) => p.benchmark !== undefined) ? ", against buy & hold" : ""}</CardDescription>
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">

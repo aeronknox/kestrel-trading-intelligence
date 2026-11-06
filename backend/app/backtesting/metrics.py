@@ -49,6 +49,7 @@ def compute_metrics(
     timeframe_seconds: int,
     benchmark_start: float,
     benchmark_end: float,
+    benchmark_equity: pd.Series | None = None,
 ) -> dict:
     final = float(equity.iloc[-1])
     returns = equity.pct_change().dropna()
@@ -64,7 +65,7 @@ def compute_metrics(
     total_return = (final / initial_capital - 1) * 100
     bars_in_market = sum(t["bars_held"] + 1 for t in trades)
 
-    return {
+    metrics = {
         "initial_capital": initial_capital,
         "final_equity": final,
         "total_return_pct": total_return,
@@ -87,4 +88,36 @@ def compute_metrics(
         "total_fees": float(sum(t["entry_fee"] + t["exit_fee"] for t in trades)),
         "bars": len(equity),
         "period_years": years,
+    }
+    if benchmark_equity is not None:
+        metrics.update(benchmark_metrics(returns, benchmark_equity, total_return, initial_capital, periods_per_year))
+    return metrics
+
+
+def benchmark_metrics(
+    returns: pd.Series, benchmark: pd.Series, total_return: float, initial_capital: float, periods_per_year: float
+) -> dict:
+    """Buy-and-hold comparison: the benchmark's own risk/return, plus the strategy's excess return and beta."""
+    bench_returns = benchmark.pct_change().dropna()
+    bench_total = (float(benchmark.iloc[-1]) / initial_capital - 1) * 100
+    beta = correlation = None
+    if len(returns) > 2:
+        var = bench_returns.var(ddof=1)
+        if var and math.isfinite(var):
+            beta = _finite(returns.cov(bench_returns, ddof=1) / var)
+        if returns.std(ddof=1) and bench_returns.std(ddof=1):
+            correlation = _finite(returns.corr(bench_returns))
+    return {
+        "benchmark": {
+            "name": "buy_and_hold",
+            "total_return_pct": bench_total,
+            "max_drawdown_pct": max_drawdown_pct(benchmark),
+            "sharpe_ratio": sharpe_ratio(bench_returns, periods_per_year),
+            "volatility_annual_pct": _finite(bench_returns.std(ddof=1) * math.sqrt(periods_per_year) * 100)
+            if len(bench_returns) > 1
+            else None,
+        },
+        "excess_return_pct": total_return - bench_total,
+        "beta": beta,
+        "correlation": correlation,
     }

@@ -39,3 +39,6 @@ Thumbs.db
 *.log
 logs/
 e2e/fail_*.png
+
+# Playwright failure screenshots
+frontend/e2e/fail_*.png

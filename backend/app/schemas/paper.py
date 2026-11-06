@@ -67,6 +67,8 @@ class PortfolioOut(BaseModel):
     name: str
     starting_balance: float
     cash_balance: float
+    reserved_cash: float = 0.0
+    available_cash: float
     positions_value: float
     equity: float
     realized_pnl: float

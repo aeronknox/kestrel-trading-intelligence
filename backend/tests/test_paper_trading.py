@@ -101,3 +101,91 @@ async def test_invalid_orders(auth_client) -> None:  # type: ignore[no-untyped-d
     assert resp.status_code == 404
     resp = await auth_client.post(f"{API}/orders", json={"symbol": "BTC-USD", "side": "buy", "order_type": "limit", "quantity": 1})
     assert resp.status_code == 422
+
+
+async def _limits(client, max_position_pct: float = 100) -> None:  # type: ignore[no-untyped-def]
+    resp = await client.put(
+        f"{API}/portfolio/risk-limits",
+        json={"max_position_pct": max_position_pct, "max_open_positions": 10, "daily_loss_limit_pct": 5},
+    )
+    assert resp.status_code == 200
+
+
+async def test_open_limit_buys_reserve_cash(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await _limits(auth_client)
+    await provider.set_price("SOL-USD", 100.0)
+    first = await _order(auth_client, symbol="SOL-USD", order_type="limit", quantity=600, limit_price=90)
+    assert first["status"] == "open"
+    pf = (await auth_client.get(f"{API}/portfolio")).json()
+    assert pf["reserved_cash"] == pytest.approx(600 * 90 * 1.001)
+    assert pf["available_cash"] == pytest.approx(pf["cash_balance"] - pf["reserved_cash"])
+
+    # Together with the first order this would commit more cash than the portfolio holds.
+    second = await _order(auth_client, symbol="SOL-USD", order_type="limit", quantity=600, limit_price=90)
+    assert second["status"] == "rejected" and "reserved by open buy orders" in second["reject_reason"]
+    await provider.set_price("ETH-USD", 3000.0)
+    market = await _order(auth_client, symbol="ETH-USD", quantity=20)  # $60k > $46k available
+    assert market["status"] == "rejected" and "Insufficient" in market["reject_reason"]
+
+    await auth_client.post(f"{API}/orders/{first['id']}/cancel")
+    pf = (await auth_client.get(f"{API}/portfolio")).json()
+    assert pf["reserved_cash"] == 0
+    again = await _order(auth_client, symbol="SOL-USD", order_type="limit", quantity=600, limit_price=90)
+    assert again["status"] == "open"
+
+
+async def test_open_limit_sells_reserve_quantity(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await _limits(auth_client)
+    await provider.set_price("BTC-USD", 50_000.0)
+    assert (await _order(auth_client, quantity=0.5))["status"] == "filled"
+    resting = await _order(auth_client, side="sell", order_type="limit", quantity=0.4, limit_price=60_000)
+    assert resting["status"] == "open"
+    oversell = await _order(auth_client, side="sell", quantity=0.2)
+    assert oversell["status"] == "rejected" and "reserved by open sell orders" in oversell["reject_reason"]
+    assert (await _order(auth_client, side="sell", quantity=0.1))["status"] == "filled"
+
+
+async def test_exposure_limits_rechecked_when_resting_buy_fills(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    resting = await _order(auth_client, symbol="SOL-USD", order_type="limit", quantity=200, limit_price=95)
+    assert resting["status"] == "open"  # 19% of equity: within the 25% limit
+    # A later market buy grows the position, so filling the resting order would breach the limit.
+    assert (await _order(auth_client, symbol="SOL-USD", quantity=100))["status"] == "filled"
+
+    await provider.set_price("SOL-USD", 94.0)
+    pf = (await auth_client.get(f"{API}/portfolio")).json()
+    order = next(o for o in (await auth_client.get(f"{API}/orders")).json() if o["id"] == resting["id"])
+    assert order["status"] == "rejected"
+    assert order["reject_reason"].startswith("At fill time:") and "limit is 25%" in order["reject_reason"]
+    assert pf["positions"][0]["quantity"] == pytest.approx(100)
+    assert pf["reserved_cash"] == 0
+
+
+async def test_concurrent_first_portfolio_creation_reuses_winner(app, auth_client) -> None:  # type: ignore[no-untyped-def]
+    from sqlalchemy import func, select
+
+    from app.database.session import get_sessionmaker
+    from app.models.paper import PaperPortfolio
+    from app.paper_trading.service import PaperTradingService
+
+    me = (await auth_client.get("/api/v1/auth/me")).json()
+    winner = (await auth_client.get(f"{API}/portfolio")).json()
+
+    async with get_sessionmaker()() as session:
+        # Simulate losing the race: the first lookup misses, as if the other request had not committed yet.
+        real_scalar = session.scalar
+        calls = 0
+
+        async def racing_scalar(stmt, *args, **kwargs):  # type: ignore[no-untyped-def]
+            nonlocal calls
+            calls += 1
+            return None if calls == 1 else await real_scalar(stmt, *args, **kwargs)
+
+        session.scalar = racing_scalar  # type: ignore[method-assign]
+        pf = await PaperTradingService(session).get_or_create_portfolio(me["id"])
+        session.scalar = real_scalar  # type: ignore[method-assign]
+        assert pf.id == winner["id"]
+        count = await session.scalar(
+            select(func.count()).select_from(PaperPortfolio).where(PaperPortfolio.user_id == me["id"])
+        )
+        assert count == 1

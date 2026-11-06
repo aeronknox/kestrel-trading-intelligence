@@ -7,6 +7,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -46,16 +47,17 @@ export function EquityAreaChart({
   height = 240,
   baseline,
 }: {
-  data: { time: number; equity: number }[];
+  data: { time: number; equity: number; benchmark?: number }[];
   height?: number;
   baseline?: number;
 }) {
   const up = data.length < 2 || data[data.length - 1]!.equity >= data[0]!.equity;
   const color = up ? "var(--gain)" : "var(--loss)";
   const id = up ? "eq-up" : "eq-down";
+  const hasBenchmark = data.some((d) => d.benchmark !== undefined);
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+      <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
         <defs>
           <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity={0.28} />
@@ -68,17 +70,23 @@ export function EquityAreaChart({
         {baseline !== undefined && <ReferenceLine y={baseline} stroke="var(--muted-foreground)" strokeDasharray="3 3" strokeOpacity={0.5} />}
         <Tooltip
           cursor={{ stroke: "var(--border)" }}
-          content={({ active, payload }) =>
-            active && payload?.[0] ? (
+          content={({ active, payload }) => {
+            const point = payload?.[0]?.payload as { time: number; equity: number; benchmark?: number } | undefined;
+            return active && point ? (
               <TooltipBox>
-                <div className="text-muted-foreground">{formatDateTime(payload[0].payload.time as number)}</div>
-                <div className="font-medium">{formatUsd(payload[0].value as number)}</div>
+                <div className="text-muted-foreground">{formatDateTime(point.time)}</div>
+                <div className="font-medium">{hasBenchmark && "Strategy "}{formatUsd(point.equity)}</div>
+                {point.benchmark !== undefined && <div className="text-muted-foreground">Buy &amp; hold {formatUsd(point.benchmark)}</div>}
               </TooltipBox>
-            ) : null
-          }
+            ) : null;
+          }}
         />
-        <Area type="linear" dataKey="equity" stroke={color} strokeWidth={2} fill={`url(#${id})`} isAnimationActive={false} />
-      </AreaChart>
+        <Area type="linear" dataKey="equity" name="Strategy" stroke={color} strokeWidth={2} fill={`url(#${id})`} isAnimationActive={false} />
+        {hasBenchmark && (
+          <Line type="linear" dataKey="benchmark" name="Buy & hold" stroke="var(--muted-foreground)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+        )}
+        {hasBenchmark && <Legend verticalAlign="top" height={24} iconSize={10} wrapperStyle={{ fontSize: 11 }} />}
+      </ComposedChart>
     </ResponsiveContainer>
   );
 }
