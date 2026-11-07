@@ -79,6 +79,7 @@ class UserOut(ORMModel):
     role: UserRole
     is_active: bool
     email_verified: bool = False
+    is_demo: bool = False
     created_at: datetime
     last_login_at: datetime | None
     settings: UserSettingsOut | None = None

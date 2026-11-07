@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -19,6 +19,21 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const isRegister = mode === "register";
+  const config = useQuery({ queryKey: ["auth-config"], queryFn: api.auth.config, staleTime: 300_000 });
+  const [demoPending, setDemoPending] = useState(false);
+
+  async function startDemo() {
+    setError(null);
+    setDemoPending(true);
+    try {
+      qc.setQueryData(ME_KEY, await api.auth.demo());
+      router.replace("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start the demo");
+    } finally {
+      setDemoPending(false);
+    }
+  }
 
   const passwordHint =
     isRegister && password && (password.length < 10 || !/[a-z]/i.test(password) || !/\d/.test(password))
@@ -75,6 +90,19 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           {isRegister ? "Create account" : "Sign in"}
         </Button>
       </form>
+      {config.data?.demo_enabled && (
+        <div className="mt-6">
+          <div className="mb-4 flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" /> or <span className="h-px flex-1 bg-border" />
+          </div>
+          <Button type="button" variant="outline" className="w-full" loading={demoPending} onClick={startDemo}>
+            Try the demo
+          </Button>
+          <p className="mt-2 text-center text-xs text-muted-foreground">
+            No sign-up: a private sandbox with sample strategies, deleted after a day.
+          </p>
+        </div>
+      )}
       <p className="mt-6 text-center text-sm text-muted-foreground">
         {isRegister ? "Already have an account? " : "New here? "}
         <Link href={isRegister ? "/login" : "/register"} className="font-medium text-primary hover:underline">

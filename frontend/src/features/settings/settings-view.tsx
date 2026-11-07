@@ -127,30 +127,32 @@ export function SettingsView() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>Change password</CardTitle>
-              <CardDescription>Other active sessions will be signed out.</CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <form className="grid gap-4 sm:grid-cols-3" onSubmit={(e) => { e.preventDefault(); changePw.mutate(); }}>
-              <Field label="Current password">
-                <Input type="password" autoComplete="current-password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} />
-              </Field>
-              <Field label="New password">
-                <Input type="password" autoComplete="new-password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} />
-              </Field>
-              <Field label="Confirm new password" error={pwError}>
-                <Input type="password" autoComplete="new-password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} />
-              </Field>
-              <div className="sm:col-span-3">
-                <Button size="sm" type="submit" loading={changePw.isPending} disabled={!pw.current || !pw.next || pw.next !== pw.confirm || !!pwError}>Update password</Button>
+        {!me.data.is_demo && (
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>Change password</CardTitle>
+                <CardDescription>Other active sessions will be signed out.</CardDescription>
               </div>
-            </form>
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent>
+              <form className="grid gap-4 sm:grid-cols-3" onSubmit={(e) => { e.preventDefault(); changePw.mutate(); }}>
+                <Field label="Current password">
+                  <Input type="password" autoComplete="current-password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} />
+                </Field>
+                <Field label="New password">
+                  <Input type="password" autoComplete="new-password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} />
+                </Field>
+                <Field label="Confirm new password" error={pwError}>
+                  <Input type="password" autoComplete="new-password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} />
+                </Field>
+                <div className="sm:col-span-3">
+                  <Button size="sm" type="submit" loading={changePw.isPending} disabled={!pw.current || !pw.next || pw.next !== pw.confirm || !!pwError}>Update password</Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </>
   );

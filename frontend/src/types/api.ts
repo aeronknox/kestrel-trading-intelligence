@@ -18,6 +18,8 @@ export interface User {
   role: Role;
   is_active: boolean;
   email_verified: boolean;
+  /** Throwaway sandbox account from "Try the demo"; deleted after a day. */
+  is_demo: boolean;
   created_at: string;
   last_login_at: string | null;
   settings: UserSettings | null;

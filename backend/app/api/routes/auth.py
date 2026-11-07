@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.api.deps import CurrentSession, CurrentUser, DbSession, auth_rate_limit, client_ip
 from app.core.cache import get_cache
 from app.core.config import get_settings
-from app.core.exceptions import AuthenticationError, RateLimitedError, ValidationFailedError
+from app.core.exceptions import AuthenticationError, NotFoundError, PermissionDeniedError, RateLimitedError, ValidationFailedError
 from app.core.security import hash_password, verify_password
 from app.models.user import User
 from app.schemas.common import Message
@@ -21,6 +21,7 @@ from app.schemas.user import (
 )
 from app.services import auth as auth_service
 from app.services.audit import audit
+from app.services.demo import create_demo_user
 from app.services.email import password_reset_email, send_email, verification_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -59,6 +60,29 @@ async def register(body: RegisterRequest, request: Request, response: Response, 
     return user
 
 
+@router.get("/config")
+async def auth_config() -> dict:
+    """Public sign-in options for the login page."""
+    return {"demo_enabled": get_settings().demo_mode}
+
+
+@router.post("/demo", response_model=UserOut, status_code=status.HTTP_201_CREATED, dependencies=[auth_rate_limit()])
+async def start_demo(request: Request, response: Response, db: DbSession) -> object:
+    """Create a throwaway, pre-loaded sandbox account and sign in to it (DEMO_MODE only)."""
+    if not get_settings().demo_mode:
+        raise NotFoundError("The demo is not enabled on this server")
+    user = await create_demo_user(db)
+    token, _ = await auth_service.create_session(db, user, ip_address=client_ip(request), user_agent=request.headers.get("user-agent"))
+    await audit(db, "user.demo_started", user_id=user.id, ip_address=client_ip(request))
+    _set_session_cookie(response, token)
+    return user
+
+
+def _no_demo(user: User) -> None:
+    if user.is_demo:
+        raise PermissionDeniedError("Not available in the demo. Create a free account to use this.")
+
+
 async def _cooldown(key: str) -> bool:
     """True if `key` was used within the cooldown window (and starts a new window otherwise)."""
     return await get_cache().incr_window(key, EMAIL_COOLDOWN_SECONDS) > 1
@@ -72,6 +96,7 @@ async def _send_verification(db, user: User) -> bool:  # type: ignore[no-untyped
 
 @router.post("/verify-email/resend", response_model=Message, dependencies=[auth_rate_limit()])
 async def resend_verification(user: CurrentUser, db: DbSession) -> Message:
+    _no_demo(user)
     if user.email_verified:
         return Message(message="Your email address is already verified")
     if await _cooldown(f"email-cooldown:verify:{user.id}"):
@@ -95,7 +120,7 @@ async def forgot_password(body: EmailRequest, request: Request, db: DbSession) -
     """Same response whether or not the account exists, so it can't be used to discover accounts."""
     email = body.email.lower()
     user = await db.scalar(select(User).where(User.email == email))
-    if user is not None and user.is_active and not await _cooldown(f"email-cooldown:reset:{email}"):
+    if user is not None and user.is_active and not user.is_demo and not await _cooldown(f"email-cooldown:reset:{email}"):
         ttl = timedelta(minutes=get_settings().password_reset_ttl_minutes)
         token = await auth_service.issue_token(db, user, auth_service.RESET_PASSWORD, ttl)
         await send_email(password_reset_email(user.email, user.full_name, token))
@@ -156,6 +181,7 @@ async def me(user: CurrentUser) -> object:
 @router.post("/change-password", response_model=Message, dependencies=[auth_rate_limit()])
 async def change_password(body: ChangePasswordRequest, ctx: CurrentSession, request: Request, db: DbSession) -> Message:
     user, record = ctx
+    _no_demo(user)
     if not verify_password(body.current_password, user.hashed_password):
         # 422, not 401: the session is valid; clients must not treat this as a logout.
         raise ValidationFailedError("Current password is incorrect")

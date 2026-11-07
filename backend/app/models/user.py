@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Index, String
+from sqlalchemy import Boolean, Enum, ForeignKey, Index, String, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, IdMixin, JSONType, TimestampMixin, UTCDateTime, utcnow
@@ -24,6 +24,7 @@ class User(IdMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     email_verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     settings: Mapped["UserSettings"] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan", lazy="selectin"

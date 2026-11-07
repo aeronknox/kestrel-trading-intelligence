@@ -20,6 +20,19 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 
 ---
 
+## Screenshots
+
+All screenshots show live Coinbase market data and a simulated portfolio.
+
+| | |
+|---|---|
+| ![Dashboard with portfolio performance and market sentiment](docs/screenshots/dashboard.png) | ![BTC-USD candlestick chart with SMA, volume and RSI](docs/screenshots/market-chart.png) |
+| **Dashboard:** virtual portfolio, equity curve, market sentiment and live prices | **Markets:** candlesticks with overlays, RSI/MACD panes and a technical readout |
+| ![Strategy builder with entry and exit rules](docs/screenshots/strategy-builder.png) | ![Backtest result with buy-and-hold benchmark](docs/screenshots/backtest.png) |
+| **Strategy builder:** visual rules, risk exits, versions and alerts | **Backtest:** metrics, an equity curve against buy-and-hold, and drawdown |
+| ![Walk-forward test with out-of-sample equity](docs/screenshots/walk-forward.png) | ![AI analysis with explainable signal](docs/screenshots/ai-analysis.png) |
+| **Walk-forward test:** tuned on one window, scored only on the next unseen one | **AI analysis:** trend, patterns, an ML model and an explainable composite signal |
+
 ## Architecture
 
 ```
@@ -154,6 +167,16 @@ cp .env.example .env.local      # BACKEND_INTERNAL_URL / NEXT_PUBLIC_WS_URL
 npm run dev                     # http://localhost:3000
 ```
 
+### Public demo
+
+Set `DEMO_MODE=true` to add **Try the demo** to the sign-in page. Each click creates a private sandbox account for that visitor, loaded with two sample strategies, a completed backtest and a small paper position:
+
+- Visitors never see each other's data.
+- Demo accounts can't change a password, never receive email, and are deleted, with everything they created, after `DEMO_TTL_HOURS` (default 24).
+- Creating a demo is rate-limited like sign-up.
+
+Combine it with [the HTTPS deployment](#deploying-with-https) for a public showcase.
+
 ### Admin accounts
 
 ```bash
@@ -184,7 +207,7 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 - **Backend:** ruff lint and mypy type check, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
 - **Frontend:** ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
-- **Docker:** `docker compose up --build --wait`, health checks, then the 31 browser flows against the containerized stack.
+- **Docker:** `docker compose up --build --wait`, health checks, then the 32 browser flows (with demo mode on) against the containerized stack.
 - **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
 
 See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
@@ -209,6 +232,7 @@ All settings are environment variables; see [.env.example](.env.example).
 | `ADMIN_EMAILS` | empty | Comma-separated emails granted the admin role once the address is verified by email (or use the CLI below) |
 | `EMAIL_BACKEND` | `console` | `console` logs emails and their links (development); `smtp` delivers them via `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SECURITY` from `EMAIL_FROM` |
 | `PUBLIC_APP_URL` | `http://localhost:3000` | Base URL for links in verification and password-reset emails |
+| `DEMO_MODE`, `DEMO_TTL_HOURS` | `false` / 24 | Public "Try the demo" sandboxes, and how long they live |
 | `TRUST_PROXY_HEADERS` (frontend), `PROXY_SHARED_SECRET` (both) | `false` / empty | Set both only when a reverse proxy in front of Next.js sets `X-Forwarded-For`; the API then trusts the client IP for rate limiting and audit |
 | `TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` | Peers whose `X-Forwarded-For` is trusted without the secret |
 | `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES` | 10 / 15 | Per-account lockout after repeated failed sign-ins |

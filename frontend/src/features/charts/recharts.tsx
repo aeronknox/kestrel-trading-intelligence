@@ -20,7 +20,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { formatDate, formatDateTime, formatPct, formatUsd } from "@/lib/format";
+import { formatDate, formatDateTime, formatPct, formatUsd, timeAxisFormatter, usdAxisFormatter } from "@/lib/format";
 
 const axisProps = {
   stroke: "var(--muted-foreground)",
@@ -29,13 +29,9 @@ const axisProps = {
   axisLine: false,
 } as const;
 
-/** Axis tick formatter that shows times for intraday ranges and dates otherwise. */
+/** Axis tick formatter scaled to the series' time span. */
 function timeTick(data: { time: number }[]) {
-  const span = data.length > 1 ? data[data.length - 1]!.time - data[0]!.time : 0;
-  return (t: number) =>
-    span < 2 * 86400
-      ? new Date(t * 1000).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
-      : formatDate(t);
+  return timeAxisFormatter(data.length > 1 ? data[data.length - 1]!.time - data[0]!.time : 0);
 }
 
 function TooltipBox({ children }: { children: React.ReactNode }) {
@@ -66,7 +62,7 @@ export function EquityAreaChart({
         </defs>
         <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
         <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} {...axisProps} tickFormatter={timeTick(data)} minTickGap={48} />
-        <YAxis {...axisProps} width={64} domain={["auto", "auto"]} tickFormatter={(v: number) => formatUsd(v, { compact: true })} />
+        <YAxis {...axisProps} width={64} domain={["auto", "auto"]} tickFormatter={usdAxisFormatter(data.flatMap((d) => (d.benchmark !== undefined ? [d.equity, d.benchmark] : [d.equity])))} />
         {baseline !== undefined && <ReferenceLine y={baseline} stroke="var(--muted-foreground)" strokeDasharray="3 3" strokeOpacity={0.5} />}
         <Tooltip
           cursor={{ stroke: "var(--border)" }}
@@ -229,3 +225,23 @@ export function Sparkline({ values, height = 32, positive }: { values: number[];
     </ResponsiveContainer>
   );
 }
+
+const MIN_CHART_SPAN_SECONDS = 600;
+
+/** True once a series covers enough time for a line chart to mean something. */
+export function hasChartableSpan(data: { time: number }[], minSeconds = MIN_CHART_SPAN_SECONDS): boolean {
+  return data.length > 1 && data[data.length - 1]!.time - data[0]!.time >= minSeconds;
+}
+
+/** Shown instead of a chart for a brand-new portfolio whose snapshots are only seconds apart. */
+export function YoungHistoryNote({ since, height }: { since: number | undefined; height: number }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border px-6 text-center" style={{ height }}>
+      <p className="text-sm font-medium">Tracking started {since ? formatDateTime(since) : "just now"}</p>
+      <p className="max-w-sm text-xs text-muted-foreground">
+        The chart fills in as equity snapshots are recorded: after every fill, and every few minutes while positions are open.
+      </p>
+    </div>
+  );
+}
+

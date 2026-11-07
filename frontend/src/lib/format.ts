@@ -87,3 +87,27 @@ export function barsSpan(bars: number, timeframe: string): string {
   const hours = Math.max(1, Math.round(days * 24));
   return `≈ ${hours} hour${hours === 1 ? "" : "s"}`;
 }
+
+/**
+ * Money axis labels: compact ($100K) for wide ranges, whole dollars when the values are
+ * close together, so a nearly flat equity curve doesn't show "$100K" on every tick.
+ */
+export function usdAxisFormatter(values: number[]): (v: number) => string {
+  const finite = values.filter(Number.isFinite);
+  const lo = Math.min(...finite);
+  const hi = Math.max(...finite);
+  const narrow = finite.length > 0 && hi - lo < Math.max(Math.abs(hi), 1) * 0.05;
+  return narrow ? (v) => `${v < 0 ? "-" : ""}$${Math.round(Math.abs(v)).toLocaleString("en-US")}` : (v) => formatUsd(v, { compact: true });
+}
+
+/** Time axis labels for a series spanning `spanSeconds`: seconds, clock time, or dates. */
+export function timeAxisFormatter(spanSeconds: number): (t: number) => string {
+  if (spanSeconds < 3600) {
+    return (t) => new Date(t * 1000).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+  if (spanSeconds < 2 * 86400) {
+    return (t) => new Date(t * 1000).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  }
+  return (t) => formatDate(t);
+}
+

@@ -309,6 +309,24 @@ await step("invalid reset and verification links are explained", async () => {
   expectedStatuses = [];
 });
 
+await step("demo sandbox (when DEMO_MODE is on)", async () => {
+  const config = await (await page.request.get(`${BASE}/api/v1/auth/config`)).json();
+  if (!config.demo_enabled) return; // the button only exists on demo deployments
+  await ctx.clearCookies();
+  await page.goto(`${BASE}/login`);
+  await page.getByRole("button", { name: "Try the demo" }).click();
+  await page.waitForURL("**/dashboard", { timeout: 30000 });
+  await page.getByText("demo sandbox").waitFor();
+  await page.goto(`${BASE}/strategies`);
+  await page.getByText("RSI mean reversion").first().waitFor();
+  await page.getByText("Moving-average crossover").first().waitFor();
+  await page.goto(`${BASE}/settings`);
+  await page.getByText("Preferences").first().waitFor();
+  if (await page.getByText("Change password").count()) throw new Error("password form shown in the demo");
+  await page.getByRole("button", { name: "Create a free account" }).click();
+  await page.waitForURL("**/register");
+});
+
 console.log(results.join("\n"));
 console.log(errors.length ? "\nBROWSER ERRORS:\n" + [...new Set(errors)].join("\n") : "\nNO_BROWSER_ERRORS");
 await browser.close();

@@ -98,6 +98,8 @@ jobs:
           sed -i "s|^MARKET_DATA_PROVIDER=.*|MARKET_DATA_PROVIDER=sample|" .env
           # All browser traffic reaches the API through the Next.js proxy, i.e. from a single IP.
           sed -i "s|^AUTH_RATE_LIMIT_PER_MINUTE=.*|AUTH_RATE_LIMIT_PER_MINUTE=100|" .env
+          # Exercise the public demo sandbox in the browser flows.
+          sed -i "s|^DEMO_MODE=.*|DEMO_MODE=true|" .env
       - name: Build and start
         run: docker compose up --build --detach --wait --wait-timeout 300
       - name: Health

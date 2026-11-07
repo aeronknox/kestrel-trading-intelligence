@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Logo } from "@/components/layout/logo";
 import { ErrorState } from "@/components/common/states";
-import { VerifyEmailBanner } from "@/features/auth/account-email";
+import { DemoBanner, VerifyEmailBanner } from "@/features/auth/account-email";
 import { useMe } from "@/hooks/use-auth";
 import { MarketStreamProvider } from "@/hooks/use-market-stream";
 
@@ -37,7 +37,7 @@ export default function AuthedLayout({ children }: { children: React.ReactNode }
   return (
     <MarketStreamProvider>
       <AppShell user={me.data}>
-        {!me.data.email_verified && <VerifyEmailBanner email={me.data.email} />}
+        {me.data.is_demo ? <DemoBanner /> : !me.data.email_verified && <VerifyEmailBanner email={me.data.email} />}
         {children}
       </AppShell>
     </MarketStreamProvider>

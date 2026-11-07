@@ -14,6 +14,7 @@ from app.models.market import Asset
 from app.models.paper import PaperPortfolio, SimulatedOrder
 from app.paper_trading.service import PaperTradingService
 from app.services.alerts import evaluate_alerts
+from app.services.demo import purge_expired_demo_users
 
 logger = get_logger(__name__)
 
@@ -21,6 +22,7 @@ ORDER_INTERVAL_SECONDS = 15
 SNAPSHOT_INTERVAL_SECONDS = 300
 BACKFILL_INTERVAL_SECONDS = 60
 ALERT_INTERVAL_SECONDS = 60
+DEMO_PURGE_INTERVAL_SECONDS = 900
 BACKFILL_TIMEFRAMES = ("1h", "6h", "1d")
 
 
@@ -98,6 +100,10 @@ class BackgroundJobs:
             asyncio.create_task(self._loop(snapshot_all_portfolios, SNAPSHOT_INTERVAL_SECONDS), name="paper-snapshots"),
             asyncio.create_task(self._loop(evaluate_alerts, ALERT_INTERVAL_SECONDS), name="strategy-alerts"),
         ]
+        if get_settings().demo_mode:
+            self._tasks.append(
+                asyncio.create_task(self._loop(purge_expired_demo_users, DEMO_PURGE_INTERVAL_SECONDS), name="demo-purge")
+            )
         if get_settings().history_backfill_enabled:
             self._tasks.append(
                 asyncio.create_task(self._loop(backfill_history, BACKFILL_INTERVAL_SECONDS), name="history-backfill")

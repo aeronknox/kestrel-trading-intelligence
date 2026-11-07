@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, MailWarning, XCircle } from "lucide-react";
+import { CheckCircle2, FlaskConical, MailWarning, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -168,6 +168,32 @@ export function VerifyEmailBanner({ email }: { email: string }) {
       </p>
       <Button size="sm" variant="outline" loading={resend.isPending} disabled={resend.isSuccess} onClick={() => resend.mutate()}>
         {resend.isSuccess ? "Email sent" : "Resend email"}
+      </Button>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------- demo notice
+export function DemoBanner() {
+  const qc = useQueryClient();
+  const leave = useMutation({
+    mutationFn: api.auth.logout,
+    onSettled: () => {
+      qc.clear();
+      // A full load (not router.push) guarantees no cached demo data survives into the new account,
+      // and avoids racing the app layout's own signed-out redirect to /login.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.assign("/register");
+    },
+  });
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-info/40 bg-info-soft px-4 py-2.5 text-sm" role="status">
+      <FlaskConical className="size-4 shrink-0 text-info" />
+      <p className="min-w-0 flex-1">
+        You&apos;re in a <span className="font-medium">demo sandbox</span> with sample strategies and a virtual portfolio. It&apos;s private to you and deleted after a day.
+      </p>
+      <Button size="sm" variant="outline" loading={leave.isPending} onClick={() => leave.mutate()}>
+        Create a free account
       </Button>
     </div>
   );

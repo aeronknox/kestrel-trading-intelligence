@@ -11,7 +11,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge, Skeleton } from "@/components/ui/primitives";
-import { EquityAreaChart } from "@/features/charts/recharts";
+import { EquityAreaChart, hasChartableSpan, YoungHistoryNote } from "@/features/charts/recharts";
 import { MarketTable } from "@/features/markets/market-table";
 import { useMe } from "@/hooks/use-auth";
 import { formatPrice, formatQty, formatUsd, pnlClass, timeAgo } from "@/lib/format";
@@ -107,7 +107,11 @@ export function DashboardView() {
                     <Badge variant="outline">Paper</Badge>
                   </CardHeader>
                   <CardContent>
-                    <EquityAreaChart data={history} baseline={p.starting_balance} height={260} />
+                    {hasChartableSpan(history) ? (
+                      <EquityAreaChart data={history} baseline={p.starting_balance} height={260} />
+                    ) : (
+                      <YoungHistoryNote since={history[0]?.time} height={260} />
+                    )}
                   </CardContent>
                 </Card>
                 <SentimentCard sentiment={d.sentiment} />

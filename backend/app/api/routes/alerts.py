@@ -93,7 +93,9 @@ async def upsert_alert(strategy_id: int, body: AlertSettings, user: CurrentUser,
         db.add(alert)
     elif body.enabled and not alert.enabled:
         alert.last_bar_at = None  # re-enabled: start from the newest bar, don't replay the gap
-    alert.enabled, alert.on_entry, alert.on_exit, alert.notify_email = body.enabled, body.on_entry, body.on_exit, body.notify_email
+    # Demo accounts have no mailbox; their alerts stay in-app.
+    notify_email = body.notify_email and not user.is_demo
+    alert.enabled, alert.on_entry, alert.on_exit, alert.notify_email = body.enabled, body.on_entry, body.on_exit, notify_email
     await db.flush()
     await db.refresh(alert, attribute_names=["strategy"])
     return _out(alert)

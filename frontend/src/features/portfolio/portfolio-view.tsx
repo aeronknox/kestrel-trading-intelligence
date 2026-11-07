@@ -11,7 +11,7 @@ import { DownloadButton } from "@/components/common/download-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/primitives";
-import { AllocationDonut, DrawdownChart, EquityAreaChart } from "@/features/charts/recharts";
+import { AllocationDonut, DrawdownChart, EquityAreaChart, hasChartableSpan, YoungHistoryNote } from "@/features/charts/recharts";
 import { formatNumber, formatPct, formatUsd, pnlClass } from "@/lib/format";
 import { api } from "@/services/api";
 
@@ -71,9 +71,15 @@ export function PortfolioView() {
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
-              <EquityAreaChart data={curve} baseline={p.starting_balance} height={260} />
-              <p className="pt-1 text-xs font-medium text-muted-foreground">Drawdown</p>
-              <DrawdownChart data={dd} height={120} />
+              {hasChartableSpan(curve) ? (
+                <>
+                  <EquityAreaChart data={curve} baseline={p.starting_balance} height={260} />
+                  <p className="pt-1 text-xs font-medium text-muted-foreground">Drawdown</p>
+                  <DrawdownChart data={dd} height={120} />
+                </>
+              ) : (
+                <YoungHistoryNote since={curve[0]?.time} height={260} />
+              )}
             </CardContent>
           </Card>
           <Card>

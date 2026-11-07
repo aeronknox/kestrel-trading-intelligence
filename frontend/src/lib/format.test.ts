@@ -42,3 +42,20 @@ describe("barsSpan", () => {
     expect(barsSpan(5, "1h")).toBe("≈ 5 hours");
   });
 });
+
+describe("axis formatters", () => {
+  it("uses whole dollars when values are close together", async () => {
+    const { usdAxisFormatter } = await import("./format");
+    const narrow = usdAxisFormatter([99_988.62, 100_000]);
+    expect([narrow(99_990), narrow(100_000)]).toEqual(["$99,990", "$100,000"]); // distinct labels
+    const wide = usdAxisFormatter([50_000, 120_000]);
+    expect(wide(100_000)).toBe("$100K");
+  });
+  it("adds seconds for very short spans", async () => {
+    const { timeAxisFormatter } = await import("./format");
+    const t = Date.UTC(2026, 0, 1, 12, 0, 5) / 1000;
+    expect(timeAxisFormatter(30)(t)).toMatch(/\d{2}:\d{2}:\d{2}/);
+    expect(timeAxisFormatter(5 * 3600)(t)).not.toMatch(/\d{2}:\d{2}:\d{2}/);
+  });
+});
+

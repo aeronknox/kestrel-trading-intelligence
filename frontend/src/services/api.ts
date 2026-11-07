@@ -127,6 +127,8 @@ export const api = {
       post<{ message: string }>("/auth/reset-password", { token, new_password }),
     verifyEmail: (token: string) => post<{ message: string }>("/auth/verify-email", { token }),
     resendVerification: () => post<{ message: string }>("/auth/verify-email/resend"),
+    config: () => get<{ demo_enabled: boolean }>("/auth/config"),
+    demo: () => post<User>("/auth/demo"),
   },
   users: {
     updateProfile: (full_name: string) => patch<User>("/users/me", { full_name }),

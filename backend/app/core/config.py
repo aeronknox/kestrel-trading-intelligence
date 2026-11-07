@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
     public_app_url: str = "http://localhost:3000"  # base for links in emails
     email_verification_ttl_hours: int = 48
+    # Public demo: "Try the demo" creates a throwaway sandbox account per visitor.
+    demo_mode: bool = False
+    demo_ttl_hours: int = 24
     password_reset_ttl_minutes: int = 60
 
     # Persistence
