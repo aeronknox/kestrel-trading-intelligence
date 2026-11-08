@@ -148,10 +148,15 @@ def create_app(*, background: bool = True) -> FastAPI:
             checks["database"] = f"error: {type(exc).__name__}"
         checks["cache"] = get_cache().backend
         provider = get_provider()
+        stream = ws.broadcaster.stream
         return {
             "status": "ok" if checks["database"] == "ok" else "degraded",
             "checks": checks,
-            "market_data": {"provider": provider.name, "is_sample": provider.is_sample},
+            "market_data": {
+                "provider": provider.name,
+                "is_sample": provider.is_sample,
+                "stream": stream.status() if stream else {"enabled": False},
+            },
             "ai_enabled": settings.ai_enabled,
         }
 

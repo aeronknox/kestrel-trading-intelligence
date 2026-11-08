@@ -9,7 +9,8 @@ type Status = "connecting" | "live" | "offline";
 interface StreamState {
   tickers: Record<string, Ticker>;
   status: Status;
-  meta: Pick<DataMeta, "source" | "is_sample" | "attribution"> | null;
+  /** `streaming` is true when prices come from the exchange's live feed, false when polled. */
+  meta: (Pick<DataMeta, "source" | "is_sample" | "attribution"> & { streaming?: boolean }) | null;
   lastUpdate: number | null;
 }
 

@@ -7,7 +7,7 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 | Area | What you get |
 |---|---|
 | Dashboard | Virtual portfolio value, 24h P&L, equity curve, live market table, watchlist, AI insight, recent signals and orders, market sentiment |
-| Markets | Live prices over WebSocket, catalog search to track new assets, candlestick charts (1m–1d), SMA 20/50/200, Bollinger Bands, volume, RSI, MACD |
+| Markets | Live prices streamed from Coinbase's public feed as trades happen (REST polling as fallback), catalog search to track new assets, candlestick charts (1m–1d), SMA 20/50/200, Bollinger Bands, volume, RSI, MACD |
 | AI Analysis | Trend regression, support/resistance, pattern detection, a walk-forward ML model, an explainable composite signal with confidence, and a risk breakdown |
 | Strategy Builder | Visual rule builder (13 indicators, 6 operators, ALL/ANY logic), risk exits, templates, immutable versioning |
 | Backtesting | Long or short strategies (shorts use stops above entry and a margin call if price doubles); next-bar execution, fees, slippage, gap-aware stops; return, max drawdown, Sharpe/Sortino, a buy-and-hold benchmark with the same costs (overlaid on the equity curve, with excess return and beta), win rate, profit factor, CAGR, exposure; side-by-side comparison |
@@ -225,6 +225,7 @@ All settings are environment variables; see [.env.example](.env.example).
 | `REDIS_URL` | empty | Cache and rate limits; empty uses in-process memory |
 | `MARKET_DATA_PROVIDER` | `coinbase` | `coinbase` (real) or `sample` (synthetic, labelled) |
 | `HISTORY_BACKFILL_ENABLED`, `HISTORY_BACKFILL_BARS_PER_MINUTE` | `true` / 3000 | Background download of long 1h/6h/1d history for tracked assets, and its rate |
+| `MARKET_STREAM_ENABLED`, `MARKET_WS_POLL_SECONDS` | `true` / 5 | Live prices from Coinbase's WebSocket feed; polling interval used as the fallback |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | empty / `gpt-4.1-mini` | Optional LLM narration and assistant |
 | `PAPER_STARTING_BALANCE`, `PAPER_FEE_BPS`, `PAPER_SLIPPAGE_BPS` | 100000 / 10 / 5 | Simulation parameters |
 | `RATE_LIMIT_PER_MINUTE`, `AUTH_RATE_LIMIT_PER_MINUTE`, `COMPUTE_RATE_LIMIT_PER_MINUTE` | 240 / 15 / 30 | Per-IP limits |
@@ -274,6 +275,6 @@ Interactive docs are at `/docs`. All routes are under `/api/v1`.
 ## Known limitations and next steps
 
 - Background jobs (limit-order matching every 15s, equity snapshots every 5 min, strategy alerts every minute, history backfill) and the WebSocket broadcaster run inside the API process, so run one backend replica or move them to a dedicated worker before scaling out.
-- Live prices are polled from the provider every `MARKET_WS_POLL_SECONDS` (default 5s) and fanned out over WebSocket. An upstream exchange WebSocket feed would lower latency.
+- Live prices stream from Coinbase's public WebSocket feed (`MARKET_STREAM_ENABLED`) and are batched to browsers every 0.5s. If the feed drops, the app falls back to REST polling every `MARKET_WS_POLL_SECONDS` while it reconnects. Only the Coinbase provider streams.
 - Backtests hold one position at a time, long or short, without leverage. Shorts have no borrow or funding costs. Multi-asset tests split capital equally and never rebalance between coins. Paper trading is long-only. They can use up to 20,000 bars (about 2.3 years of 1h candles): history is stored in PostgreSQL, filled in by a background job for tracked assets (1h/6h/1d), and downloaded on demand otherwise, so the first long run on a new asset can take about half a minute. Research runs are capped at 2,000,000 simulated bars per request.
 - Paper trading is spot and long-only; short selling is rejected by design.

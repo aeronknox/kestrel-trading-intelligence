@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     history_backfill_enabled: bool = True
     history_backfill_bars_per_minute: int = 3000  # ~10 Coinbase requests/minute
     coinbase_base_url: str = "https://api.exchange.coinbase.com"
+    # Live prices from Coinbase's public WebSocket feed (REST polling remains the fallback).
+    market_stream_enabled: bool = True
+    coinbase_ws_url: str = "wss://ws-feed.exchange.coinbase.com"
     sentiment_url: str = "https://api.alternative.me/fng/"
 
     # AI

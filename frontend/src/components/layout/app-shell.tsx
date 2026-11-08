@@ -86,10 +86,18 @@ function SimulationNotice() {
 }
 
 function LiveStatus() {
-  const { status } = useMarketStream();
+  const { status, meta } = useMarketStream();
   const label = status === "live" ? "Live" : status === "connecting" ? "Connecting" : "Offline";
+  const tip =
+    status !== "live"
+      ? "Live price stream unavailable — retrying"
+      : meta?.streaming
+        ? "Prices stream from the exchange's live feed as trades happen"
+        : meta?.is_sample
+          ? "Synthetic sample prices, refreshed every few seconds"
+          : "Prices refreshed every few seconds (the exchange's live feed is reconnecting)";
   return (
-    <Tooltip content={status === "live" ? "Streaming prices via WebSocket" : "Live price stream unavailable — retrying"}>
+    <Tooltip content={tip}>
       <span className="hidden items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground sm:inline-flex">
         <span className={cn("size-1.5 rounded-full", status === "live" ? "bg-gain animate-pulse" : status === "connecting" ? "bg-warn" : "bg-loss")} />
         {label}
