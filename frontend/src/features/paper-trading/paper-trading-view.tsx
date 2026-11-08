@@ -31,7 +31,9 @@ function PositionsTable({ portfolio }: { portfolio: Portfolio }) {
   const { tickers } = useMarketStream();
   const qc = useQueryClient();
   const close = useMutation({
-    mutationFn: (p: { symbol: string; quantity: number }) => api.paper.placeOrder({ symbol: p.symbol, side: "sell", order_type: "market", quantity: p.quantity }),
+    // Closing a long sells it; closing a short buys it back.
+    mutationFn: (p: { symbol: string; quantity: number }) =>
+      api.paper.placeOrder({ symbol: p.symbol, side: p.quantity < 0 ? "buy" : "sell", order_type: "market", quantity: Math.abs(p.quantity) }),
     onSuccess: (o) => {
       qc.invalidateQueries({ queryKey: ["paper"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -55,13 +57,15 @@ function PositionsTable({ portfolio }: { portfolio: Portfolio }) {
           const price = tickers[p.asset.symbol]?.price ?? p.current_price;
           const value = price ? p.quantity * price : p.market_value;
           const upnl = price ? (price - p.avg_entry_price) * p.quantity : p.unrealized_pnl;
-          const upct = price ? (price / p.avg_entry_price - 1) * 100 : p.unrealized_pnl_pct;
+          const short = p.quantity < 0;
+          const upct = price ? (price / p.avg_entry_price - 1) * 100 * (short ? -1 : 1) : p.unrealized_pnl_pct;
           return (
             <TR key={p.id}>
               <TD>
                 <Link href={`/markets/${p.asset.symbol}`} className="flex items-center gap-2">
                   <AssetIcon symbol={p.asset.symbol} className="size-6" />
                   <span className="font-medium">{p.asset.symbol}</span>
+                  {short && <Badge variant="loss">Short</Badge>}
                 </Link>
               </TD>
               <TD className="text-right">{formatQty(p.quantity)}</TD>
@@ -77,9 +81,9 @@ function PositionsTable({ portfolio }: { portfolio: Portfolio }) {
                   size="sm"
                   variant="outline"
                   loading={close.isPending && close.variables?.symbol === p.asset.symbol}
-                  onClick={() => window.confirm(`Close the full ${p.asset.symbol} position at market (simulated)?`) && close.mutate({ symbol: p.asset.symbol, quantity: p.quantity })}
+                  onClick={() => window.confirm(`${short ? "Buy back" : "Close"} the full ${p.asset.symbol} position at market (simulated)?`) && close.mutate({ symbol: p.asset.symbol, quantity: p.quantity })}
                 >
-                  Close
+                  {short ? "Cover" : "Close"}
                 </Button>
               </TD>
             </TR>
@@ -129,6 +133,7 @@ function OrdersTable({ orders, cancellable }: { orders: Order[]; cancellable?: b
             <TD>
               <Badge variant={STATUS_VARIANT[o.status]} title={o.reject_reason ?? undefined}>{o.status}</Badge>
               {o.reject_reason && <p className="mt-0.5 max-w-56 truncate text-[11px] text-muted-foreground" title={o.reject_reason}>{o.reject_reason}</p>}
+              {o.note && <p className="mt-0.5 max-w-56 truncate text-[11px] text-warn" title={o.note}>{o.note}</p>}
             </TD>
             {cancellable && (
               <TD className="text-right">

@@ -15,7 +15,7 @@ from app.database.session import get_sessionmaker
 from app.market_data.service import HISTORY_MAX_BARS, MarketDataService
 from app.models.enums import OrderStatus
 from app.models.market import Asset
-from app.models.paper import PaperPortfolio, SimulatedOrder
+from app.models.paper import PaperPortfolio, PortfolioPosition, SimulatedOrder
 from app.paper_trading.service import PaperTradingService
 from app.services.alerts import evaluate_alerts
 from app.services.demo import purge_expired_demo_users
@@ -38,11 +38,10 @@ BACKFILL_TIMEFRAMES = ("1h", "6h", "1d")
 async def process_all_open_orders() -> int:
     fills = 0
     async with get_sessionmaker()() as session:
-        portfolio_ids = (
-            await session.scalars(
-                select(SimulatedOrder.portfolio_id).where(SimulatedOrder.status == OrderStatus.OPEN).distinct()
-            )
-        ).all()
+        # Portfolios with resting orders, plus any holding a short (it may need a margin call).
+        with_orders = select(SimulatedOrder.portfolio_id).where(SimulatedOrder.status == OrderStatus.OPEN)
+        with_shorts = select(PortfolioPosition.portfolio_id).where(PortfolioPosition.quantity < 0)
+        portfolio_ids = (await session.scalars(with_orders.union(with_shorts))).all()
         for pid in portfolio_ids:
             pf = await session.scalar(select(PaperPortfolio).where(PaperPortfolio.id == pid).with_for_update())
             if pf is None:

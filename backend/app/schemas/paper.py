@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -29,6 +30,7 @@ class OrderOut(ORMModel):
     created_at: datetime
     filled_at: datetime | None
     strategy_id: int | None = None  # set when a strategy's forward test placed the order
+    note: str | None = None  # e.g. "Margin call: ..." for orders the system placed
 
 
 class TradeOut(ORMModel):
@@ -46,7 +48,8 @@ class TradeOut(ORMModel):
 class PositionOut(BaseModel):
     id: int
     asset: AssetOut
-    quantity: float
+    side: Literal["long", "short"] = "long"
+    quantity: float  # signed: negative for shorts
     avg_entry_price: float
     current_price: float | None
     market_value: float
@@ -61,6 +64,7 @@ class RiskLimits(BaseModel):
     max_position_pct: float = Field(ge=1, le=100)
     max_open_positions: int = Field(ge=1, le=100)
     daily_loss_limit_pct: float = Field(ge=0.5, le=100)
+    allow_short: bool = False  # simulated short selling (sell while flat; buy to cover)
 
 
 class PortfolioOut(BaseModel):
@@ -69,6 +73,7 @@ class PortfolioOut(BaseModel):
     starting_balance: float
     cash_balance: float
     reserved_cash: float = 0.0
+    short_liability: float = 0.0  # cost to buy back all shorts now
     available_cash: float
     positions_value: float
     equity: float

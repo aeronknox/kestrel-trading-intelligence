@@ -172,10 +172,30 @@ async def test_risk_rejection_is_reported_not_raised(auth_client) -> None:  # ty
     assert "Paper order rejected: Maximum of 1 open positions reached" in events[0]["message"]
 
 
-async def test_short_strategies_cannot_auto_trade(auth_client) -> None:  # type: ignore[no-untyped-def]
-    body = {"name": "Shorty", "config": {"symbol": "BTC-USD", "timeframe": "1h", "entry": {"conditions": [cond(">", 1)]},
-            "exit": {"conditions": [cond("<", 1)]}, "risk": {"direction": "short"}}}  # fmt: skip
+async def test_short_strategy_forward_test_needs_and_uses_short_selling(auth_client) -> None:  # type: ignore[no-untyped-def]
+    await use(lambda ago: 90.0 if ago <= 1 else 100.0)  # falls below 95 on the newest closed bar
+    body = {"name": "Shorty", "config": {"symbol": "BTC-USD", "timeframe": "1h", "entry": {"conditions": [cond("<", 95)]},
+            "exit": {"conditions": [cond(">", 105)]}, "risk": {"direction": "short", "position_size_pct": 10}}}  # fmt: skip
     sid = (await auth_client.post(f"{API}/strategies", json=body)).json()["id"]
-    resp = await auth_client.put(f"{API}/alerts/strategy/{sid}", json={"auto_trade": True})
-    assert resp.status_code == 422 and "long strategies only" in resp.json()["error"]["message"]
-    assert (await auth_client.put(f"{API}/alerts/strategy/{sid}", json={"auto_trade": False})).status_code == 200
+    refused = await auth_client.put(f"{API}/alerts/strategy/{sid}", json={"auto_trade": True})
+    assert refused.status_code == 422 and "enable short selling" in refused.json()["error"]["message"]
+
+    await auth_client.put(f"{API}/paper/portfolio/risk-limits",
+                          json={"max_position_pct": 25, "max_open_positions": 10, "daily_loss_limit_pct": 50, "allow_short": True})  # fmt: skip
+    assert (await auth_client.put(f"{API}/alerts/strategy/{sid}", json={"auto_trade": True})).status_code == 200
+    await evaluate_alerts()
+    await rewind(sid, 2)
+    await evaluate_alerts()
+    pos = (await auth_client.get(f"{API}/paper/portfolio")).json()["positions"][0]
+    assert pos["side"] == "short"
+
+    await use(lambda ago: 110.0 if ago <= 1 else 90.0)  # rallies above 105: the exit rules cover the short
+    await rewind(sid, 1)
+    await evaluate_alerts()
+    assert [o.side.value for o in await strategy_orders(sid)] == ["sell", "buy"]
+    summary = (await auth_client.get(f"{API}/alerts/strategy/{sid}/forward-test")).json()
+    trip = summary["round_trips"][0]
+    assert trip["side"] == "short" and summary["open_position"] is None
+    assert trip["pnl"] == pytest.approx(trip["quantity"] * (trip["entry_price"] - trip["exit_price"]), rel=0.01)  # ~fees apart
+    assert trip["pnl"] < 0  # shorted near 90, covered near 110
+    assert "covered on exit rules" in trip["note"]

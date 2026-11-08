@@ -13,8 +13,8 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 | Backtesting | Long or short strategies (shorts use stops above entry and a margin call if price doubles); next-bar execution, fees, slippage, gap-aware stops; return, max drawdown, Sharpe/Sortino, a buy-and-hold benchmark with the same costs (overlaid on the equity curve, with excess return and beta), win rate, profit factor, CAGR, exposure; side-by-side comparison |
 | Optimization | Multi-asset tests (one strategy on 2–6 coins with capital split equally, against an equal-weight buy-and-hold, with per-coin results and price correlation); parameter sweeps over 1–2 settings (heatmap of every combination, robustness stats) and walk-forward tests that tune on one window and score only on the next, unseen one, against the untuned strategy and buy-and-hold, with a rule-based verdict |
 | Alerts | Notifications when a saved strategy's entry or exit rules fire on a newly closed live candle, checked every minute with the same rule engine as the backtester. Fires once when a rule becomes true, never replays history, and caps catch-up after downtime. Shown in the header and on an alerts page, with optional email to verified addresses. Never places orders |
-| Forward testing | Optional auto paper-trading per strategy: it buys and sells in the paper portfolio on its own live signals, stops, targets and time limit, mirroring the backtester. It respects the portfolio's risk limits, only sells what it bought, and shows round trips and win rate next to the backtest. Long strategies only; simulated only |
-| Paper Trading | $100k virtual balance, market and limit orders (open limit orders reserve cash or quantity; exposure limits are re-checked at fill time), positions, realized/unrealized P&L, risk limits, order and trade history, reset |
+| Forward testing | Optional auto paper-trading per strategy: it buys and sells in the paper portfolio on its own live signals, stops, targets and time limit, mirroring the backtester. It respects the portfolio's risk limits, only sells what it bought, and shows round trips and win rate next to the backtest. Short strategies short and cover when short selling is enabled; simulated only |
+| Paper Trading | $100k virtual balance, market and limit orders, optional short selling (proceeds held as collateral, margin call if price doubles) (open limit orders reserve cash or quantity; exposure limits are re-checked at fill time), positions, realized/unrealized P&L, risk limits, order and trade history, reset |
 | Portfolio | Equity and drawdown history, allocation, trade statistics |
 | Assistant | Chat grounded in platform data through tool calls; reports missing data as unavailable |
 | Admin | Role management, account disabling, audit log viewer |
@@ -191,7 +191,7 @@ cd backend && python -m app.cli promote-admin you@example.com    # or demote-adm
 ### Tests
 
 ```bash
-cd backend  && pytest                  # 175 tests: indicators (incl. Wilder reference values),
+cd backend  && pytest                  # 181 tests: indicators (incl. Wilder reference values),
                                        # backtester (long and short), optimization and walk-forward
                                        # look-ahead checks, multi-asset tests, ML leakage, signals,
                                        # auth/RBAC, email tokens, demo sandboxes, rate limiting,
@@ -202,7 +202,7 @@ cd frontend && npm run lint            # ESLint
 cd frontend && npm test                # 19 unit tests: rule builder, formatters, sweep-grid helpers
 cd frontend && npm run typecheck && npm run build
 cd frontend && npx playwright install chromium && npm run e2e
-                                       # 34 browser flows against a running stack (:3000 + :8000)
+                                       # 35 browser flows against a running stack (:3000 + :8000)
 cd frontend && npm run a11y            # axe (WCAG 2.1 A/AA) on every page in both themes + no sideways
                                        # scrolling at 390px; fails on critical/serious findings
 ```
@@ -287,4 +287,4 @@ Interactive docs are at `/docs`. All routes are under `/api/v1`.
 - Background jobs (limit-order matching every 15s, equity snapshots every 5 min, strategy alerts every minute, history backfill, demo cleanup) are leader-elected through a Redis lease, so several API replicas or a dedicated `python -m app.worker` (`docker compose --profile worker up`) never run them twice. With `RUN_BACKGROUND_JOBS=false` an API instance only serves requests. Without Redis the lease is per process, so run a single job runner. Live prices stream per API instance.
 - Live prices stream from Coinbase's public WebSocket feed (`MARKET_STREAM_ENABLED`) and are batched to browsers every 0.5s. If the feed drops, the app falls back to REST polling every `MARKET_WS_POLL_SECONDS` while it reconnects. Only the Coinbase provider streams.
 - Backtests hold one position at a time, long or short, without leverage. Shorts have no borrow or funding costs. Multi-asset tests split capital equally and never rebalance between coins. Paper trading is long-only. They can use up to 20,000 bars (about 2.3 years of 1h candles): history is stored in PostgreSQL, filled in by a background job for tracked assets (1h/6h/1d), and downloaded on demand otherwise, so the first long run on a new asset can take about half a minute. Research runs are capped at 2,000,000 simulated bars per request.
-- Paper trading is spot and long-only; short selling is rejected by design.
+- Paper trading is spot, unleveraged and simulated. Short selling is opt-in per portfolio. A short posts its own value as collateral, has no borrow or funding costs, and is force-covered if the price doubles. An order can close a position but not flip it from long to short.

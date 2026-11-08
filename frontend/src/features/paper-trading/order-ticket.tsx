@@ -37,6 +37,11 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
   const notional = qty * execPrice;
   const fee = (notional * portfolio.fee_bps) / 10_000;
   const position = portfolio.positions.find((p) => p.asset.symbol === symbol);
+  const held = position?.quantity ?? 0;
+  // What this order does depends on the side and the current position.
+  const action =
+    side === "buy" ? (held < 0 ? "Buy to cover" : "Buy") : held > 0 ? "Sell" : portfolio.risk_limits.allow_short ? "Sell short" : "Sell";
+  const opensRisk = action === "Buy" || action === "Sell short";
 
   const place = useMutation({
     mutationFn: () => api.paper.placeOrder({ symbol, side, order_type: type, quantity: Number(qty.toPrecision(12)), limit_price: type === "limit" ? Number(limit) : null }),
@@ -106,13 +111,13 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
               disabled={!price}
               onClick={() => {
                 if (!price) return;
-                if (side === "buy") {
+                if (opensRisk) {
                   const usd = (portfolio.available_cash * pct) / 100 / (1 + portfolio.fee_bps / 10_000) / (1 + portfolio.slippage_bps / 10_000);
                   setMode("usd");
                   setAmount(String(Math.floor(usd * 100) / 100));
                 } else if (position) {
                   setMode("qty");
-                  setAmount(String((position.quantity * pct) / 100));
+                  setAmount(String((Math.abs(held) * pct) / 100));
                 }
               }}
             >
@@ -125,10 +130,10 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
           <div className="flex justify-between"><dt className="text-muted-foreground">Est. fill price (incl. {portfolio.slippage_bps} bps slippage)</dt><dd className="tabular">{formatPrice(execPrice || null)}</dd></div>
           <div className="flex justify-between"><dt className="text-muted-foreground">Est. fee ({portfolio.fee_bps} bps)</dt><dd className="tabular">{formatUsd(fee)}</dd></div>
           <div className="flex justify-between font-medium"><dt>Est. {side === "buy" ? "cost" : "proceeds"}</dt><dd className="tabular">{formatUsd(side === "buy" ? notional + fee : notional - fee)}</dd></div>
-          <div className="flex justify-between"><dt className="text-muted-foreground">{side === "buy" ? "Cash available" : "Position held"}</dt><dd className="tabular">{side === "buy" ? formatUsd(portfolio.available_cash) : `${formatQty(position?.quantity ?? 0)} ${symbol.split("-")[0]}`}</dd></div>
+          <div className="flex justify-between"><dt className="text-muted-foreground">{opensRisk ? "Buying power" : "Position held"}</dt><dd className="tabular">{opensRisk ? formatUsd(portfolio.available_cash) : `${formatQty(held)} ${symbol.split("-")[0]}${held < 0 ? " (short)" : ""}`}</dd></div>
         </dl>
         <Button className="w-full" variant={side === "buy" ? "gain" : "loss"} disabled={invalid} loading={place.isPending} onClick={() => place.mutate()}>
-          {side === "buy" ? "Buy" : "Sell"} {symbol.split("-")[0]} (paper)
+          {action} {symbol.split("-")[0]} (paper)
         </Button>
         <p className="text-[11px] leading-relaxed text-muted-foreground">Orders are simulated against the latest public price. No real orders are sent to any exchange or broker.</p>
       </CardContent>

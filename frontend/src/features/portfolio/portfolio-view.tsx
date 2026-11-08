@@ -38,7 +38,7 @@ export function PortfolioView() {
   if (curve.length < 2) curve.push({ time: Math.floor(portfolio.dataUpdatedAt / 1000), equity: p.equity });
   const dd = drawdownCurve(curve);
   const allocation = [
-    ...p.positions.map((pos) => ({ name: pos.asset.symbol, value: pos.market_value })),
+    ...p.positions.map((pos) => ({ name: pos.quantity < 0 ? `${pos.asset.symbol} (short)` : pos.asset.symbol, value: Math.abs(pos.market_value) })),
     { name: "Cash", value: p.cash_balance },
   ].filter((x) => x.value > 0);
 

@@ -139,14 +139,14 @@ export function StrategyAlertCard({ strategyId, direction = "long" }: { strategy
                 <p className="text-sm font-medium">Auto paper-trade (forward test)</p>
                 <p className="text-xs text-muted-foreground">
                   {direction === "short"
-                    ? "Not available for short strategies: paper trading is long-only."
+                    ? "Shorts and covers in your paper portfolio on this strategy's own signals, stops and targets. Needs short selling enabled in paper trading's risk limits. Simulated only."
                     : "Buys and sells in your paper portfolio on this strategy's own signals, stops and targets, within your risk limits. Simulated only."}
                 </p>
               </div>
               <Switch
                 aria-label="Auto paper-trade"
                 checked={current.auto_trade}
-                disabled={save.isPending || !current.enabled || direction === "short"}
+                disabled={save.isPending || !current.enabled}
                 onCheckedChange={(v) => set({ auto_trade: v })}
               />
             </div>

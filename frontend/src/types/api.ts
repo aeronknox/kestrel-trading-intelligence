@@ -408,6 +408,8 @@ export interface Order {
   filled_at: string | null;
   /** Set when a strategy's forward test placed the order. */
   strategy_id?: number | null;
+  /** Why the system placed it, e.g. a margin call. */
+  note?: string | null;
 }
 
 export interface Trade {
@@ -425,6 +427,8 @@ export interface Trade {
 export interface Position {
   id: number;
   asset: Asset;
+  side?: "long" | "short";
+  /** Signed: negative for a short. */
   quantity: number;
   avg_entry_price: number;
   current_price: number | null;
@@ -440,6 +444,8 @@ export interface RiskLimits {
   max_position_pct: number;
   max_open_positions: number;
   daily_loss_limit_pct: number;
+  /** Simulated short selling: sell while flat, buy to cover. */
+  allow_short?: boolean;
 }
 
 export interface Portfolio {
@@ -447,8 +453,10 @@ export interface Portfolio {
   name: string;
   starting_balance: number;
   cash_balance: number;
-  /** Worst-case cost of open limit buys, held back from new orders. */
+  /** Worst-case cost of open orders that add risk, held back from new orders. */
   reserved_cash: number;
+  /** Cost to buy back all shorts at current prices. */
+  short_liability?: number;
   available_cash: number;
   positions_value: number;
   equity: number;

@@ -4,16 +4,23 @@ SIMULATION ONLY. Nothing in this module (or anywhere in the platform) connects
 to a brokerage or moves real money. Fills use the provider's latest public price
 plus configured slippage and fees.
 
-Accounting:
-  * Buy fees are capitalized into the position's average cost.
-  * Sell fees reduce realized P&L.
-  * Therefore: equity - starting_balance == realized_pnl + unrealized_pnl.
+Accounting (positions are signed: negative quantity = short):
+  * Long: buy fees are capitalized into the average cost; sell fees reduce realized P&L.
+  * Short (only when the portfolio allows it): selling while flat or short credits the
+    proceeds to cash; the average entry is the net proceeds per unit (fee deducted);
+    covering buys it back. Market value is quantity x price for both sides, so
+    equity = cash + sum(market values), and
+    equity - starting_balance == realized_pnl + unrealized_pnl holds throughout.
+  * Short proceeds can't be spent: buying power = cash - reservations - 2 x short
+    liability, i.e. a short posts its own value as collateral, as in the backtester.
+    A short is force-covered ("margin call") if price reaches twice its average entry.
+  * An order can reduce or close a position but not flip it from long to short (or back).
 
-Reservations: an open limit buy holds back its worst-case cost (quantity x limit
-price + fee) from available cash, and an open limit sell holds back its quantity,
-so resting orders can never together commit more than the portfolio has.
-Exposure limits (position size, open positions, daily loss) are checked when an
-order is placed and again when a resting order fills.
+Reservations: open orders that would add risk hold back what they need: a limit buy its
+worst-case cost, a limit sell that opens a short its margin, and a limit sell that reduces
+a long its quantity, so resting orders can never together commit more than the portfolio has.
+Exposure limits (position size, open positions, daily loss) count longs and shorts alike and
+are checked when an order is placed and again when a resting order fills.
 """
 
 from dataclasses import dataclass
@@ -57,7 +64,11 @@ class PositionView:
     def unrealized_pnl(self) -> float:
         if self.price is None:
             return 0.0
-        return (self.price - self.position.avg_entry_price) * self.position.quantity
+        return (self.price - self.position.avg_entry_price) * self.position.quantity  # signed: works for shorts
+
+    @property
+    def is_short(self) -> bool:
+        return self.position.quantity < 0
 
 
 class PaperTradingService:
@@ -97,29 +108,38 @@ class PaperTradingService:
         return portfolio
 
     async def position_views(self, portfolio: PaperPortfolio) -> list[PositionView]:
-        positions = [p for p in portfolio.positions if p.quantity > QTY_EPSILON]
+        positions = [p for p in portfolio.positions if abs(p.quantity) > QTY_EPSILON]
         tickers = await self.market.get_tickers([p.asset for p in positions]) if positions else {}
         return [PositionView(p, t.price if (t := tickers.get(p.asset.symbol)) else None) for p in positions]
 
     async def reservations(
         self, portfolio: PaperPortfolio, *, exclude_order_id: int | None = None
     ) -> tuple[float, dict[int, float]]:
-        """Cash held back by open limit buys, and quantity per asset held back by open limit sells."""
+        """Buying power held back by open orders that add risk, and quantity per asset held back by
+        open orders that reduce a position (sells against a long, covering buys against a short)."""
         await self.session.flush()  # autoflush is off; include status changes made in this request
         stmt = select(SimulatedOrder).where(
             SimulatedOrder.portfolio_id == portfolio.id, SimulatedOrder.status == OrderStatus.OPEN
         )
         if exclude_order_id is not None:
             stmt = stmt.where(SimulatedOrder.id != exclude_order_id)
+        held = {p.asset_id: p.quantity for p in portfolio.positions}
         cash = 0.0
         quantities: dict[int, float] = {}
         for order in (await self.session.scalars(stmt)).all():
-            if order.side == OrderSide.BUY:
-                # A buy limit never fills above its limit, so this is the worst-case cost.
-                cash += order.quantity * (order.limit_price or 0.0) * (1 + self.fee_rate)
-            else:
+            q = held.get(order.asset_id, 0.0)
+            reduces = (order.side == OrderSide.SELL and q > QTY_EPSILON) or (order.side == OrderSide.BUY and q < -QTY_EPSILON)
+            if reduces:
                 quantities[order.asset_id] = quantities.get(order.asset_id, 0.0) + order.quantity
+            else:
+                # Worst case at the limit: a buy never fills above it, a short never sells below it.
+                cash += order.quantity * (order.limit_price or 0.0) * (1 + self.fee_rate)
         return cash, quantities
+
+    @staticmethod
+    def short_liability(views: list[PositionView]) -> float:
+        """What it would cost to buy back every short at current prices (a positive number)."""
+        return sum(-v.market_value for v in views if v.is_short)
 
     async def summary(self, portfolio: PaperPortfolio) -> dict:
         views = await self.position_views(portfolio)
@@ -154,7 +174,9 @@ class PaperTradingService:
             "daily_pnl_pct": (equity / ref_equity - 1) * 100 if ref_equity else 0.0,
             "prices_complete": all(v.price is not None for v in views),
             "reserved_cash": reserved_cash,
-            "available_cash": portfolio.cash_balance - reserved_cash,
+            # Short proceeds stay as collateral, plus the same again as margin (see module docstring).
+            "available_cash": portfolio.cash_balance - reserved_cash - 2 * self.short_liability(views),
+            "short_liability": self.short_liability(views),
         }
 
     async def record_snapshot(self, portfolio: PaperPortfolio, *, force: bool = False) -> PortfolioSnapshot | None:
@@ -273,28 +295,41 @@ class PaperTradingService:
             raise RiskLimitError(f"Order notional must be at least ${MIN_NOTIONAL:.2f}")
         reserved_cash, reserved_qty = await self.reservations(portfolio, exclude_order_id=order_id)
         position = await self._position(portfolio, asset.id)
-        if side == OrderSide.SELL:
-            held = position.quantity if position else 0.0
-            reserved = reserved_qty.get(asset.id, 0.0)
+        held = position.quantity if position else 0.0
+        reserved = reserved_qty.get(asset.id, 0.0)
+        base = asset.base_currency
+        if side == OrderSide.SELL and held > QTY_EPSILON:  # reducing a long
             if quantity > held - reserved + QTY_EPSILON:
                 detail = f"; {reserved:g} is reserved by open sell orders" if reserved > QTY_EPSILON else ""
-                raise RiskLimitError(
-                    f"Cannot sell {quantity:g} {asset.base_currency}; position is {held:g}{detail} (short selling is disabled)"
-                )
+                tail = "close the long before going short" if portfolio.allow_short else "short selling is disabled"
+                raise RiskLimitError(f"Cannot sell {quantity:g} {base}; position is {held:g}{detail} ({tail})")
             return
+        if side == OrderSide.BUY and held < -QTY_EPSILON:  # covering a short
+            if quantity > -held - reserved + QTY_EPSILON:
+                raise RiskLimitError(f"Cannot buy {quantity:g} {base} to cover; short is {-held:g} (close the short before going long)")
+            cost = notional * (1 + self.slip_rate) * (1 + self.fee_rate)
+            if cost > portfolio.cash_balance + 1e-9:
+                raise RiskLimitError(f"Insufficient virtual cash to cover: needs ${cost:,.2f}")
+            return
+        if side == OrderSide.SELL and not portfolio.allow_short:
+            raise RiskLimitError(f"Cannot sell {quantity:g} {base}; position is {max(held, 0.0):g} (short selling is disabled)")
 
-        cost = notional * (1 + self.slip_rate) * (1 + self.fee_rate)
-        available = portfolio.cash_balance - reserved_cash
+        # Opening or adding to a position (a long buy or a short sale): needs buying power.
+        views = await self.position_views(portfolio)
+        available = portfolio.cash_balance - reserved_cash - 2 * self.short_liability(views)
+        cost = notional * (1 + self.slip_rate) * (1 + self.fee_rate) if side == OrderSide.BUY else notional * (1 + self.fee_rate)
         if cost > available + 1e-9:
-            detail = f" (${reserved_cash:,.2f} reserved by open buy orders)" if reserved_cash > 1e-9 else ""
-            raise RiskLimitError(f"Insufficient virtual cash: order needs ${cost:,.2f}, available ${available:,.2f}{detail}")
+            detail = f" (${reserved_cash:,.2f} reserved by open orders)" if reserved_cash > 1e-9 else ""
+            what = "order needs" if side == OrderSide.BUY else "short margin needs"
+            raise RiskLimitError(f"Insufficient virtual buying power: {what} ${cost:,.2f}, available ${available:,.2f}{detail}")
         await self._check_exposure(portfolio, asset, notional)
 
     async def _check_exposure(self, portfolio: PaperPortfolio, asset: Asset, notional: float) -> None:
-        """Position-size, open-position and daily-loss limits for buying `notional` of `asset`."""
+        """Position-size, open-position and daily-loss limits for adding `notional` of exposure to `asset`
+        (long or short: sizes are absolute)."""
         summary = await self.summary(portfolio)
         equity = summary["equity"]
-        current_value = next((v.market_value for v in summary["positions"] if v.position.asset_id == asset.id), 0.0)
+        current_value = next((abs(v.market_value) for v in summary["positions"] if v.position.asset_id == asset.id), 0.0)
         if (current_value + notional) / equity * 100 > portfolio.max_position_pct + 1e-9:
             raise RiskLimitError(
                 f"Position would be {(current_value + notional) / equity * 100:.1f}% of equity; "
@@ -305,7 +340,7 @@ class PaperTradingService:
             raise RiskLimitError(f"Maximum of {portfolio.max_open_positions} open positions reached")
         if summary["daily_pnl_pct"] <= -portfolio.daily_loss_limit_pct:
             raise RiskLimitError(
-                f"Daily loss limit of {portfolio.daily_loss_limit_pct:.1f}% reached; new buys are blocked for now"
+                f"Daily loss limit of {portfolio.daily_loss_limit_pct:.1f}% reached; new positions are blocked for now"
             )
 
     async def _fill(self, portfolio: PaperPortfolio, order: SimulatedOrder, market_price: float) -> None:
@@ -320,35 +355,59 @@ class PaperTradingService:
         notional = order.quantity * price
         fee = notional * self.fee_rate
         position = await self._position(portfolio, order.asset_id)
+        held = position.quantity if position else 0.0
         realized = 0.0
+        closing = False
 
-        if order.side == OrderSide.BUY:
+        def reject(reason: str) -> None:
+            order.status = OrderStatus.REJECTED
+            order.reject_reason = reason
+
+        if order.side == OrderSide.BUY and held < -QTY_EPSILON:  # cover a short
+            assert position is not None
+            if order.quantity > -held + QTY_EPSILON:
+                return reject("Short is smaller than the cover at fill time")
             if notional + fee > portfolio.cash_balance + 1e-9:
-                order.status = OrderStatus.REJECTED
-                order.reject_reason = "Insufficient virtual cash at fill time"
-                return
+                return reject("Insufficient virtual cash at fill time")
+            qty = min(order.quantity, -held)
+            realized = (position.avg_entry_price - price) * qty - fee
+            portfolio.cash_balance -= notional + fee
+            position.quantity += qty
+            closing = True
+        elif order.side == OrderSide.BUY:  # open or add to a long
+            views = await self.position_views(portfolio)
+            if notional + fee > portfolio.cash_balance - 2 * self.short_liability(views) + 1e-9:
+                return reject("Insufficient virtual buying power at fill time")
             portfolio.cash_balance -= notional + fee
             if position is None:
-                position = PortfolioPosition(
-                    portfolio_id=portfolio.id, asset_id=order.asset_id, quantity=0.0, avg_entry_price=0.0
-                )
-                position.asset = order.asset
-                portfolio.positions.append(position)
+                position = self._new_position(portfolio, order)
             total_cost = position.quantity * position.avg_entry_price + notional + fee
             position.quantity += order.quantity
             position.avg_entry_price = total_cost / position.quantity
-        else:
-            if position is None or order.quantity > position.quantity + QTY_EPSILON:
-                order.status = OrderStatus.REJECTED
-                order.reject_reason = "Insufficient position at fill time"
-                return
-            qty = min(order.quantity, position.quantity)
+        elif held > QTY_EPSILON:  # reduce or close a long
+            assert position is not None
+            if order.quantity > held + QTY_EPSILON:
+                return reject("Insufficient position at fill time")
+            qty = min(order.quantity, held)
             realized = (price - position.avg_entry_price) * qty - fee
             portfolio.cash_balance += notional - fee
             position.quantity -= qty
+            closing = True
+        else:  # open or add to a short
+            if not portfolio.allow_short:
+                return reject("Short selling is disabled")
+            portfolio.cash_balance += notional - fee
+            if position is None:
+                position = self._new_position(portfolio, order)
+            proceeds = -position.quantity * position.avg_entry_price + notional - fee  # net proceeds of the whole short
+            position.quantity -= order.quantity
+            position.avg_entry_price = proceeds / -position.quantity
+
+        if closing:
+            assert position is not None
             position.realized_pnl += realized
             portfolio.realized_pnl += realized
-            if position.quantity <= QTY_EPSILON:
+            if abs(position.quantity) <= QTY_EPSILON:
                 portfolio.positions.remove(position)
                 await self.session.delete(position)
 
@@ -368,11 +427,33 @@ class PaperTradingService:
                 price=price,
                 fee=fee,
                 realized_pnl=realized,
+                is_closing=closing,
                 executed_at=now,
             )
         )
         await self.session.flush()
         await self.record_snapshot(portfolio, force=True)
+
+    @staticmethod
+    def _new_position(portfolio: PaperPortfolio, order: SimulatedOrder) -> PortfolioPosition:
+        position = PortfolioPosition(portfolio_id=portfolio.id, asset_id=order.asset_id, quantity=0.0, avg_entry_price=0.0)
+        position.asset = order.asset
+        portfolio.positions.append(position)
+        return position
+
+    async def enforce_margin(self, portfolio: PaperPortfolio) -> int:
+        """Force-cover any short whose price has reached twice its average entry. Returns covers placed.
+
+        Callers must hold the portfolio row lock (as for process_open_orders)."""
+        covers = 0
+        for v in await self.position_views(portfolio):
+            if not v.is_short or v.price is None or v.price < 2 * v.position.avg_entry_price:
+                continue
+            order = await self.place_order(portfolio, v.position.asset, OrderSide.BUY, OrderType.MARKET, -v.position.quantity)
+            order.note = f"Margin call: price {v.price:,.2f} reached twice the short's average entry {v.position.avg_entry_price:,.2f}"
+            logger.info("paper_margin_call", portfolio_id=portfolio.id, symbol=v.position.asset.symbol, status=order.status.value)
+            covers += order.status == OrderStatus.FILLED
+        return covers
 
     async def cancel_order(self, portfolio: PaperPortfolio, order_id: int) -> SimulatedOrder:
         order = await self.session.scalar(
@@ -393,6 +474,7 @@ class PaperTradingService:
         SELECT ... FOR UPDATE); otherwise concurrent requests could fill the same order
         twice or overwrite each other's cash balance.
         """
+        fills = await self.enforce_margin(portfolio)
         orders = (
             await self.session.scalars(
                 select(SimulatedOrder)
@@ -401,17 +483,20 @@ class PaperTradingService:
             )
         ).all()
         if not orders:
-            return 0
+            return fills
         tickers = await self.market.get_tickers(list({o.asset_id: o.asset for o in orders}.values()))
-        fills = 0
         for order in orders:
             t = tickers.get(order.asset.symbol)
             if t is None or not self._is_marketable(order, t.price):
                 continue
-            if order.side == OrderSide.BUY:
+            position = await self._position(portfolio, order.asset_id)
+            held = position.quantity if position else 0.0
+            adds_risk = (order.side == OrderSide.BUY and held >= -QTY_EPSILON) or (order.side == OrderSide.SELL and held <= QTY_EPSILON)
+            if adds_risk:
                 # Prices and holdings may have moved since the order was placed.
                 assert order.limit_price is not None
-                fill_price = min(t.price * (1 + self.slip_rate), order.limit_price)
+                slipped = t.price * (1 + self.slip_rate) if order.side == OrderSide.BUY else t.price * (1 - self.slip_rate)
+                fill_price = min(slipped, order.limit_price) if order.side == OrderSide.BUY else max(slipped, order.limit_price)
                 try:
                     await self._check_exposure(portfolio, order.asset, order.quantity * fill_price)
                 except RiskLimitError as exc:
@@ -450,11 +535,9 @@ class PaperTradingService:
         return list(reversed(rows))
 
     async def analytics(self, portfolio: PaperPortfolio) -> dict:
-        sells = (
+        sells = (  # closing trades: long sales and short covers
             await self.session.scalars(
-                select(SimulatedTrade).where(
-                    SimulatedTrade.portfolio_id == portfolio.id, SimulatedTrade.side == OrderSide.SELL
-                )
+                select(SimulatedTrade).where(SimulatedTrade.portfolio_id == portfolio.id, SimulatedTrade.is_closing.is_(True))
             )
         ).all()
         n_trades = await self.session.scalar(

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Enum, Float, ForeignKey, Index, Integer, String, UniqueConstraint, text
+from sqlalchemy import Boolean, Enum, Float, ForeignKey, Index, Integer, String, UniqueConstraint, false, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, IdMixin, Money, TimestampMixin, UTCDateTime, utcnow
@@ -37,6 +37,8 @@ class PaperPortfolio(IdMixin, TimestampMixin, Base):
     max_position_pct: Mapped[float] = mapped_column(Float, default=25.0)
     max_open_positions: Mapped[int] = mapped_column(Integer, default=10)
     daily_loss_limit_pct: Mapped[float] = mapped_column(Float, default=5.0)
+    # Short selling (negative positions); off unless the user enables it.
+    allow_short: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     positions: Mapped[list["PortfolioPosition"]] = relationship(
@@ -50,7 +52,7 @@ class PortfolioPosition(IdMixin, Base):
 
     portfolio_id: Mapped[int] = mapped_column(ForeignKey("paper_portfolios.id", ondelete="CASCADE"), index=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
-    quantity: Mapped[float] = mapped_column(Money, default=0.0)
+    quantity: Mapped[float] = mapped_column(Money, default=0.0)  # negative = short
     avg_entry_price: Mapped[float] = mapped_column(Money, default=0.0)
     realized_pnl: Mapped[float] = mapped_column(Money, default=0.0)
     opened_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
@@ -77,6 +79,7 @@ class SimulatedOrder(IdMixin, Base):
     filled_price: Mapped[float | None] = mapped_column(Money, nullable=True)
     fee: Mapped[float] = mapped_column(Money, default=0.0)
     reject_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)  # e.g. why the system placed it
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     filled_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     # Set when a strategy's forward test placed the order (null for manual orders).
@@ -99,6 +102,8 @@ class SimulatedTrade(IdMixin, Base):
     price: Mapped[float] = mapped_column(Money)
     fee: Mapped[float] = mapped_column(Money)
     realized_pnl: Mapped[float] = mapped_column(Money, default=0.0)
+    # True when the trade reduced or closed a position (a long sale or a short cover).
+    is_closing: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     executed_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 
     asset: Mapped[Asset] = relationship(lazy="selectin")

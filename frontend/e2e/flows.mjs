@@ -265,6 +265,22 @@ await step("paper trades CSV export", async () => {
   if (!lines[0].startsWith("executed_at,symbol,side") || lines.length < 3) throw new Error(`unexpected CSV: ${lines.length} lines`);
 });
 
+await step("paper short sale and cover", async () => {
+  await page.goto(`${BASE}/paper-trading?symbol=SOL-USD`);
+  await page.getByRole("button", { name: /Risk limits/ }).click();
+  await page.getByRole("switch", { name: "Allow short selling" }).click();
+  await page.getByRole("button", { name: "Save limits" }).click();
+  await toast(/Risk limits updated/);
+  await page.getByRole("button", { name: "Sell", exact: true }).click();
+  await page.getByPlaceholder("0.00").fill("500");
+  await page.getByRole("button", { name: /Sell short SOL \(paper\)/ }).click();
+  await toast(/Filled: sell/);
+  await page.getByText("Short", { exact: true }).first().waitFor();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Cover" }).first().click();
+  await toast(/Closed SOL/);
+});
+
 await step("risk limits dialog saves", async () => {
   await page.getByRole("button", { name: /Risk limits/ }).click();
   await page.getByLabel(/Max open positions/).fill("5");

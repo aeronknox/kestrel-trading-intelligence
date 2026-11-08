@@ -4,6 +4,7 @@ from fastapi import APIRouter, Query, Response
 
 from app.api.deps import CurrentUser, DbSession, rate_limit
 from app.core.config import get_settings
+from app.core.exceptions import ValidationFailedError
 from app.market_data.service import MarketDataService
 from app.models.enums import OrderStatus
 from app.paper_trading.service import PaperTradingService
@@ -25,6 +26,7 @@ def portfolio_out(summary: dict) -> PortfolioOut:
         starting_balance=pf.starting_balance,
         cash_balance=pf.cash_balance,
         reserved_cash=summary["reserved_cash"],
+        short_liability=summary["short_liability"],
         available_cash=summary["available_cash"],
         positions_value=summary["positions_value"],
         equity=summary["equity"],
@@ -39,21 +41,23 @@ def portfolio_out(summary: dict) -> PortfolioOut:
             max_position_pct=pf.max_position_pct,
             max_open_positions=pf.max_open_positions,
             daily_loss_limit_pct=pf.daily_loss_limit_pct,
+            allow_short=pf.allow_short,
         ),
         positions=[
             PositionOut(
                 id=v.position.id,
                 asset=AssetOut.model_validate(v.position.asset),
+                side="short" if v.is_short else "long",
                 quantity=v.position.quantity,
                 avg_entry_price=v.position.avg_entry_price,
                 current_price=v.price,
                 market_value=v.market_value,
                 unrealized_pnl=v.unrealized_pnl,
-                unrealized_pnl_pct=(v.price / v.position.avg_entry_price - 1) * 100
+                unrealized_pnl_pct=(v.price / v.position.avg_entry_price - 1) * 100 * (-1 if v.is_short else 1)
                 if v.price is not None and v.position.avg_entry_price
                 else None,
                 realized_pnl=v.position.realized_pnl,
-                allocation_pct=v.market_value / equity * 100,
+                allocation_pct=abs(v.market_value) / equity * 100,
                 opened_at=v.position.opened_at,
             )
             for v in summary["positions"]
@@ -85,6 +89,9 @@ async def update_risk_limits(body: RiskLimits, user: CurrentUser, db: DbSession)
     pf.max_position_pct = body.max_position_pct
     pf.max_open_positions = body.max_open_positions
     pf.daily_loss_limit_pct = body.daily_loss_limit_pct
+    if not body.allow_short and any(p.quantity < 0 for p in pf.positions):
+        raise ValidationFailedError("Cover your open shorts before turning short selling off")
+    pf.allow_short = body.allow_short
     await audit(db, "paper.risk_limits_updated", user_id=user.id, entity_type="portfolio", entity_id=pf.id, details=body.model_dump())
     return portfolio_out(await svc.summary(pf))
 

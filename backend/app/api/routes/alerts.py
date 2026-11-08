@@ -10,9 +10,10 @@ from app.api.deps import CurrentUser, DbSession
 from app.core.exceptions import NotFoundError, ValidationFailedError
 from app.market_data.service import MarketDataService
 from app.models.alert import AlertEvent, StrategyAlert
+from app.paper_trading.service import PaperTradingService
 from app.schemas.common import ORMModel
 from app.services.alerts import DISCLAIMER
-from app.services.forward_test import LONG_ONLY, forward_test_summary
+from app.services.forward_test import SHORTS_DISABLED, forward_test_summary
 from app.services.strategies import get_owned_strategy
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -92,8 +93,10 @@ async def get_alert(strategy_id: int, user: CurrentUser, db: DbSession) -> Alert
 async def upsert_alert(strategy_id: int, body: AlertSettings, user: CurrentUser, db: DbSession) -> AlertOut:
     strategy = await get_owned_strategy(db, strategy_id, user.id)
     cfg = strategy.current_config
-    if body.auto_trade and cfg is not None and (cfg.risk or {}).get("direction", "long") != "long":
-        raise ValidationFailedError(LONG_ONLY)
+    if body.auto_trade and cfg is not None and (cfg.risk or {}).get("direction", "long") == "short":
+        portfolio = await PaperTradingService(db).get_or_create_portfolio(user.id)
+        if not portfolio.allow_short:
+            raise ValidationFailedError(SHORTS_DISABLED)
     alert = await db.scalar(select(StrategyAlert).where(StrategyAlert.strategy_id == strategy_id))
     if alert is None:
         alert = StrategyAlert(user_id=user.id, strategy_id=strategy.id)
