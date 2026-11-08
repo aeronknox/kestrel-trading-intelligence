@@ -29,9 +29,11 @@ All screenshots show live Coinbase market data and a simulated portfolio.
 | ![Dashboard with portfolio performance and market sentiment](docs/screenshots/dashboard.png) | ![BTC-USD candlestick chart with SMA, volume and RSI](docs/screenshots/market-chart.png) |
 | **Dashboard:** virtual portfolio, equity curve, market sentiment and live prices | **Markets:** candlesticks with overlays, RSI/MACD panes and a technical readout |
 | ![Strategy builder with entry and exit rules](docs/screenshots/strategy-builder.png) | ![Backtest result with buy-and-hold benchmark](docs/screenshots/backtest.png) |
-| **Strategy builder:** visual rules, risk exits, versions and alerts | **Backtest:** metrics, an equity curve against buy-and-hold, and drawdown |
+| **Strategy builder:** visual rules, long or short, risk exits, versions and alerts | **Backtest:** metrics, an equity curve against buy-and-hold, and drawdown |
 | ![Walk-forward test with out-of-sample equity](docs/screenshots/walk-forward.png) | ![AI analysis with explainable signal](docs/screenshots/ai-analysis.png) |
 | **Walk-forward test:** tuned on one window, scored only on the next unseen one | **AI analysis:** trend, patterns, an ML model and an explainable composite signal |
+| ![Multi-asset test across BTC, ETH and SOL](docs/screenshots/multi-asset.png) | |
+| **Multi-asset test:** one strategy on several coins, against an equal-weight buy-and-hold, with price correlation | |
 
 ## Architecture
 
@@ -188,16 +190,18 @@ cd backend && python -m app.cli promote-admin you@example.com    # or demote-adm
 ### Tests
 
 ```bash
-cd backend  && pytest                  # 99 tests: indicators (incl. Wilder reference values),
-                                       # backtester, ML leakage, signals, auth/RBAC, rate limiting,
-                                       # paper-trading accounting, market data + Coinbase parsing,
-                                       # OpenAI tool loop (fake client), WebSocket, API flows
-cd backend  && ruff check . && mypy       # lint + type check
+cd backend  && pytest                  # 164 tests: indicators (incl. Wilder reference values),
+                                       # backtester (long and short), optimization and walk-forward
+                                       # look-ahead checks, multi-asset tests, ML leakage, signals,
+                                       # auth/RBAC, email tokens, demo sandboxes, rate limiting,
+                                       # paper-trading accounting, history loading, the live price
+                                       # stream (fake feed), alerts, CSV export, OpenAI tool loop
+cd backend  && ruff check . && mypy    # lint + type check
 cd frontend && npm run lint            # ESLint
-cd frontend && npm test                # rule-builder logic, formatters, sweep-grid helpers (Vitest)
+cd frontend && npm test                # 19 unit tests: rule builder, formatters, sweep-grid helpers
 cd frontend && npm run typecheck && npm run build
 cd frontend && npx playwright install chromium && npm run e2e
-                                       # 25 browser flows against a running stack (:3000 + :8000)
+                                       # 34 browser flows against a running stack (:3000 + :8000)
 ```
 
 Backend tests run against SQLite with the sample provider and need no network access. Set `TEST_DATABASE_URL=postgresql+psycopg://…` to run them against PostgreSQL.
