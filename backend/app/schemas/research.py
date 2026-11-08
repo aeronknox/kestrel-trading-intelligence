@@ -34,6 +34,15 @@ class WalkForwardRequest(ResearchRequest):
     is_ratio: float = Field(3.0, ge=1.0, le=6.0, description="In-sample window length as a multiple of the test window")
 
 
+class PortfolioRequest(BaseModel):
+    strategy_id: int
+    symbols: list[str] = Field(min_length=2, max_length=6, description="Tracked assets; capital is split equally")
+    bars: int = Field(2000, ge=200, le=20_000)
+    initial_capital: float = Field(10_000, gt=0, le=1e9)
+    fee_bps: float = Field(10, ge=0, le=500)
+    slippage_bps: float = Field(5, ge=0, le=500)
+
+
 class TunableParameter(BaseModel):
     path: str
     label: str
@@ -45,7 +54,7 @@ class TunableParameter(BaseModel):
 
 class ResearchSummary(ORMModel):
     id: int
-    kind: Literal["sweep", "walk_forward"]
+    kind: Literal["sweep", "walk_forward", "portfolio"]
     strategy_id: int
     strategy_name: str
     strategy_version: int

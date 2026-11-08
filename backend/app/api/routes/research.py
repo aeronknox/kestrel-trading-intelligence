@@ -1,6 +1,7 @@
-"""Parameter sweeps and walk-forward analysis — HYPOTHETICAL research on historical data."""
+"""Parameter sweeps, walk-forward analysis and multi-asset tests — HYPOTHETICAL research on historical data."""
 
 import asyncio
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Query, Response
 from sqlalchemy import select
@@ -8,13 +9,21 @@ from sqlalchemy import select
 from app.api.deps import CurrentUser, DbSession, rate_limit
 from app.backtesting.engine import BacktestConfig
 from app.backtesting.optimization import OptimizationError, ParamGrid, run_sweep, run_walk_forward, tunable_parameters
+from app.backtesting.portfolio import PortfolioError, run_portfolio
 from app.core.exceptions import NotFoundError, ValidationFailedError
 from app.indicators.technical import candles_to_frame
 from app.market_data.providers.base import timeframe_seconds
 from app.market_data.service import MarketDataService
 from app.models.backtest import ResearchRun
 from app.models.strategy import Strategy
-from app.schemas.research import ResearchOut, ResearchRequest, ResearchSummary, TunableParameter, WalkForwardRequest
+from app.schemas.research import (
+    PortfolioRequest,
+    ResearchOut,
+    ResearchRequest,
+    ResearchSummary,
+    TunableParameter,
+    WalkForwardRequest,
+)
 from app.services.audit import audit
 from app.services.export import csv_response, iso, safe_filename
 from app.services.strategies import get_owned_strategy
@@ -30,8 +39,18 @@ def _definition(strategy: Strategy) -> dict:
     return {"entry": cfg.entry_rules, "exit": cfg.exit_rules, "risk": cfg.risk}
 
 
+def _headline(run: ResearchRun) -> str | None:
+    if run.kind == "walk_forward":
+        return run.result["verdict"]["headline"]
+    if run.kind == "portfolio":
+        m = run.result["metrics"]
+        n = len(run.result["symbols"])
+        return (f"{n} assets: {m['total_return_pct']:+.2f}% vs {m['benchmark']['total_return_pct']:+.2f}% "
+                "for equal-weight buy and hold")  # fmt: skip
+    return None
+
+
 def _summary(run: ResearchRun) -> dict:
-    verdict = run.result.get("verdict") if run.kind == "walk_forward" else None
     return {
         "id": run.id,
         "kind": run.kind,
@@ -44,7 +63,7 @@ def _summary(run: ResearchRun) -> dict:
         "end_at": run.end_at,
         "data_source": run.data_source,
         "created_at": run.created_at,
-        "headline": verdict["headline"] if verdict else None,
+        "headline": _headline(run),
     }
 
 
@@ -116,6 +135,50 @@ async def create_walk_forward(body: WalkForwardRequest, user: CurrentUser, db: D
     return await _execute("walk_forward", body, user.id, db)
 
 
+@router.post("/portfolio", response_model=ResearchOut, status_code=201, dependencies=[compute_limit])
+async def create_portfolio(body: PortfolioRequest, user: CurrentUser, db: DbSession) -> ResearchOut:
+    """Run the strategy on several assets with capital split equally."""
+    strategy = await get_owned_strategy(db, body.strategy_id, user.id)
+    definition = _definition(strategy)
+    cfg = strategy.current_config
+    assert cfg is not None
+    symbols = list(dict.fromkeys(s.upper() for s in body.symbols))
+    if len(symbols) < 2:
+        raise ValidationFailedError("Choose at least 2 different assets")
+    market = MarketDataService(db)
+    frames, sources = {}, set()
+    for symbol in symbols:
+        series = await market.get_history(await market.get_asset(symbol), cfg.timeframe, body.bars)
+        frames[symbol] = candles_to_frame(series.candles)
+        sources.add(series.source + (":sample" if series.is_sample else "") + (":stale" if series.stale else ""))
+    config = BacktestConfig(body.initial_capital, body.fee_bps, body.slippage_bps, timeframe_seconds(cfg.timeframe))
+    try:
+        result = await asyncio.to_thread(run_portfolio, frames, definition, config)
+    except PortfolioError as exc:
+        raise ValidationFailedError(str(exc)) from exc
+
+    window = result["window"]
+    run = ResearchRun(
+        user_id=user.id,
+        strategy_id=strategy.id,
+        strategy_config_id=cfg.id,
+        asset_id=cfg.asset_id,
+        kind="portfolio",
+        timeframe=cfg.timeframe,
+        start_at=datetime.fromtimestamp(window["start"], tz=UTC),
+        end_at=datetime.fromtimestamp(window["end"], tz=UTC),
+        request=body.model_dump() | {"symbols": symbols},
+        result=result,
+        data_source=",".join(sorted(sources))[:32],
+    )
+    db.add(run)
+    await db.flush()
+    await db.refresh(run, attribute_names=["strategy", "config", "asset"])
+    await audit(db, "research.portfolio", user_id=user.id, entity_type="research_run", entity_id=run.id,
+                details={"strategy_id": strategy.id, "symbols": symbols})  # fmt: skip
+    return _out(run)
+
+
 @router.get("", response_model=list[ResearchSummary])
 async def list_runs(
     user: CurrentUser, db: DbSession, strategy_id: int | None = None, limit: int = Query(50, le=200)
@@ -144,11 +207,16 @@ METRIC_COLUMNS = ("total_return_pct", "sharpe_ratio", "max_drawdown_pct", "num_t
 
 @router.get("/{run_id}/results.csv")
 async def export_results(run_id: int, user: CurrentUser, db: DbSession) -> Response:
-    """Sweeps: one row per parameter combination. Walk-forward: one row per fold."""
+    """Sweeps: one row per combination. Walk-forward: one row per fold. Multi-asset: one row per asset."""
     run = await _owned(db, run_id, user.id)
     r = run.result
-    labels = [p.get("label", p["path"]) for p in r["params"]]
+    labels = [p.get("label", p["path"]) for p in r.get("params", [])]
     name = safe_filename(run.kind.replace("_", "-"), run.id, run.strategy.name, run.asset.symbol, run.timeframe)
+    if run.kind == "portfolio":
+        header: tuple[str, ...] = ("symbol", "bars", *METRIC_COLUMNS, "buy_hold_return_pct", "final_equity")
+        rows = ((a["symbol"], a["bars"], *(a.get(k) for k in METRIC_COLUMNS), a["buy_hold_return_pct"], a["final_equity"])
+                for a in r["per_asset"])  # fmt: skip
+        return csv_response(name, header, rows)
     if run.kind == "sweep":
         header = (*labels, "valid", "score", *METRIC_COLUMNS)
         rows = (

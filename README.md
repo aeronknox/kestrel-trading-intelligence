@@ -10,8 +10,8 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 | Markets | Live prices over WebSocket, catalog search to track new assets, candlestick charts (1m–1d), SMA 20/50/200, Bollinger Bands, volume, RSI, MACD |
 | AI Analysis | Trend regression, support/resistance, pattern detection, a walk-forward ML model, an explainable composite signal with confidence, and a risk breakdown |
 | Strategy Builder | Visual rule builder (13 indicators, 6 operators, ALL/ANY logic), risk exits, templates, immutable versioning |
-| Backtesting | Next-bar execution, fees, slippage, gap-aware stops; return, max drawdown, Sharpe/Sortino, a buy-and-hold benchmark with the same costs (overlaid on the equity curve, with excess return and beta), win rate, profit factor, CAGR, exposure; side-by-side comparison |
-| Optimization | Parameter sweeps over 1–2 settings (heatmap of every combination, robustness stats) and walk-forward tests that tune on one window and score only on the next, unseen one, against the untuned strategy and buy-and-hold, with a rule-based verdict |
+| Backtesting | Long or short strategies (shorts use stops above entry and a margin call if price doubles); next-bar execution, fees, slippage, gap-aware stops; return, max drawdown, Sharpe/Sortino, a buy-and-hold benchmark with the same costs (overlaid on the equity curve, with excess return and beta), win rate, profit factor, CAGR, exposure; side-by-side comparison |
+| Optimization | Multi-asset tests (one strategy on 2–6 coins with capital split equally, against an equal-weight buy-and-hold, with per-coin results and price correlation); parameter sweeps over 1–2 settings (heatmap of every combination, robustness stats) and walk-forward tests that tune on one window and score only on the next, unseen one, against the untuned strategy and buy-and-hold, with a rule-based verdict |
 | Alerts | Notifications when a saved strategy's entry or exit rules fire on a newly closed live candle, checked every minute with the same rule engine as the backtester. Fires once when a rule becomes true, never replays history, and caps catch-up after downtime. Shown in the header and on an alerts page, with optional email to verified addresses. Never places orders |
 | Paper Trading | $100k virtual balance, market and limit orders (open limit orders reserve cash or quantity; exposure limits are re-checked at fill time), positions, realized/unrealized P&L, risk limits, order and trade history, reset |
 | Portfolio | Equity and drawdown history, allocation, trade statistics |
@@ -207,7 +207,7 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 - **Backend:** ruff lint and mypy type check, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
 - **Frontend:** ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
-- **Docker:** `docker compose up --build --wait`, health checks, then the 32 browser flows (with demo mode on) against the containerized stack.
+- **Docker:** `docker compose up --build --wait`, health checks, then the 34 browser flows (with demo mode on) against the containerized stack.
 - **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
 
 See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
@@ -264,7 +264,7 @@ Interactive docs are at `/docs`. All routes are under `/api/v1`.
 | `/analysis`, `/signals` | run analysis, history, signals |
 | `/strategies` | CRUD, `templates`, `indicators` |
 | `/backtests` | run, list, get, `compare`, delete, `{id}/trades.csv`, `{id}/equity.csv` |
-| `/research` | `parameters`, `sweeps`, `walk-forward`, list, get, delete, `{id}/results.csv` |
+| `/research` | `parameters`, `sweeps`, `walk-forward`, `portfolio`, list, get, delete, `{id}/results.csv` |
 | `/alerts` | list, `strategy/{id}` (get, put, delete), `events`, `events/read` |
 | `/paper` | `portfolio`, `orders`, `orders/{id}/cancel`, `trades`, `history`, `analytics`, `portfolio/risk-limits`, `portfolio/reset`, `trades.csv`, `history.csv` |
 | `/dashboard` | aggregated dashboard payload |
@@ -275,5 +275,5 @@ Interactive docs are at `/docs`. All routes are under `/api/v1`.
 
 - Background jobs (limit-order matching every 15s, equity snapshots every 5 min, strategy alerts every minute, history backfill) and the WebSocket broadcaster run inside the API process, so run one backend replica or move them to a dedicated worker before scaling out.
 - Live prices are polled from the provider every `MARKET_WS_POLL_SECONDS` (default 5s) and fanned out over WebSocket. An upstream exchange WebSocket feed would lower latency.
-- Backtests are long-only, unleveraged and single-asset. They can use up to 20,000 bars (about 2.3 years of 1h candles): history is stored in PostgreSQL, filled in by a background job for tracked assets (1h/6h/1d), and downloaded on demand otherwise, so the first long run on a new asset can take about half a minute. Research runs are capped at 2,000,000 simulated bars per request.
+- Backtests hold one position at a time, long or short, without leverage. Shorts have no borrow or funding costs. Multi-asset tests split capital equally and never rebalance between coins. Paper trading is long-only. They can use up to 20,000 bars (about 2.3 years of 1h candles): history is stored in PostgreSQL, filled in by a background job for tracked assets (1h/6h/1d), and downloaded on demand otherwise, so the first long run on a new asset can take about half a minute. Research runs are capped at 2,000,000 simulated bars per request.
 - Paper trading is spot and long-only; short selling is rejected by design.

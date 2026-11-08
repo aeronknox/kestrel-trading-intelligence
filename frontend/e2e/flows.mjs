@@ -184,6 +184,31 @@ await step("backtest CSV export", async () => {
   if (equity.trim().split("\n").length < 50) throw new Error("equity CSV too short");
 });
 
+await step("short strategy backtest", async () => {
+  await page.goto(`${BASE}/strategies/new?template=rsi_mean_reversion`);
+  await page.getByLabel("Name").fill(`Short RSI ${Date.now()}`);
+  await page.getByRole("combobox", { name: "Direction" }).click();
+  await page.getByRole("option", { name: /Short/ }).click();
+  await page.getByText("Enter short when").waitFor();
+  await page.getByRole("button", { name: /Create strategy/ }).click();
+  await page.waitForURL(/\/strategies\/\d+$/, { timeout: 15000 });
+  await page.getByRole("button", { name: /^Backtest$/ }).first().click();
+  await page.getByRole("dialog").getByRole("button", { name: /Run backtest/ }).click();
+  await page.waitForURL(/\/backtests\/\d+$/, { timeout: 30000 });
+  await page.getByText(/short: sells at entry/).waitFor();
+});
+
+await step("multi-asset test", async () => {
+  await page.goto(`${BASE}/research/new`);
+  await page.getByRole("tab", { name: "Multi-asset test" }).click();
+  await page.getByText(/of 2–6 selected/).waitFor();
+  await page.getByRole("button", { name: "Run multi-asset test" }).click();
+  await page.waitForURL(/\/research\/\d+$/, { timeout: 60000 });
+  await page.getByText("Portfolio equity").waitFor({ timeout: 15000 });
+  await page.getByText("Price correlation").waitFor();
+  if ((await page.getByRole("row").count()) < 4) throw new Error("per-asset table missing rows");
+});
+
 await step("walk-forward test via optimization page", async () => {
   await page.goto(`${BASE}/research/new`);
   await page.getByText("Parameter 1").waitFor({ timeout: 15000 });

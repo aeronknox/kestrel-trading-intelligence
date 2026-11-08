@@ -18,11 +18,11 @@ import { Badge, Field, Input } from "@/components/ui/primitives";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { HistoryHint } from "@/features/backtesting/history-hint";
-import { MultiLineChart } from "@/features/charts/recharts";
+import { EquityAreaChart, MultiLineChart } from "@/features/charts/recharts";
 import { formatDate, formatDateTime, formatNumber, formatPct, isNum, pnlClass, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
-import type { ResearchObjective, ResearchRun, RunSummaryMetrics, SweepResult, WalkForwardResult } from "@/types/api";
+import type { PortfolioResult, ResearchObjective, ResearchRun, RunSummaryMetrics, SweepResult, WalkForwardResult } from "@/types/api";
 
 import { defaultRange, gridProblem, objectiveValue, preferredSecond, rangeValues, shortLabel } from "./grid";
 
@@ -31,6 +31,9 @@ const OBJECTIVES: { value: ResearchObjective; label: string; hint: string }[] = 
   { value: "total_return_pct", label: "Total return", hint: "Raw return; ignores risk" },
   { value: "return_over_drawdown", label: "Return ÷ drawdown", hint: "Return per unit of worst decline" },
 ];
+
+const KIND_LABEL: Record<ResearchRun["kind"], string> = { sweep: "Parameter sweep", walk_forward: "Walk-forward test", portfolio: "Multi-asset test" };
+const KIND_BADGE: Record<ResearchRun["kind"], string> = { sweep: "Sweep", walk_forward: "Walk-forward", portfolio: "Multi-asset" };
 
 function formatScore(objective: ResearchObjective, v: number | null | undefined): string {
   return objective === "total_return_pct" ? formatPct(v) : formatNumber(v);
@@ -85,7 +88,7 @@ export function ResearchListView() {
                       <Link href={`/research/${r.id}`} className="font-medium hover:text-primary">{r.strategy_name}</Link>
                       <span className="ml-2 text-xs text-muted-foreground">v{r.strategy_version} · {r.asset.symbol} · {r.timeframe}</span>
                     </TD>
-                    <TD><Badge variant={r.kind === "walk_forward" ? "info" : "default"}>{r.kind === "walk_forward" ? "Walk-forward" : "Sweep"}</Badge></TD>
+                    <TD><Badge variant={r.kind === "walk_forward" ? "info" : r.kind === "portfolio" ? "secondary" : "default"}>{KIND_BADGE[r.kind]}</Badge></TD>
                     <TD className="max-w-md truncate text-muted-foreground">{r.headline ?? "Parameter grid"}</TD>
                     <TD className="text-right text-muted-foreground">{timeAgo(r.created_at)}</TD>
                     <TD className="text-right">
@@ -119,7 +122,9 @@ export function NewResearchView() {
   const strategies = useQuery({ queryKey: ["strategies"], queryFn: () => api.strategies.list() });
   const [chosenStrategy, setStrategyId] = useState<number | null>(Number(search.get("strategy")) || null);
   const strategyId = chosenStrategy ?? strategies.data?.[0]?.id ?? null;
-  const [mode, setMode] = useState<"walk_forward" | "sweep">("walk_forward");
+  const [mode, setMode] = useState<"walk_forward" | "sweep" | "portfolio">("walk_forward");
+  const assets = useQuery({ queryKey: ["assets"], queryFn: () => api.market.assets(), staleTime: 300_000 });
+  const [picked, setPicked] = useState<{ strategyId: number | null; symbols: string[] } | null>(null);
   const [edited, setEdited] = useState<{ strategyId: number | null; rows: GridRow[] } | null>(null);
   const [objective, setObjective] = useState<ResearchObjective>("sharpe_ratio");
   const [minTrades, setMinTrades] = useState(3);
@@ -133,6 +138,13 @@ export function NewResearchView() {
     enabled: strategyId !== null,
   });
   const selected = strategies.data?.find((s) => s.id === strategyId);
+  // Multi-asset default: the strategy's own asset plus the next two tracked ones.
+  const own = selected?.current_config?.asset.symbol;
+  const defaultSymbols = own ? [own, ...(assets.data ?? []).map((a) => a.symbol).filter((s) => s !== own).slice(0, 2)] : [];
+  const symbols = picked && picked.strategyId === strategyId ? picked.symbols : defaultSymbols;
+  const toggleSymbol = (s: string) =>
+    setPicked({ strategyId, symbols: symbols.includes(s) ? symbols.filter((x) => x !== s) : symbols.length >= 6 ? symbols : [...symbols, s] });
+  const isPortfolio = mode === "portfolio";
   const byPath = useMemo(() => new Map((params.data ?? []).map((p) => [p.path, p])), [params.data]);
 
   // Each strategy starts with its first threshold (usually the most interesting setting) until edited.
@@ -147,11 +159,16 @@ export function NewResearchView() {
     const p = byPath.get(r.path);
     return { path: r.path, label: p?.label ?? r.path, min: p?.min ?? null, max: p?.max ?? null, values: rangeValues(r.from, r.to, r.step, p?.integer) };
   });
-  const problem = rows.length ? gridProblem(grids) : "Choose a parameter";
+  const problem = isPortfolio
+    ? symbols.length < 2 ? "Choose at least 2 assets" : null
+    : rows.length ? gridProblem(grids) : "Choose a parameter";
   const combos = grids.reduce((n, g) => n * g.values.length, 1);
 
   const run = useMutation({
     mutationFn: () => {
+      if (isPortfolio) {
+        return api.research.portfolio({ strategy_id: strategyId!, symbols, bars, initial_capital: 10_000, fee_bps: 10, slippage_bps: 5 });
+      }
       const body = {
         strategy_id: strategyId!,
         bars,
@@ -194,12 +211,15 @@ export function NewResearchView() {
               <TabsList>
                 <TabsTrigger value="walk_forward">Walk-forward test</TabsTrigger>
                 <TabsTrigger value="sweep">Parameter sweep</TabsTrigger>
+                <TabsTrigger value="portfolio">Multi-asset test</TabsTrigger>
               </TabsList>
             </Tabs>
             <p className="text-xs text-muted-foreground">
               {mode === "walk_forward"
                 ? "Repeatedly picks the best settings on one window and then trades them on the next, unseen window. Only the unseen windows are scored."
-                : "Runs every combination on the same data. A good strategy shows a broad region of decent results, not one lucky cell."}
+                : mode === "sweep"
+                  ? "Runs every combination on the same data. A good strategy shows a broad region of decent results, not one lucky cell."
+                  : "Runs the strategy unchanged on several assets with the capital split equally. A rule that only works on one coin is probably fitted to it."}
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Strategy">
@@ -223,7 +243,21 @@ export function NewResearchView() {
             )}
             {params.error && <ErrorState error={params.error} onRetry={() => params.refetch()} />}
 
-            {rows.map((row, i) => {
+            {isPortfolio && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Assets <span className="font-normal text-muted-foreground">({symbols.length} of 2–6 selected, same {selected?.current_config?.timeframe ?? ""} timeframe)</span></p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {(assets.data ?? []).map((a) => (
+                    <label key={a.symbol} className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+                      <input type="checkbox" className="size-3.5 accent-[var(--primary)]" checked={symbols.includes(a.symbol)} onChange={() => toggleSymbol(a.symbol)} />
+                      <span className="font-medium">{a.symbol}</span>
+                      {a.symbol === own && <span className="ml-auto text-[10px] text-muted-foreground">strategy&apos;s</span>}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {!isPortfolio && rows.map((row, i) => {
               const p = byPath.get(row.path);
               const values = grids[i]!.values;
               return (
@@ -254,7 +288,7 @@ export function NewResearchView() {
                 </div>
               );
             })}
-            {rows.length < 2 && unused.length > 0 && (
+            {!isPortfolio && rows.length < 2 && unused.length > 0 && (
               <Button variant="outline" size="sm" onClick={() => { const np = preferredSecond(unused)!; setRows((rs) => [...rs, { path: np.path, ...defaultRange(np) }]); }}>
                 <Plus /> Add a second parameter
               </Button>
@@ -263,8 +297,21 @@ export function NewResearchView() {
         </Card>
 
         <Card className="h-fit">
-          <CardHeader><CardTitle>Scoring</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{isPortfolio ? "Portfolio" : "Scoring"}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
+            {isPortfolio ? (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  $10,000 split equally: {symbols.length ? `$${Math.floor(10_000 / symbols.length).toLocaleString()} per asset` : "choose assets"}. Each asset is
+                  tested over the period they all have data for, and compared with an equal-weight buy-and-hold.
+                </p>
+                {problem && <p className="text-xs text-loss">{problem}</p>}
+                <Button className="w-full" loading={run.isPending} disabled={!strategyId || !!problem || bars < 200 || bars > 20_000} onClick={() => run.mutate()}>
+                  Run multi-asset test
+                </Button>
+              </>
+            ) : (
+            <>
             <Field label="Pick the best settings by">
               <Select value={objective} onValueChange={(v) => setObjective(v as ResearchObjective)}>
                 <SelectTrigger aria-label="Objective"><SelectValue /></SelectTrigger>
@@ -294,6 +341,8 @@ export function NewResearchView() {
             <Button className="w-full" loading={run.isPending} disabled={!strategyId || !!problem || bars < 200 || bars > 20_000 || folds < 2 || folds > 8 || isRatio < 1 || isRatio > 6} onClick={() => run.mutate()}>
               Run {mode === "sweep" ? "sweep" : "walk-forward test"}
             </Button>
+            </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -313,12 +362,12 @@ export function ResearchDetailView({ id }: { id: number }) {
         <Link href="/research"><ArrowLeft /> Optimization</Link>
       </Button>
       <PageHeader
-        title={<>{run.kind === "walk_forward" ? "Walk-forward test" : "Parameter sweep"} <span className="text-base font-normal text-muted-foreground">· {run.strategy_name} v{run.strategy_version}</span></>}
-        description={`${run.asset.symbol} · ${run.timeframe} · ${formatDate(run.start_at)} – ${formatDate(run.end_at)} · run ${formatDateTime(run.created_at)}`}
+        title={<>{KIND_LABEL[run.kind]} <span className="text-base font-normal text-muted-foreground">· {run.strategy_name} v{run.strategy_version}</span></>}
+        description={`${run.kind === "portfolio" ? run.result.symbols.join(", ") : run.asset.symbol} · ${run.timeframe} · ${formatDate(run.start_at)} – ${formatDate(run.end_at)} · run ${formatDateTime(run.created_at)}`}
         actions={
           <>
             <DownloadButton href={`/research/${run.id}/results.csv`} label="Download results as CSV">
-              {run.kind === "sweep" ? "Grid CSV" : "Folds CSV"}
+              {run.kind === "sweep" ? "Grid CSV" : run.kind === "walk_forward" ? "Folds CSV" : "Assets CSV"}
             </DownloadButton>
             <Button variant="outline" size="sm" asChild>
               <Link href={`/research/new?strategy=${run.strategy_id}`}>Run another</Link>
@@ -333,7 +382,13 @@ export function ResearchDetailView({ id }: { id: number }) {
           <> Only {run.request.bars_used.toLocaleString()} of the {run.request.bars.toLocaleString()} requested bars were available.</>
         )}
       </Disclaimer>
-      {run.kind === "sweep" ? <SweepView result={run.result} /> : <WalkForwardView run={run} result={run.result} />}
+      {run.kind === "sweep" ? (
+        <SweepView result={run.result} />
+      ) : run.kind === "walk_forward" ? (
+        <WalkForwardView run={run} result={run.result} />
+      ) : (
+        <PortfolioView result={run.result} />
+      )}
     </>
   );
 }
@@ -546,3 +601,95 @@ function WalkForwardView({ run, result: r }: { run: ResearchRun; result: WalkFor
     </div>
   );
 }
+
+// ------------------------------------------------------------ multi-asset
+function PortfolioView({ result: r }: { result: PortfolioResult }) {
+  const m = r.metrics;
+  const bench = m.benchmark;
+  const avg = r.correlation.average;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <StatCard label="Portfolio return" value={<span className={pnlClass(m.total_return_pct)}>{formatPct(m.total_return_pct)}</span>} sub={`${r.symbols.length} assets, ${formatPct(100 / r.symbols.length, 0, false)} each`} />
+        <StatCard label="Equal-weight buy & hold" value={<span className={pnlClass(bench?.total_return_pct)}>{formatPct(bench?.total_return_pct)}</span>} sub="Same assets, period and costs" />
+        <StatCard label="Sharpe ratio" value={formatNumber(m.sharpe_ratio)} sub={`Buy & hold ${formatNumber(bench?.sharpe_ratio)}`} />
+        <StatCard label="Max drawdown" value={<span className="text-loss">{formatPct(m.max_drawdown_pct, 1, false)}</span>} sub={`Buy & hold ${formatPct(bench?.max_drawdown_pct, 1, false)}`} />
+        <StatCard label="Trades" value={m.num_trades} sub={`Win rate ${formatPct(m.win_rate, 0, false)}`} />
+        <StatCard
+          label="Asset correlation"
+          value={formatNumber(avg)}
+          sub={isNum(avg) ? (avg > 0.7 ? "High: little diversification" : avg > 0.3 ? "Moderate" : "Low: well diversified") : "Not enough data"}
+          hint="Average pairwise correlation of the assets' per-bar price returns. Near 1 means they move together, so splitting capital across them reduces risk little."
+        />
+      </div>
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>Portfolio equity</CardTitle>
+            <CardDescription>All sleeves combined, against an equal-weight buy-and-hold of the same assets · {formatDate(r.window.start)} – {formatDate(r.window.end)}</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <EquityAreaChart data={r.equity_curve} baseline={m.initial_capital} height={280} />
+        </CardContent>
+      </Card>
+      <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
+        <Card>
+          <CardHeader><CardTitle>By asset</CardTitle></CardHeader>
+          <CardContent className="px-2">
+            <Table>
+              <THead>
+                <TR className="hover:bg-transparent"><TH>Asset</TH><TH className="text-right">Return</TH><TH className="text-right">Buy &amp; hold</TH><TH className="text-right">Sharpe</TH><TH className="text-right">Max DD</TH><TH className="text-right">Trades</TH><TH className="text-right">Win rate</TH></TR>
+              </THead>
+              <TBody>
+                {r.per_asset.map((a) => (
+                  <TR key={a.symbol}>
+                    <TD className="font-medium">{a.symbol}</TD>
+                    <TD className={cn("text-right font-medium", pnlClass(a.total_return_pct))}>{formatPct(a.total_return_pct)}</TD>
+                    <TD className={cn("text-right", pnlClass(a.buy_hold_return_pct))}>{formatPct(a.buy_hold_return_pct)}</TD>
+                    <TD className="text-right">{formatNumber(a.sharpe_ratio)}</TD>
+                    <TD className="text-right text-loss">{formatPct(a.max_drawdown_pct, 1, false)}</TD>
+                    <TD className="text-right">{a.num_trades}</TD>
+                    <TD className="text-right">{formatPct(a.win_rate, 0, false)}</TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </CardContent>
+        </Card>
+        <Card className="h-fit">
+          <CardHeader>
+            <div>
+              <CardTitle>Price correlation</CardTitle>
+              <CardDescription>Per-bar returns of the assets themselves</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="border-separate border-spacing-1 text-xs tabular">
+              <thead>
+                <tr><th />{r.correlation.symbols.map((s) => <th key={s} className="px-1 font-medium text-muted-foreground">{s.split("-")[0]}</th>)}</tr>
+              </thead>
+              <tbody>
+                {r.correlation.matrix.map((row, i) => (
+                  <tr key={r.correlation.symbols[i]}>
+                    <th className="pr-1 text-left font-medium text-muted-foreground">{r.correlation.symbols[i]!.split("-")[0]}</th>
+                    {row.map((v, j) => (
+                      <td
+                        key={j}
+                        className="h-9 min-w-12 rounded text-center"
+                        style={isNum(v) && i !== j ? { backgroundColor: `color-mix(in oklch, var(--info) ${Math.round(Math.abs(v) * 60)}%, transparent)` } : undefined}
+                      >
+                        {i === j ? "—" : formatNumber(v)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+

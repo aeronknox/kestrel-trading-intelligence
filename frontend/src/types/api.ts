@@ -603,7 +603,7 @@ export interface WalkForwardResult {
 
 export interface ResearchSummary {
   id: number;
-  kind: "sweep" | "walk_forward";
+  kind: "sweep" | "walk_forward" | "portfolio";
   strategy_id: number;
   strategy_name: string;
   strategy_version: number;
@@ -632,9 +632,36 @@ export interface ResearchRequest {
   history_complete?: boolean;
 }
 
-export type ResearchRun = ResearchSummary & { request: ResearchRequest; disclaimer: string } & (
+export interface PortfolioRequestBody {
+  strategy_id: number;
+  symbols: string[];
+  bars: number;
+  initial_capital: number;
+  fee_bps: number;
+  slippage_bps: number;
+}
+
+export interface PortfolioAsset extends RunSummaryMetrics {
+  symbol: string;
+  bars: number;
+  buy_hold_return_pct: number;
+  final_equity: number;
+}
+
+export interface PortfolioResult {
+  symbols: string[];
+  window: { start: number; end: number };
+  capital_per_asset: number;
+  per_asset: PortfolioAsset[];
+  metrics: BacktestMetrics;
+  correlation: { symbols: string[]; matrix: (number | null)[][]; average: number | null };
+  equity_curve: { time: number; equity: number; drawdown_pct: number; benchmark: number }[];
+}
+
+export type ResearchRun = ResearchSummary & { request: ResearchRequest & { symbols?: string[] }; disclaimer: string } & (
     | { kind: "sweep"; result: SweepResult }
     | { kind: "walk_forward"; result: WalkForwardResult }
+    | { kind: "portfolio"; result: PortfolioResult }
   );
 
 export interface HistoryCoverage {
