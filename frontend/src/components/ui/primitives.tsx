@@ -88,6 +88,9 @@ export function Badge({ className, variant, ...props }: React.ComponentProps<"sp
   return <span className={cn(badgeVariants({ variant }), className)} {...props} />;
 }
 
+/** The id a Field's label points at, for controls nested deeper than its direct child (e.g. a Select's trigger). */
+export const FieldControlIdContext = React.createContext<string | undefined>(undefined);
+
 export function Field({ label, htmlFor, hint, error, children, className }: {
   label: string;
   htmlFor?: string;
@@ -105,7 +108,7 @@ export function Field({ label, htmlFor, hint, error, children, className }: {
   return (
     <div className={cn("grid gap-1.5", className)}>
       <Label htmlFor={controlId}>{label}</Label>
-      {control}
+      <FieldControlIdContext.Provider value={controlId}>{control}</FieldControlIdContext.Provider>
       {error ? <p className="text-xs text-loss">{error}</p> : hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
     </div>
   );

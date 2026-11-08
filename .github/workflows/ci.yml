@@ -128,6 +128,9 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
           npm run e2e
+      - name: Accessibility (axe, both themes) and phone-width layout
+        working-directory: frontend
+        run: npm run a11y
       - name: Logs on failure
         if: failure()
         run: docker compose --profile worker logs --no-color --tail 200

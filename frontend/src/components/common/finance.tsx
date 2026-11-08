@@ -82,7 +82,7 @@ export function ConfidenceBar({ value, className }: { value: number; className?:
 export function DataSource({ meta, className }: { meta?: Partial<DataMeta> | null; className?: string }) {
   if (!meta) return null;
   return (
-    <p className={cn("text-[11px] text-muted-foreground/80", className)}>
+    <p className={cn("text-[11px] text-muted-foreground", className)}>
       {meta.is_sample ? <span className="font-medium text-warn">SAMPLE DATA · </span> : null}
       {meta.attribution}
       {meta.stale ? <span className="text-warn"> · stale (provider unavailable)</span> : null}
@@ -106,8 +106,8 @@ export function AssetIcon({ symbol, className }: { symbol: string; className?: s
   for (const ch of base) h = (h * 31 + ch.charCodeAt(0)) % 360;
   return (
     <span
-      className={cn("inline-flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold", className)}
-      style={{ background: `oklch(0.42 0.1 ${h} / 35%)`, color: `oklch(0.85 0.12 ${h})` }}
+      className={cn("asset-icon inline-flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold", className)}
+      style={{ "--hue": h } as React.CSSProperties}
     >
       {base.slice(0, 4)}
     </span>

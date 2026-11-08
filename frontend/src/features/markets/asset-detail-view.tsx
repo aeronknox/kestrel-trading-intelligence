@@ -9,7 +9,7 @@ import { AssetIcon, Change, DataSource } from "@/components/common/finance";
 import { ErrorState } from "@/components/common/states";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/overlays";
+import { Segmented, SegmentedItem } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/primitives";
 import { type Overlay, PriceChart } from "@/features/charts/price-chart";
 import { useMe } from "@/hooks/use-auth";
@@ -119,15 +119,13 @@ export function AssetDetailView({ symbol }: { symbol: string }) {
       <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
         <Card className="min-w-0">
           <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center">
-            <Tabs value={timeframe} onValueChange={(v) => setTimeframe(v as Timeframe)}>
-              <TabsList>
+            <Segmented value={timeframe} onValueChange={(v) => setTimeframe(v as Timeframe)} label="Timeframe">
                 {TIMEFRAMES.map((tf) => (
-                  <TabsTrigger key={tf} value={tf} className="px-2.5">
+                  <SegmentedItem key={tf} value={tf} className="px-2.5">
                     {tf}
-                  </TabsTrigger>
+                  </SegmentedItem>
                 ))}
-              </TabsList>
-            </Tabs>
+              </Segmented>
             <div className="flex flex-wrap gap-1.5">
               {OVERLAYS.map((o) => (
                 <button

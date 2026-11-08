@@ -68,7 +68,7 @@ export function SentimentCard({ sentiment }: { sentiment: Sentiment | null }) {
                 <div className="text-[10px] text-muted-foreground">Avg 24h</div>
               </div>
             </div>
-            <p className="text-[10px] text-muted-foreground/80">
+            <p className="text-[10px] text-muted-foreground">
               {sentiment.fear_greed ? `Fear & Greed: ${sentiment.fear_greed.source}. ` : "Fear & Greed index unavailable. "}
               Breadth/RSI derived from provider candles.
             </p>

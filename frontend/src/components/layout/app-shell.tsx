@@ -43,7 +43,7 @@ function SidebarNav({ user, onNavigate }: { user: User; onNavigate?: () => void 
         if (!items.length) return null;
         return (
           <div key={group.label}>
-            <p className="mb-1.5 px-2 text-[10px] font-semibold tracking-wider text-muted-foreground/70 uppercase">{group.label}</p>
+            <p className="mb-1.5 px-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">{group.label}</p>
             <ul className="space-y-0.5">
               {items.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);

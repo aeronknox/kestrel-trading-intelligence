@@ -30,6 +30,7 @@
 
   --gain: oklch(0.76 0.16 155);
   --gain-soft: oklch(0.76 0.16 155 / 14%);
+  --gain-foreground: oklch(0.18 0.03 155);
   --loss: oklch(0.68 0.2 22);
   --loss-soft: oklch(0.68 0.2 22 / 14%);
   --warn: oklch(0.82 0.15 80);
@@ -57,7 +58,7 @@
   --card-foreground: oklch(0.2 0.02 255);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.2 0.02 255);
-  --primary: oklch(0.55 0.12 205);
+  --primary: oklch(0.47 0.11 205);
   --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.955 0.006 255);
   --secondary-foreground: oklch(0.25 0.02 255);
@@ -69,13 +70,14 @@
   --border: oklch(0.91 0.008 255);
   --input: oklch(0.89 0.01 255);
   --ring: oklch(0.55 0.12 205 / 50%);
-  --gain: oklch(0.56 0.15 155);
+  --gain: oklch(0.46 0.13 155);
   --gain-soft: oklch(0.56 0.15 155 / 12%);
-  --loss: oklch(0.56 0.21 25);
+  --gain-foreground: oklch(0.99 0 0);
+  --loss: oklch(0.5 0.2 25);
   --loss-soft: oklch(0.56 0.21 25 / 12%);
-  --warn: oklch(0.66 0.15 70);
+  --warn: oklch(0.5 0.12 65);
   --warn-soft: oklch(0.66 0.15 70 / 14%);
-  --info: oklch(0.55 0.15 255);
+  --info: oklch(0.5 0.15 255);
   --info-soft: oklch(0.55 0.15 255 / 12%);
   --chart-grid: oklch(0.9 0.008 255);
   --sidebar: oklch(0.975 0.004 255);
@@ -83,6 +85,7 @@
 }
 
 @theme inline {
+  --color-gain-foreground: var(--gain-foreground);
   --color-background: var(--background);
   --color-background-elevated: var(--background-elevated);
   --color-foreground: var(--foreground);
@@ -156,3 +159,14 @@
     background-size: 44px 44px;
   }
 }
+
+/* Asset monogram: tinted per asset hue (--hue), readable in both themes. */
+.asset-icon {
+  background: oklch(0.42 0.1 var(--hue) / 35%);
+  color: oklch(0.88 0.1 var(--hue));
+}
+.light .asset-icon {
+  background: oklch(0.92 0.05 var(--hue));
+  color: oklch(0.36 0.1 var(--hue));
+}
+

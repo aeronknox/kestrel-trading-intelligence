@@ -203,6 +203,8 @@ cd frontend && npm test                # 19 unit tests: rule builder, formatters
 cd frontend && npm run typecheck && npm run build
 cd frontend && npx playwright install chromium && npm run e2e
                                        # 34 browser flows against a running stack (:3000 + :8000)
+cd frontend && npm run a11y            # axe (WCAG 2.1 A/AA) on every page in both themes + no sideways
+                                       # scrolling at 390px; fails on critical/serious findings
 ```
 
 Backend tests run against SQLite with the sample provider and need no network access. Set `TEST_DATABASE_URL=postgresql+psycopg://…` to run them against PostgreSQL.
@@ -213,7 +215,7 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 - **Backend:** ruff lint and mypy type check, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
 - **Frontend:** ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
-- **Docker:** `docker compose up --build --wait`, health checks, then the 34 browser flows (with demo mode on) against the containerized stack.
+- **Docker:** `docker compose --profile worker up --build --wait`, health checks, the 34 browser flows (with demo mode on), then the accessibility and phone-layout check against the containerized stack.
 - **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
 
 See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.

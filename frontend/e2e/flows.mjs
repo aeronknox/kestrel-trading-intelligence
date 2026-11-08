@@ -91,7 +91,7 @@ await step("markets track-asset catalog search", async () => {
 
 await step("asset detail timeframe + overlay toggles", async () => {
   await page.goto(`${BASE}/markets/ETH-USD`);
-  await page.getByRole("tab", { name: "15m" }).click();
+  await page.getByRole("radio", { name: "15m" }).click();
   await page.getByRole("button", { name: "MACD" }).click();
   await page.waitForTimeout(2500);
   if ((await page.locator("canvas").count()) < 2) throw new Error("chart canvas missing");
@@ -202,7 +202,7 @@ await step("short strategy backtest", async () => {
 
 await step("multi-asset test", async () => {
   await page.goto(`${BASE}/research/new`);
-  await page.getByRole("tab", { name: "Multi-asset test" }).click();
+  await page.getByRole("radio", { name: "Multi-asset test" }).click();
   await page.getByText(/of 2–6 selected/).waitFor();
   await page.getByRole("button", { name: "Run multi-asset test" }).click();
   await page.waitForURL(/\/research\/\d+$/, { timeout: 60000 });
@@ -222,13 +222,13 @@ await step("walk-forward test via optimization page", async () => {
 
 await step("parameter sweep heatmap", async () => {
   await page.goto(`${BASE}/research/new`);
-  await page.getByRole("tab", { name: "Parameter sweep" }).click();
+  await page.getByRole("radio", { name: "Parameter sweep" }).click();
   await page.getByRole("button", { name: /Add a second parameter/ }).click();
   await page.getByText("Parameter 2").waitFor();
   await page.getByRole("button", { name: "Run sweep" }).click();
   await page.waitForURL(/\/research\/\d+$/, { timeout: 60000 });
   await page.getByText("Results grid").waitFor({ timeout: 15000 });
-  await page.getByRole("tab", { name: "Drawdown" }).click();
+  await page.getByRole("radio", { name: "Drawdown" }).click();
   await page.goto(`${BASE}/research`);
   await page.getByRole("cell", { name: "Sweep", exact: true }).first().waitFor({ timeout: 15000 });
   await page.getByRole("cell", { name: "Walk-forward", exact: true }).first().waitFor();
@@ -243,7 +243,7 @@ await step("paper market buy via ticket", async () => {
 });
 
 await step("paper limit order + cancel", async () => {
-  await page.getByRole("tab", { name: "Limit" }).click();
+  await page.getByRole("radio", { name: "Limit" }).click();
   await page.getByLabel(/Limit price/).fill("1");
   await page.getByPlaceholder("0.00").fill("50");
   await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();

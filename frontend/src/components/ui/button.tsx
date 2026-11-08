@@ -15,7 +15,7 @@ const buttonVariants = cva(
         outline: "border border-border bg-transparent hover:bg-accent hover:text-accent-foreground",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         destructive: "bg-destructive text-white hover:bg-destructive/90",
-        gain: "bg-gain text-[oklch(0.18_0.03_155)] hover:bg-gain/90",
+        gain: "bg-gain text-gain-foreground hover:bg-gain/90",
         loss: "bg-loss text-white hover:bg-loss/90",
         link: "text-primary underline-offset-4 hover:underline",
       },

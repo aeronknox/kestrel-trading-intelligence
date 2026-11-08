@@ -4,17 +4,21 @@ import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown } from "lucide-react";
 import * as React from "react";
 
+import { FieldControlIdContext } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
 
 const Select = SelectPrimitive.Root;
 const SelectGroup = SelectPrimitive.Group;
 const SelectValue = SelectPrimitive.Value;
 
-function SelectTrigger({ className, children, ...props }: React.ComponentProps<typeof SelectPrimitive.Trigger>) {
+function SelectTrigger({ className, children, id, ...props }: React.ComponentProps<typeof SelectPrimitive.Trigger>) {
+  // Inside a <Field>, take the id its <label> points at, so the label names this control.
+  const fieldId = React.useContext(FieldControlIdContext);
   return (
     <SelectPrimitive.Trigger
+      id={id ?? fieldId}
       className={cn(
-        "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background-elevated px-3 py-2 text-sm whitespace-nowrap shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted-foreground [&>span]:line-clamp-1",
+        "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background-elevated px-3 py-2 text-sm whitespace-nowrap shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted-foreground min-w-0 [&>span]:min-w-0 [&>span]:truncate",
         className,
       )}
       {...props}

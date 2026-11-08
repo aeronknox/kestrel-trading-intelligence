@@ -5,7 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/primitives";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/overlays";
+import { Segmented, SegmentedItem } from "@/components/ui/segmented";
 import type { Condition, IndicatorName, IndicatorSpec, Operand, Operator, RuleSet } from "@/types/api";
 
 import { defaultCondition, defaultOperand, describeCondition, INDICATOR_LABELS, OPERATOR_LABELS } from "./rules";
@@ -29,7 +29,7 @@ function OperandEditor({
         value={isValue ? "__value" : (operand.indicator as string)}
         onValueChange={(v) => onChange(v === "__value" ? { value: 0 } : defaultOperand(v as IndicatorName, catalog))}
       >
-        <SelectTrigger className="h-8 w-40 text-xs">
+        <SelectTrigger className="h-8 w-40 text-xs" aria-label="Indicator or value">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -69,7 +69,7 @@ function OperandEditor({
             ))}
           {spec && spec.fields.length > 0 && (
             <Select value={operand.field ?? spec.fields[0]} onValueChange={(f) => onChange({ ...operand, field: f })}>
-              <SelectTrigger className="h-8 w-24 text-xs">
+              <SelectTrigger className="h-8 w-24 text-xs" aria-label="Indicator output">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -103,7 +103,7 @@ function ConditionRow({
       <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
         <OperandEditor operand={condition.left} catalog={catalog} allowValue={false} onChange={(left) => onChange({ ...condition, left })} />
         <Select value={condition.op} onValueChange={(op) => onChange({ ...condition, op: op as Operator })}>
-          <SelectTrigger className="h-8 w-36 text-xs">
+          <SelectTrigger className="h-8 w-36 text-xs" aria-label="Comparison">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -145,16 +145,14 @@ export function RuleSetBuilder({
           <p className="text-sm font-medium">{title}</p>
           <p className="text-xs text-muted-foreground">{description}</p>
         </div>
-        <Tabs value={rules.logic} onValueChange={(v) => onChange({ ...rules, logic: v as RuleSet["logic"] })}>
-          <TabsList className="h-8">
-            <TabsTrigger value="all" className="h-6 text-[11px]">
+        <Segmented value={rules.logic} onValueChange={(v) => onChange({ ...rules, logic: v as RuleSet["logic"] })} label="Condition logic" className="h-8">
+            <SegmentedItem value="all" className="h-6 text-[11px]">
               Match ALL
-            </TabsTrigger>
-            <TabsTrigger value="any" className="h-6 text-[11px]">
+            </SegmentedItem>
+            <SegmentedItem value="any" className="h-6 text-[11px]">
               Match ANY
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+            </SegmentedItem>
+          </Segmented>
       </div>
       {rules.conditions.length === 0 && (
         <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">No conditions yet.</p>

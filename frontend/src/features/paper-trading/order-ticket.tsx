@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Change } from "@/components/common/finance";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/overlays";
+import { Segmented, SegmentedItem } from "@/components/ui/segmented";
 import { Badge, Field, Input } from "@/components/ui/primitives";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLiveTicker } from "@/hooks/use-market-stream";
@@ -76,15 +76,13 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
           </span>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => setSide("buy")} className={cn("h-9 rounded-md text-sm font-semibold transition-colors", side === "buy" ? "bg-gain text-[oklch(0.18_0.03_155)]" : "bg-muted text-muted-foreground hover:text-foreground")}>Buy</button>
+          <button onClick={() => setSide("buy")} className={cn("h-9 rounded-md text-sm font-semibold transition-colors", side === "buy" ? "bg-gain text-gain-foreground" : "bg-muted text-muted-foreground hover:text-foreground")}>Buy</button>
           <button onClick={() => setSide("sell")} className={cn("h-9 rounded-md text-sm font-semibold transition-colors", side === "sell" ? "bg-loss text-white" : "bg-muted text-muted-foreground hover:text-foreground")}>Sell</button>
         </div>
-        <Tabs value={type} onValueChange={(v) => setType(v as OrderType)}>
-          <TabsList className="w-full">
-            <TabsTrigger value="market" className="flex-1">Market</TabsTrigger>
-            <TabsTrigger value="limit" className="flex-1">Limit</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <Segmented value={type} onValueChange={(v) => setType(v as OrderType)} label="Order type" className="w-full">
+            <SegmentedItem value="market" className="flex-1">Market</SegmentedItem>
+            <SegmentedItem value="limit" className="flex-1">Limit</SegmentedItem>
+          </Segmented>
         {type === "limit" && (
           <Field label="Limit price (USD)" hint={side === "buy" ? "Fills when the price is at or below this level." : "Fills when the price is at or above this level."}>
             <Input type="number" min={0} step="any" value={limit} onChange={(e) => setLimit(e.target.value)} placeholder={formatPrice(ticker?.price)} />

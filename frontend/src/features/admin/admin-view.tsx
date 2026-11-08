@@ -46,7 +46,7 @@ function UsersTab() {
               </TD>
               <TD>
                 <Select value={u.role} disabled={self} onValueChange={(role) => update.mutate({ id: u.id, body: { role } })}>
-                  <SelectTrigger className="h-8 w-28 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-8 w-28 text-xs" aria-label={`Role for ${u.email}`}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="user">User</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>

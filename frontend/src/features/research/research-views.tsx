@@ -13,7 +13,7 @@ import { EmptyState, ErrorState, LoadingRows } from "@/components/common/states"
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/overlays";
+import { Segmented, SegmentedItem } from "@/components/ui/segmented";
 import { Badge, Field, Input } from "@/components/ui/primitives";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
@@ -198,7 +198,7 @@ export function NewResearchView() {
         <Link href="/research"><ArrowLeft /> Optimization</Link>
       </Button>
       <PageHeader title="New analysis" description="Every run is a hypothetical simulation on historical candles with 10 bps fees and 5 bps slippage." />
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <Card>
           <CardHeader>
             <div>
@@ -207,13 +207,11 @@ export function NewResearchView() {
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
-            <Tabs value={mode} onValueChange={(v) => setMode(v as typeof mode)}>
-              <TabsList>
-                <TabsTrigger value="walk_forward">Walk-forward test</TabsTrigger>
-                <TabsTrigger value="sweep">Parameter sweep</TabsTrigger>
-                <TabsTrigger value="portfolio">Multi-asset test</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <Segmented value={mode} onValueChange={(v) => setMode(v as typeof mode)} label="Analysis type">
+                <SegmentedItem value="walk_forward">Walk-forward test</SegmentedItem>
+                <SegmentedItem value="sweep">Parameter sweep</SegmentedItem>
+                <SegmentedItem value="portfolio">Multi-asset test</SegmentedItem>
+              </Segmented>
             <p className="text-xs text-muted-foreground">
               {mode === "walk_forward"
                 ? "Repeatedly picks the best settings on one window and then trades them on the next, unseen window. Only the unseen windows are scored."
@@ -414,7 +412,7 @@ function SweepView({ result: r }: { result: SweepResult }) {
     // Drawdowns are negative numbers where closer to zero is better, so the scale works unchanged.
     const t = v >= 0 ? (hi > 0 ? v / hi : 0) : lo < 0 ? v / lo : 0;
     const good = colorBy === "num_trades" ? "var(--info)" : v >= 0 ? "var(--gain)" : "var(--loss)";
-    return { backgroundColor: `color-mix(in oklch, ${good} ${Math.round(12 + Math.abs(t) * 58)}%, transparent)` };
+    return { backgroundColor: `color-mix(in oklch, ${good} ${Math.round(12 + Math.abs(t) * 36)}%, transparent)` };
   };
   const cellAt = (ri: number, ci: number) => r.cells[ri * colsP.values.length + ci]!;
   const top = r.cells.map((c, i) => ({ c, i })).filter(({ c }) => c.score !== null).sort((a, b) => b.c.score! - a.c.score!).slice(0, 8);
@@ -436,14 +434,12 @@ function SweepView({ result: r }: { result: SweepResult }) {
               Each cell is a full backtest. The outlined cell scored best{r.min_trades ? `; faded cells had fewer than ${r.min_trades} trades and could not be picked` : ""}.
             </CardDescription>
           </div>
-          <Tabs value={colorBy} onValueChange={(v) => setColorBy(v as ColorBy)}>
-            <TabsList>
-              <TabsTrigger value="score">{objLabel}</TabsTrigger>
-              <TabsTrigger value="total_return_pct">Return</TabsTrigger>
-              <TabsTrigger value="max_drawdown_pct">Drawdown</TabsTrigger>
-              <TabsTrigger value="num_trades">Trades</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <Segmented value={colorBy} onValueChange={(v) => setColorBy(v as ColorBy)} label="Color cells by">
+              <SegmentedItem value="score">{objLabel}</SegmentedItem>
+              <SegmentedItem value="total_return_pct">Return</SegmentedItem>
+              <SegmentedItem value="max_drawdown_pct">Drawdown</SegmentedItem>
+              <SegmentedItem value="num_trades">Trades</SegmentedItem>
+            </Segmented>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="w-full border-separate border-spacing-1 text-xs tabular">
