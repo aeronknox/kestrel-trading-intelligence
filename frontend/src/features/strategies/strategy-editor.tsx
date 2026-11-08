@@ -132,7 +132,7 @@ export function StrategyEditor({ initial, strategyId }: { initial: StrategyDraft
           <CardHeader>
             <div>
               <CardTitle>Rules</CardTitle>
-              <CardDescription>Evaluated on each closed bar; orders execute at the next bar&apos;s open (long-only).</CardDescription>
+              <CardDescription>Evaluated on each closed bar; orders execute at the next bar&apos;s open.</CardDescription>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -150,6 +150,15 @@ export function StrategyEditor({ initial, strategyId }: { initial: StrategyDraft
             </div>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-3">
+            <Field label="Direction" hint={d.risk.direction === "short" ? "Profits when price falls; stops sit above the entry" : "Profits when price rises"}>
+              <Select value={d.risk.direction} onValueChange={(v) => setRisk("direction", v as RiskParams["direction"])}>
+                <SelectTrigger aria-label="Direction"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="long">Long (buy)</SelectItem>
+                  <SelectItem value="short">Short (sell first)</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
             <Field label="Position size (% equity)">
               <Input type="number" min={1} max={100} value={d.risk.position_size_pct} onChange={(e) => setRisk("position_size_pct", Number(e.target.value))} />
             </Field>
@@ -168,7 +177,7 @@ export function StrategyEditor({ initial, strategyId }: { initial: StrategyDraft
           </CardHeader>
           <CardContent className="space-y-3 text-xs">
             <div>
-              <p className="font-medium text-gain">Enter long when</p>
+              <p className="font-medium text-gain">Enter {d.risk.direction === "short" ? "short" : "long"} when</p>
               <p className="mt-0.5 text-muted-foreground">{describeRuleSet(d.entry)}</p>
             </div>
             <div>

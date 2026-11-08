@@ -180,3 +180,104 @@ def test_fully_invested_strategy_tracks_benchmark() -> None:
     m = run_backtest(df, always_in, NO_COSTS).metrics
     assert m["beta"] == pytest.approx(1.0, abs=0.05)
     assert m["correlation"] == pytest.approx(1.0, abs=0.05)
+
+
+# ---------------------------------------------------------------- short side
+def short_strategy(entry_below: float, exit_above: float, **risk) -> StrategyDefinition:  # type: ignore[no-untyped-def]
+    return StrategyDefinition.model_validate(
+        {
+            "entry": {"conditions": [{"left": {"indicator": "close"}, "op": "crosses_below", "right": {"value": entry_below}}]},
+            "exit": {"conditions": [{"left": {"indicator": "close"}, "op": "crosses_above", "right": {"value": exit_above}}]},
+            "risk": {"position_size_pct": 100, "direction": "short", **risk},
+        }
+    )
+
+
+def bars(rows: list[tuple[float, float, float, float]]) -> pd.DataFrame:
+    """Explicit (open, high, low, close) bars, hourly."""
+    start = pd.Timestamp("2024-01-01", tz="UTC")
+    return pd.DataFrame(
+        {
+            "ts": [start + pd.Timedelta(hours=i) for i in range(len(rows))],
+            "open": [r[0] for r in rows], "high": [r[1] for r in rows],
+            "low": [r[2] for r in rows], "close": [r[3] for r in rows],
+            "volume": [100.0] * len(rows),
+        }
+    )  # fmt: skip
+
+
+def test_short_profits_when_price_falls() -> None:
+    df = make_frame([100, 100, 95, 90, 80, 85, 90, 88])
+    out = run_backtest(df, short_strategy(96, 82), NO_COSTS)
+    assert len(out.trades) == 1
+    t = out.trades[0]
+    assert t.side == "short"
+    # Signal on bar 2 (95 crosses below 96) -> sell at bar 3 open (95); exit signal on bar 5 (85) -> buy at bar 6 open (85).
+    assert t.entry_price == pytest.approx(95) and t.exit_price == pytest.approx(85)
+    assert t.pnl == pytest.approx(1000 / 95 * (95 - 85))
+    # Marked to market while open: worth collateral + (entry - price) per unit.
+    bar4 = int(pd.Timestamp(df["ts"][4]).timestamp())
+    assert out.equity[bar4] == pytest.approx(1000 / 95 * (2 * 95 - 80))
+    assert out.metrics["final_equity"] == pytest.approx(1000 + t.pnl)
+
+
+def test_short_stop_loss_sits_above_entry_and_respects_gaps() -> None:
+    rows = [(100, 101, 99, 100), (100, 101, 98, 98), (98, 99, 97, 98), (98, 102.5, 97, 101), (101, 101, 100, 100)]
+    out = run_backtest(bars(rows), short_strategy(99, 1000, stop_loss_pct=4), NO_COSTS)
+    t = out.trades[0]
+    assert t.entry_price == pytest.approx(98)  # signal at bar 1 close, filled at bar 2 open
+    assert t.exit_reason == "stop_loss" and t.exit_price == pytest.approx(98 * 1.04)  # high 102.5 touched 101.92
+    gap = [(100, 101, 99, 100), (100, 101, 98, 98), (98, 99, 97, 98), (105, 106, 104, 105), (105, 105, 104, 104)]
+    g = run_backtest(bars(gap), short_strategy(99, 1000, stop_loss_pct=4), NO_COSTS).trades[0]
+    assert g.exit_reason == "stop_loss" and g.exit_price == pytest.approx(105)  # gapped through the stop: filled at the open
+
+
+def test_short_take_profit_below_and_trailing_stop_follows_the_low() -> None:
+    rows = [(100, 101, 99, 100), (100, 101, 98, 98), (98, 99, 97, 97), (97, 97, 87, 88), (88, 89, 87, 88)]
+    tp = run_backtest(bars(rows), short_strategy(99, 1000, take_profit_pct=10), NO_COSTS).trades[0]
+    assert tp.exit_reason == "take_profit" and tp.exit_price == pytest.approx(98 * 0.9)
+
+    trail_rows = [(100, 101, 99, 100), (100, 101, 98, 98), (98, 98, 90, 91), (91, 92, 85, 86), (86, 92, 86, 91), (91, 91, 90, 90)]
+    tr = run_backtest(bars(trail_rows), short_strategy(99, 1000, trailing_stop_pct=5), NO_COSTS).trades[0]
+    # Low-water mark after bar 3 is 85, so the stop is 89.25; bar 4's high of 92 hits it.
+    assert tr.exit_reason == "trailing_stop" and tr.exit_price == pytest.approx(85 * 1.05)
+
+
+def test_short_is_liquidated_when_price_doubles() -> None:
+    rows = [(100, 101, 99, 100), (100, 101, 98, 98), (98, 99, 97, 98), (98, 150, 97, 150), (150, 210, 150, 205), (205, 205, 50, 60), (60, 61, 40, 45)]
+    out = run_backtest(bars(rows), short_strategy(99, 1000), NO_COSTS)
+    t = out.trades[0]
+    assert t.exit_reason == "margin_call" and t.exit_price == pytest.approx(196)  # twice the 98 entry
+    assert t.pnl == pytest.approx(-1000)  # the whole posted collateral, no more
+    assert out.metrics["final_equity"] == pytest.approx(0)
+    assert len(out.trades) == 1  # nothing left to trade with afterwards
+
+
+def test_short_costs_are_adverse_on_both_fills() -> None:
+    df = make_frame([100, 100, 95, 90, 80, 85, 90, 88])
+    t = run_backtest(df, short_strategy(96, 82), BacktestConfig(initial_capital=1000, fee_bps=50, slippage_bps=50)).trades[0]
+    assert t.entry_price == pytest.approx(95 * 0.995)  # sold lower
+    assert t.exit_price == pytest.approx(85 * 1.005)  # bought back higher
+    q = t.quantity
+    assert t.pnl == pytest.approx(q * (t.entry_price - t.exit_price) - t.entry_fee - t.exit_fee)
+
+
+def test_direction_defaults_to_long_for_existing_strategies() -> None:
+    s = price_cross_strategy(102, 100)
+    assert s.risk.direction == "long"
+    out = run_backtest(make_frame([100, 100, 105, 110, 120, 95, 90]), s, NO_COSTS)
+    assert out.trades[0].side == "long"
+
+
+async def test_short_strategy_through_the_api(auth_client) -> None:  # type: ignore[no-untyped-def]
+    from app.strategies.definition import TEMPLATES
+
+    d = TEMPLATES[0]["definition"]
+    body = {"name": "Short RSI", "config": {"symbol": "BTC-USD", "timeframe": "1h", **d, "risk": {**d["risk"], "direction": "short"}}}
+    sid = (await auth_client.post("/api/v1/strategies", json=body)).json()["id"]
+    assert (await auth_client.get(f"/api/v1/strategies/{sid}")).json()["current_config"]["risk"]["direction"] == "short"
+    bt = (await auth_client.post("/api/v1/backtests", json={"strategy_id": sid, "bars": 1500})).json()
+    assert bt["status"] == "completed" and bt["metrics"]["direction"] == "short"
+    assert all(t["side"] == "short" for t in bt["trades"])
+    bad = {**body, "name": "Bad", "config": {**body["config"], "risk": {"direction": "sideways"}}}
+    assert (await auth_client.post("/api/v1/strategies", json=bad)).status_code == 422

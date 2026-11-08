@@ -105,6 +105,7 @@ class RuleSet(BaseModel):
 class RiskParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    direction: Literal["long", "short"] = Field("long", description="Long profits from rises; short from falls (backtests only)")
     position_size_pct: float = Field(100.0, gt=0, le=100, description="% of equity allocated per entry")
     stop_loss_pct: float | None = Field(None, gt=0, le=90)
     take_profit_pct: float | None = Field(None, gt=0, le=1000)

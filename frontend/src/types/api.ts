@@ -235,6 +235,8 @@ export interface RuleSet {
 }
 
 export interface RiskParams {
+  /** "short" profits from falling prices (backtests and research only). */
+  direction: "long" | "short";
   position_size_pct: number;
   stop_loss_pct: number | null;
   take_profit_pct: number | null;
@@ -316,6 +318,8 @@ export interface BacktestTrade {
   pnl: number;
   return_pct: number;
   bars_held: number;
+  /** Absent on backtests run before short selling existed (they were long). */
+  side?: "long" | "short";
 }
 
 export interface BacktestMetrics {
@@ -344,6 +348,7 @@ export interface BacktestMetrics {
   warmup_bars: number;
   signal_counts: { entries: number; exits: number };
   bars_requested?: number;
+  direction?: "long" | "short";
   history_complete?: boolean;
   /** Buy-and-hold of the same capital with the same costs. Absent on backtests run before it existed. */
   benchmark?: {

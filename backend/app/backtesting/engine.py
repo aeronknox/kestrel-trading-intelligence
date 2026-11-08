@@ -1,4 +1,4 @@
-"""Event-driven, long-only backtesting engine.
+"""Event-driven backtesting engine (long or short, one position at a time).
 
 Execution model (chosen to avoid look-ahead bias):
   * Rules are evaluated on bar t's *close*. Resulting orders fill at bar t+1's *open*.
@@ -6,8 +6,14 @@ Execution model (chosen to avoid look-ahead bias):
     high/low. If the bar gaps through a level, the fill is at the open. If both
     the stop and the target are touched in the same bar, the stop is assumed to
     fill first (conservative — intrabar order is unknown).
-  * The trailing-stop reference uses the high-water mark up to the *previous*
-    bar, so a bar's own high can't retroactively tighten its stop.
+  * The trailing-stop reference uses the high-water mark (low-water mark for
+    shorts) up to the *previous* bar, so a bar's own extreme can't retroactively
+    tighten its stop.
+  * Shorts mirror longs: entries sell at the open minus slippage, stops sit above
+    the entry and targets below, and exits buy back plus slippage. The position
+    is collateralized with its own notional, so it is worth qty x (2 x entry -
+    price) and is liquidated ("margin_call") if price reaches twice the entry.
+    There is no borrow fee or funding cost.
   * Every fill pays `fee_bps` on notional and suffers `slippage_bps` adverse price.
   * Any position still open on the final bar is closed at its close and tagged.
   * The benchmark is buy-and-hold of the same capital: bought at the first bar's
@@ -49,6 +55,7 @@ class Trade:
     pnl: float = 0.0
     return_pct: float = 0.0
     bars_held: int = 0
+    side: str = "long"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -109,25 +116,34 @@ def run_backtest(
 
     fee = config.fee_bps / 10_000
     slip = config.slippage_bps / 10_000
+    short = risk.direction == "short"
+    side = "short" if short else "long"
+    # Adverse slippage: buys fill higher, sells lower. Longs buy to open; shorts sell to open.
+    open_slip, close_slip = (1 - slip, 1 + slip) if short else (1 + slip, 1 - slip)
     cash = config.initial_capital
     qty = 0.0
     trade: Trade | None = None
     entry_bar = 0
-    hwm = 0.0
+    extreme = 0.0  # high-water mark for longs, low-water mark for shorts (up to the previous bar)
     pending: str | None = None  # "enter" | "exit:<reason>"
     trades: list[Trade] = []
     equity = np.empty(len(df) - start)
 
+    def position_value(price: float) -> float:
+        """Long: market value. Short: posted collateral plus unrealized P&L."""
+        assert trade is not None
+        return qty * (2 * trade.entry_price - price) if short else qty * price
+
     def close_position(i: int, raw_price: float, reason: str) -> None:
         nonlocal cash, qty, trade
         assert trade is not None
-        price = raw_price * (1 - slip)
-        proceeds = qty * price
-        exit_fee = proceeds * fee
-        cash += proceeds - exit_fee
+        price = raw_price * close_slip
+        exit_fee = qty * price * fee
+        value = position_value(price)
+        cash += value - exit_fee
         trade.exit_time, trade.exit_price, trade.exit_fee, trade.exit_reason = times[i], price, exit_fee, reason
         cost = trade.quantity * trade.entry_price + trade.entry_fee
-        trade.pnl = proceeds - exit_fee - cost
+        trade.pnl = value - exit_fee - cost
         trade.return_pct = trade.pnl / cost * 100 if cost else 0.0
         trade.bars_held = i - entry_bar
         trades.append(trade)
@@ -136,34 +152,49 @@ def run_backtest(
     for i in range(start, len(df)):
         # 1) Fill orders generated at the previous close, at this bar's open.
         if pending == "enter" and trade is None:
-            price = o[i] * (1 + slip)
+            price = o[i] * open_slip
             budget = cash * risk.position_size_pct / 100
             q = budget / (price * (1 + fee))
             if q > 0 and math.isfinite(q):
                 entry_fee = q * price * fee
-                cash -= q * price + entry_fee
+                cash -= q * price + entry_fee  # longs pay for the asset; shorts post it as collateral
                 qty = q
-                trade = Trade(entry_time=times[i], entry_price=price, quantity=q, entry_fee=entry_fee)
+                trade = Trade(entry_time=times[i], entry_price=price, quantity=q, entry_fee=entry_fee, side=side)
                 entry_bar = i
-                hwm = o[i]
+                extreme = o[i]
         elif pending and pending.startswith("exit") and trade is not None:
             close_position(i, o[i], pending.split(":", 1)[1])
         pending = None
 
-        # 2) Intrabar protective exits.
+        # 2) Intrabar protective exits (stops are checked before targets: intrabar order is unknown).
         if trade is not None:
-            ref = trade.entry_price / (1 + slip)  # pre-slippage reference price
-            fixed = ref * (1 - risk.stop_loss_pct / 100) if risk.stop_loss_pct else None
-            trail = hwm * (1 - risk.trailing_stop_pct / 100) if risk.trailing_stop_pct else None
-            candidates = [(p, r) for p, r in ((fixed, "stop_loss"), (trail, "trailing_stop")) if p is not None]
-            stop, stop_reason = max(candidates) if candidates else (None, "")
-            target = ref * (1 + risk.take_profit_pct / 100) if risk.take_profit_pct else None
-            if stop is not None and lo[i] <= stop:
-                close_position(i, min(o[i], stop), stop_reason)
-            elif target is not None and h[i] >= target:
-                close_position(i, max(o[i], target), "take_profit")
+            ref = trade.entry_price / open_slip  # pre-slippage reference price
+            if short:
+                stops = [(ref * (1 + risk.stop_loss_pct / 100), "stop_loss")] if risk.stop_loss_pct else []
+                if risk.trailing_stop_pct:
+                    stops.append((extreme * (1 + risk.trailing_stop_pct / 100), "trailing_stop"))
+                # Buying back at this raw price would leave the position worth nothing.
+                stops.append((2 * trade.entry_price / close_slip, "margin_call"))
+                stop, stop_reason = min(stops)
+                target = ref * (1 - risk.take_profit_pct / 100) if risk.take_profit_pct else None
+                if h[i] >= stop:
+                    close_position(i, max(o[i], stop), stop_reason)
+                elif target is not None and lo[i] <= target:
+                    close_position(i, min(o[i], target), "take_profit")
+                else:
+                    extreme = min(extreme, lo[i])
             else:
-                hwm = max(hwm, h[i])
+                fixed = ref * (1 - risk.stop_loss_pct / 100) if risk.stop_loss_pct else None
+                trail = extreme * (1 - risk.trailing_stop_pct / 100) if risk.trailing_stop_pct else None
+                candidates = [(p, r) for p, r in ((fixed, "stop_loss"), (trail, "trailing_stop")) if p is not None]
+                stop_long, stop_reason = max(candidates) if candidates else (None, "")
+                target = ref * (1 + risk.take_profit_pct / 100) if risk.take_profit_pct else None
+                if stop_long is not None and lo[i] <= stop_long:
+                    close_position(i, min(o[i], stop_long), stop_reason)
+                elif target is not None and h[i] >= target:
+                    close_position(i, max(o[i], target), "take_profit")
+                else:
+                    extreme = max(extreme, h[i])
 
         # 3) Evaluate rules on this bar's close -> orders for the next bar.
         if i < len(df) - 1:
@@ -175,7 +206,7 @@ def run_backtest(
                 elif risk.max_bars_in_trade and i - entry_bar + 1 >= risk.max_bars_in_trade:
                     pending = "exit:time_limit"
 
-        equity[i - start] = cash + qty * c[i]
+        equity[i - start] = cash + (position_value(c[i]) if trade is not None else 0.0)
 
     if trade is not None:
         close_position(len(df) - 1, c[-1], "end_of_data")

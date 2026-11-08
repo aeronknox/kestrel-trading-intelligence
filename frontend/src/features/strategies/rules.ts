@@ -26,6 +26,7 @@ export const OPERATOR_LABELS: Record<Operator, string> = {
 };
 
 export const DEFAULT_RISK: RiskParams = {
+  direction: "long",
   position_size_pct: 100,
   stop_loss_pct: 5,
   take_profit_pct: null,
@@ -72,7 +73,7 @@ export function describeRuleSet(rs: RuleSet): string {
 }
 
 export function describeRisk(r: Partial<RiskParams>): string[] {
-  const out = [`Allocate ${r.position_size_pct ?? 100}% of equity per entry`];
+  const out = [`${r.direction === "short" ? "Short" : "Long"}: allocate ${r.position_size_pct ?? 100}% of equity per entry`];
   if (r.stop_loss_pct) out.push(`stop-loss ${r.stop_loss_pct}%`);
   if (r.take_profit_pct) out.push(`take-profit ${r.take_profit_pct}%`);
   if (r.trailing_stop_pct) out.push(`trailing stop ${r.trailing_stop_pct}%`);
@@ -84,6 +85,7 @@ export function describeRisk(r: Partial<RiskParams>): string[] {
 export function normalizeRisk(r: RiskParams): RiskParams {
   const opt = (v: number | null) => (v === null || !Number.isFinite(v) || v <= 0 ? null : v);
   return {
+    direction: r.direction === "short" ? "short" : "long",
     position_size_pct: r.position_size_pct,
     stop_loss_pct: opt(r.stop_loss_pct),
     take_profit_pct: opt(r.take_profit_pct),

@@ -39,6 +39,11 @@ describe("strategy rules", () => {
 
   it("treats zero/blank optional exits as off", () => {
     const r = normalizeRisk({ ...DEFAULT_RISK, stop_loss_pct: 0, take_profit_pct: Number.NaN, trailing_stop_pct: 2, max_bars_in_trade: -1 });
-    expect(r).toEqual({ position_size_pct: 100, stop_loss_pct: null, take_profit_pct: null, trailing_stop_pct: 2, max_bars_in_trade: null });
+    expect(r).toEqual({ direction: "long", position_size_pct: 100, stop_loss_pct: null, take_profit_pct: null, trailing_stop_pct: 2, max_bars_in_trade: null });
+  });
+
+  it("keeps the direction and defaults anything unknown to long", () => {
+    expect(normalizeRisk({ ...DEFAULT_RISK, direction: "short" }).direction).toBe("short");
+    expect(normalizeRisk({ ...DEFAULT_RISK, direction: "sideways" as never }).direction).toBe("long");
   });
 });

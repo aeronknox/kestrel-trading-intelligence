@@ -28,6 +28,7 @@ const EXIT_LABEL: Record<string, string> = {
   trailing_stop: "Trailing stop",
   time_limit: "Time limit",
   end_of_data: "End of data",
+  margin_call: "Margin call",
 };
 
 // -------------------------------------------------------------------- list
@@ -141,6 +142,7 @@ export function BacktestDetailView({ id }: { id: number }) {
   if (q.error || !q.data) return <Card><ErrorState error={q.error ?? new Error("Not found")} onRetry={() => q.refetch()} /></Card>;
   const bt = q.data;
   const isSample = bt.data_source.includes("sample");
+  const isShort = bt.metrics?.direction ? bt.metrics.direction === "short" : Boolean(bt.trades?.some((t) => t.side === "short"));
 
   return (
     <>
@@ -199,7 +201,8 @@ export function BacktestDetailView({ id }: { id: number }) {
                 <p><span className="font-medium text-foreground">Protective exits:</span> checked against bar high/low; gaps fill at the open; if stop and target touch in one bar the stop is assumed first.</p>
                 <p><span className="font-medium text-foreground">Warm-up:</span> ~{bt.metrics.warmup_bars} bars before all indicators are defined (no trades possible).</p>
                 <p><span className="font-medium text-foreground">Signals:</span> {bt.metrics.signal_counts.entries} entry / {bt.metrics.signal_counts.exits} exit triggers over {bt.metrics.bars} closed bars.</p>
-                <p><span className="font-medium text-foreground">Data:</span> {bt.data_source}. Long-only, no leverage, no funding costs.</p>
+                <p><span className="font-medium text-foreground">Direction:</span> {isShort ? "short: sells at entry and buys back at exit; liquidated if price doubles. No borrow or funding costs." : "long: buys at entry and sells at exit."} One position at a time, no leverage.</p>
+                <p><span className="font-medium text-foreground">Data:</span> {bt.data_source}.</p>
               </CardContent>
             </Card>
           </div>
@@ -214,7 +217,7 @@ export function BacktestDetailView({ id }: { id: number }) {
                   <TBody>
                     {bt.trades.map((t, i) => (
                       <TR key={i}>
-                        <TD className="text-muted-foreground">{i + 1}</TD>
+                        <TD className="text-muted-foreground">{i + 1}{t.side === "short" && <Badge variant="loss" className="ml-1.5">Short</Badge>}</TD>
                         <TD>{formatDateTime(t.entry_time)}</TD>
                         <TD className="text-right">{formatPrice(t.entry_price)}</TD>
                         <TD>{formatDateTime(t.exit_time)}</TD>

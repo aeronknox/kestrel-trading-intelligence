@@ -90,6 +90,7 @@ async def create_backtest(body: BacktestRequest, user: CurrentUser, db: DbSessio
         m["warmup_bars"] = output.warmup_bars
         m["signal_counts"] = output.signals
         m["bars_requested"] = body.bars
+        m["direction"] = definition.risk.direction
         m["history_complete"] = series.complete
         session.start_at, session.end_at = closed[0].ts, closed[-1].ts
         session.data_source = series.source + (":sample" if series.is_sample else "") + (":stale" if series.stale else "")
