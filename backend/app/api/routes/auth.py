@@ -21,7 +21,7 @@ from app.schemas.user import (
 )
 from app.services import auth as auth_service
 from app.services.audit import audit
-from app.services.demo import create_demo_user
+from app.services.demo import DemoCapacityError, create_demo_user, ensure_capacity
 from app.services.email import password_reset_email, send_email, verification_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -71,6 +71,10 @@ async def start_demo(request: Request, response: Response, db: DbSession) -> obj
     """Create a throwaway, pre-loaded sandbox account and sign in to it (DEMO_MODE only)."""
     if not get_settings().demo_mode:
         raise NotFoundError("The demo is not enabled on this server")
+    try:
+        await ensure_capacity(db)
+    except DemoCapacityError as exc:
+        raise RateLimitedError("The demo is at capacity right now. Try again later, or create a free account.") from exc
     user = await create_demo_user(db)
     token, _ = await auth_service.create_session(db, user, ip_address=client_ip(request), user_agent=request.headers.get("user-agent"))
     await audit(db, "user.demo_started", user_id=user.id, ip_address=client_ip(request))

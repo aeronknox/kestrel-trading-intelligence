@@ -294,7 +294,8 @@ class MarketDataService:
         stale = complete = False
         self._fetched = 0
         try:
-            complete = await self._fill_missing(asset, timeframe, provider, first_k, last_k, fetch_budget or bars)
+            budget = bars if fetch_budget is None else fetch_budget
+            complete = await self._fill_missing(asset, timeframe, provider, first_k, last_k, budget)
         except ProviderError as exc:
             logger.warning("history_fetch_failed", symbol=asset.symbol, timeframe=timeframe, error=str(exc))
             stale = True
@@ -346,6 +347,10 @@ class MarketDataService:
             while k >= lo and k not in have:
                 k -= 1
             runs.append((k + 1, end))
+        # An empty reply only proves "no data here" if real data exists *newer* than the range
+        # asked for; otherwise it may be an upstream hiccup, and remembering it would hide the
+        # asset's history for a day.
+        newest_known = max(have) if have else None
         for start, end in runs:
             gap_key = f"history-gap:{provider.name}:{asset.provider_symbol}:{timeframe}:{start}:{end}"
             if await self.cache.get_json(gap_key):
@@ -364,6 +369,8 @@ class MarketDataService:
                     {int(c.ts.timestamp()) // tf: c for c in fetched if chunk_start <= int(c.ts.timestamp()) // tf <= end}.items()
                 )
                 if not inside:
+                    if newest_known is None or newest_known <= end:
+                        return False  # unconfirmed: retry on a later call, remember nothing
                     if start == lo:
                         # Nothing here and nothing older stored: the asset's history starts above this range.
                         await self.cache.set_json(floor_key, end + 1, ttl=UNAVAILABLE_TTL)
@@ -371,6 +378,7 @@ class MarketDataService:
                     await self.cache.set_json(gap_key, True, ttl=UNAVAILABLE_TTL)  # an exchange outage gap
                     break
                 await self._persist(asset, timeframe, [c for _, c in inside], provider)
+                newest_known = max(newest_known if newest_known is not None else inside[-1][0], inside[-1][0])
                 # Holes between returned candles have data on both sides, so they are real exchange
                 # gaps; remember them so later calls skip them (their runs will match these keys).
                 for (a, _), (b, _) in itertools.pairwise(inside):

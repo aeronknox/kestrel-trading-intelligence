@@ -172,8 +172,9 @@ npm run dev                     # http://localhost:3000
 Set `DEMO_MODE=true` to add **Try the demo** to the sign-in page. Each click creates a private sandbox account for that visitor, loaded with two sample strategies, a completed backtest and a small paper position:
 
 - Visitors never see each other's data.
-- Demo accounts can't change a password, never receive email, and are deleted, with everything they created, after `DEMO_TTL_HOURS` (default 24).
-- Creating a demo is rate-limited like sign-up.
+- Demo accounts can't change a password, never receive email, can't add assets to the shared list, and are deleted, with everything they created, after `DEMO_TTL_HOURS` (default 24).
+- Creating a demo is rate-limited like sign-up, and at most `DEMO_MAX_ACCOUNTS` sandboxes exist at once.
+- Demo visitors get the rule-based assistant and analysis text, so a public demo can't run up an OpenAI bill (`DEMO_ALLOW_LLM=true` to allow it).
 
 Combine it with [the HTTPS deployment](#deploying-with-https) for a public showcase.
 
@@ -234,6 +235,7 @@ All settings are environment variables; see [.env.example](.env.example).
 | `EMAIL_BACKEND` | `console` | `console` logs emails and their links (development); `smtp` delivers them via `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SECURITY` from `EMAIL_FROM` |
 | `PUBLIC_APP_URL` | `http://localhost:3000` | Base URL for links in verification and password-reset emails |
 | `DEMO_MODE`, `DEMO_TTL_HOURS` | `false` / 24 | Public "Try the demo" sandboxes, and how long they live |
+| `DEMO_MAX_ACCOUNTS`, `DEMO_ALLOW_LLM` | 500 / `false` | Cap on live sandboxes; whether demo visitors may use paid LLM calls |
 | `TRUST_PROXY_HEADERS` (frontend), `PROXY_SHARED_SECRET` (both) | `false` / empty | Set both only when a reverse proxy in front of Next.js sets `X-Forwarded-For`; the API then trusts the client IP for rate limiting and audit |
 | `TRUSTED_PROXIES` | `127.0.0.1/32,::1/128` | Peers whose `X-Forwarded-For` is trusted without the secret |
 | `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES` | 10 / 15 | Per-account lockout after repeated failed sign-ins |

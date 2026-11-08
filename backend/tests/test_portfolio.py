@@ -105,3 +105,29 @@ async def test_portfolio_api_and_csv(auth_client) -> None:  # type: ignore[no-un
     assert dup.status_code == 422
     untracked = await auth_client.post("/api/v1/research/portfolio", json={"strategy_id": sid, "symbols": ["BTC-USD", "NOPE-USD"]})
     assert untracked.status_code == 404
+
+
+async def test_portfolio_bounds_on_demand_downloads(app, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Each asset's missing history is fetched within a fixed budget; the rest is left to the backfill job."""
+    from app.api.routes import research
+    from app.market_data.service import MarketDataService
+
+    budgets: list[int | None] = []
+    real = MarketDataService.get_history
+
+    async def spy(self, asset, timeframe, bars, *, fetch_budget=None):  # type: ignore[no-untyped-def]
+        budgets.append(fetch_budget)
+        return await real(self, asset, timeframe, bars, fetch_budget=fetch_budget)
+
+    monkeypatch.setattr(MarketDataService, "get_history", spy)
+    from httpx import ASGITransport, AsyncClient
+
+    from tests.conftest import register
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        await register(c)
+        d = TEMPLATES[0]["definition"]
+        sid = (await c.post("/api/v1/strategies", json={"name": "B", "config": {"symbol": "BTC-USD", "timeframe": "1h", **d}})).json()["id"]
+        run = (await c.post("/api/v1/research/portfolio", json={"strategy_id": sid, "symbols": ["BTC-USD", "ETH-USD"], "bars": 20_000})).json()
+    assert budgets == [research.PORTFOLIO_FETCH_BUDGET] * 2
+    assert run["request"]["incomplete_history"] == []  # sample data is generated, never partial

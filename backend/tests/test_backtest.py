@@ -281,3 +281,14 @@ async def test_short_strategy_through_the_api(auth_client) -> None:  # type: ign
     assert all(t["side"] == "short" for t in bt["trades"])
     bad = {**body, "name": "Bad", "config": {**body["config"], "risk": {"direction": "sideways"}}}
     assert (await auth_client.post("/api/v1/strategies", json=bad)).status_code == 422
+
+
+def test_gap_past_margin_call_is_flagged_as_ruin() -> None:
+    rows = [(100, 101, 99, 100), (100, 101, 98, 98), (98, 99, 97, 98), (300, 310, 290, 300), (300, 301, 299, 300)]
+    out = run_backtest(bars(rows), short_strategy(99, 1000), NO_COSTS)
+    t = out.trades[0]
+    assert t.exit_reason == "margin_call" and t.exit_price == pytest.approx(300)  # gapped through: filled at the open
+    assert t.pnl == pytest.approx(-1000 / 98 * (300 - 98))  # the loss exceeds the 1,000 posted
+    assert out.metrics["final_equity"] < 0 and out.metrics["ruined"] is True
+    safe = run_backtest(make_frame([100, 100, 95, 90, 80, 85, 90, 88]), short_strategy(96, 82), NO_COSTS)
+    assert safe.metrics["ruined"] is False

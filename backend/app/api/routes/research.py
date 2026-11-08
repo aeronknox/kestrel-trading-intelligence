@@ -30,6 +30,9 @@ from app.services.strategies import get_owned_strategy
 
 router = APIRouter(prefix="/research", tags=["research"])
 compute_limit = rate_limit("research", "compute_rate_limit_per_minute")
+# Missing history downloaded per asset within one multi-asset request (~15 provider calls);
+# the background backfill completes the rest, so a 6-asset request can't take minutes.
+PORTFOLIO_FETCH_BUDGET = 4500
 
 
 def _definition(strategy: Strategy) -> dict:
@@ -146,10 +149,13 @@ async def create_portfolio(body: PortfolioRequest, user: CurrentUser, db: DbSess
     if len(symbols) < 2:
         raise ValidationFailedError("Choose at least 2 different assets")
     market = MarketDataService(db)
-    frames, sources = {}, set()
+    frames, sources, incomplete = {}, set(), []
     for symbol in symbols:
-        series = await market.get_history(await market.get_asset(symbol), cfg.timeframe, body.bars)
+        asset = await market.get_asset(symbol)
+        series = await market.get_history(asset, cfg.timeframe, body.bars, fetch_budget=PORTFOLIO_FETCH_BUDGET)
         frames[symbol] = candles_to_frame(series.candles)
+        if not series.complete:
+            incomplete.append(symbol)
         sources.add(series.source + (":sample" if series.is_sample else "") + (":stale" if series.stale else ""))
     config = BacktestConfig(body.initial_capital, body.fee_bps, body.slippage_bps, timeframe_seconds(cfg.timeframe))
     try:
@@ -167,7 +173,7 @@ async def create_portfolio(body: PortfolioRequest, user: CurrentUser, db: DbSess
         timeframe=cfg.timeframe,
         start_at=datetime.fromtimestamp(window["start"], tz=UTC),
         end_at=datetime.fromtimestamp(window["end"], tz=UTC),
-        request=body.model_dump() | {"symbols": symbols},
+        request=body.model_dump() | {"symbols": symbols, "incomplete_history": incomplete},
         result=result,
         data_source=",".join(sorted(sources))[:32],
     )

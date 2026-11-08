@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     # Public demo: "Try the demo" creates a throwaway sandbox account per visitor.
     demo_mode: bool = False
     demo_ttl_hours: int = 24
+    demo_max_accounts: int = 500  # live sandboxes at once; protects the database and CPU from mass sign-ups
+    demo_allow_llm: bool = False  # anonymous demo visitors get the rule-based engine, not paid LLM calls
     password_reset_ttl_minutes: int = 60
 
     # Persistence

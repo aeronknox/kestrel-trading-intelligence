@@ -188,3 +188,30 @@ async def test_sample_history_is_generated_not_stored(app, bars) -> None:  # typ
         series = await MarketDataService(s).get_history(await _btc(s), "1h", bars)
         assert len(series.candles) == bars and series.is_sample and _contiguous(series.candles)
         assert await _stored(s, await _btc(s)) == 0
+
+
+async def test_one_empty_response_does_not_hide_history_for_a_day(app) -> None:  # type: ignore[no-untyped-def]
+    """A transient empty reply for the newest range must not be mistaken for the listing date."""
+    ex = ScriptedExchange(listed_hours_ago=5000)
+    real = ex.get_candles
+    glitches = 1
+
+    async def flaky(provider_symbol, timeframe, limit=300, end=None):  # type: ignore[no-untyped-def]
+        nonlocal glitches
+        if glitches:
+            glitches -= 1
+            return []  # e.g. an upstream hiccup answering 200 with no rows
+        return await real(provider_symbol, timeframe, limit, end)
+
+    ex.get_candles = flaky  # type: ignore[method-assign]
+    async with get_sessionmaker()() as s:
+        svc = MarketDataService(s, ex)
+        from app.core.exceptions import UpstreamError
+
+        with pytest.raises(UpstreamError):  # nothing stored and nothing fetched yet: an honest error
+            await svc.get_history(await _btc(s), "1h", 2000)
+    async with get_sessionmaker()() as s:
+        svc = MarketDataService(s, ex)
+        again = await svc.get_history(await _btc(s), "1h", 2000)
+        await s.commit()
+        assert len(again.candles) == 2000 and again.complete  # recovered on the next call

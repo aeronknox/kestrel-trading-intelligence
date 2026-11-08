@@ -178,6 +178,15 @@ export function BacktestDetailView({ id }: { id: number }) {
         <Card><EmptyState icon={FlaskConical} title="Backtest failed" description={bt.error ?? "Unknown error"} /></Card>
       ) : bt.metrics && bt.equity_curve ? (
         <div className="space-y-4">
+          {bt.metrics.ruined && (
+            <div className="rounded-lg border border-loss/40 bg-loss-soft px-4 py-3 text-sm" role="alert">
+              <p className="font-semibold text-loss">The account was wiped out.</p>
+              <p className="mt-0.5 text-muted-foreground">
+                Equity reached zero or below. For a short, a price gap past the margin-call level loses more than the posted collateral, so
+                returns below -100% are real here, and ratio metrics like Sharpe stop being meaningful.
+              </p>
+            </div>
+          )}
           <MetricsGrid bt={bt} />
           <div className="grid gap-4 xl:grid-cols-3">
             <Card className="xl:col-span-2">

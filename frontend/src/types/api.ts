@@ -349,6 +349,8 @@ export interface BacktestMetrics {
   signal_counts: { entries: number; exits: number };
   bars_requested?: number;
   direction?: "long" | "short";
+  /** Equity reached zero or below at some point (possible for shorts on a gap). */
+  ruined?: boolean;
   history_complete?: boolean;
   /** Buy-and-hold of the same capital with the same costs. Absent on backtests run before it existed. */
   benchmark?: {
@@ -630,6 +632,8 @@ export interface ResearchRequest {
   /** Set on saved runs: bars actually loaded, which can be fewer than requested near an asset's listing date. */
   bars_used?: number;
   history_complete?: boolean;
+  /** Multi-asset runs: assets whose history was still being downloaded. */
+  incomplete_history?: string[];
 }
 
 export interface PortfolioRequestBody {

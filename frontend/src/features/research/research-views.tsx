@@ -378,6 +378,9 @@ export function ResearchDetailView({ id }: { id: number }) {
       <Disclaimer className="mb-4">
         {run.disclaimer}
         {run.data_source.includes("sample") && <strong> This run used SAMPLE (synthetic) data.</strong>}
+        {run.request.incomplete_history && run.request.incomplete_history.length > 0 && (
+          <> History for {run.request.incomplete_history.join(", ")} is still downloading, so the shared window may be shorter than requested; run it again later for the full period.</>
+        )}
         {run.request.bars_used !== undefined && run.request.bars_used < run.request.bars && (
           <> Only {run.request.bars_used.toLocaleString()} of the {run.request.bars.toLocaleString()} requested bars were available.</>
         )}

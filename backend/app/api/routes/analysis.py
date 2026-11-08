@@ -9,6 +9,7 @@ from app.market_data.service import MarketDataService
 from app.models.ai import AIAnalysisResult, TradingSignal
 from app.schemas.analysis import AnalysisOut, AnalyzeRequest, SignalOut
 from app.services.audit import audit
+from app.services.demo import llm_allowed
 
 router = APIRouter(tags=["ai-analysis"])
 
@@ -18,7 +19,7 @@ async def analyze(body: AnalyzeRequest, user: CurrentUser, db: DbSession) -> obj
     if body.timeframe not in TIMEFRAMES:
         raise ValidationFailedError(f"Unsupported timeframe '{body.timeframe}'")
     asset = await MarketDataService(db).get_asset(body.symbol)
-    result = await run_analysis(db, asset, body.timeframe, user.id)
+    result = await run_analysis(db, asset, body.timeframe, user.id, narrate=llm_allowed(user))
     await audit(db, "analysis.run", user_id=user.id, entity_type="analysis", entity_id=result.id,
                 details={"symbol": asset.symbol, "timeframe": body.timeframe})  # fmt: skip
     return result

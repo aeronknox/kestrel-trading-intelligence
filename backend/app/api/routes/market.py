@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 
 from app.api.deps import CurrentUser, DbSession
-from app.core.exceptions import ValidationFailedError
+from app.core.exceptions import PermissionDeniedError, ValidationFailedError
 from app.indicators.technical import add_standard_indicators, candles_to_frame, latest_snapshot, series_to_points
 from app.market_data.providers.base import TIMEFRAMES
 from app.market_data.service import MarketDataService
@@ -53,6 +53,9 @@ async def search_catalog(db: DbSession, _: CurrentUser, q: str = Query(min_lengt
 
 @router.post("/assets", response_model=AssetOut, status_code=201)
 async def track_asset(body: TrackAssetRequest, db: DbSession, user: CurrentUser) -> object:
+    if user.is_demo:
+        # The tracked-asset list is shared: every addition adds backfill and streaming load for everyone.
+        raise PermissionDeniedError("Tracking new assets isn't available in the demo. Create a free account to add assets.")
     asset = await MarketDataService(db).track_asset(body.symbol)
     await audit(db, "asset.tracked", user_id=user.id, entity_type="asset", entity_id=asset.id)
     return asset

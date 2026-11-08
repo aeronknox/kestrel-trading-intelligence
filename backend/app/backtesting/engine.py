@@ -224,6 +224,9 @@ def run_backtest(
         benchmark_end=float(c[-1]),
         benchmark_equity=benchmark_series,
     )
+    # A short can gap past its margin-call level and lose more than its collateral. Flag it so
+    # results like -200% are read as "the account was wiped out", not as a display error.
+    metrics["ruined"] = bool((equity_series <= 0).any())
     return BacktestOutput(
         trades=trades,
         equity=equity_series,

@@ -26,6 +26,30 @@ DEMO_EMAIL_DOMAIN = "demo.invalid"  # reserved TLD: can never be a real mailbox
 SEED_STRATEGIES = (("rsi_mean_reversion", "BTC-USD", "1h"), ("ma_crossover", "ETH-USD", "6h"))
 
 
+class DemoCapacityError(Exception):
+    """Too many live demo sandboxes."""
+
+
+async def live_demo_count(db: AsyncSession) -> int:
+    return int(await db.scalar(select(func.count()).select_from(User).where(User.is_demo.is_(True))) or 0)
+
+
+async def ensure_capacity(db: AsyncSession) -> None:
+    """Refuse new sandboxes at DEMO_MAX_ACCOUNTS, after first clearing out expired ones."""
+    cap = get_settings().demo_max_accounts
+    if await live_demo_count(db) < cap:
+        return
+    cutoff = datetime.now(UTC) - timedelta(hours=get_settings().demo_ttl_hours)
+    await db.execute(delete(User).where(User.is_demo.is_(True), User.created_at < cutoff))
+    if await live_demo_count(db) >= cap:
+        raise DemoCapacityError
+
+
+def llm_allowed(user: User) -> bool:
+    """Paid LLM calls are for real accounts unless DEMO_ALLOW_LLM is set."""
+    return not user.is_demo or get_settings().demo_allow_llm
+
+
 async def create_demo_user(db: AsyncSession) -> User:
     email = f"demo-{secrets.token_hex(6)}@{DEMO_EMAIL_DOMAIN}"
     # Random password nobody knows: the session cookie is the only way in.

@@ -87,3 +87,22 @@ frontend  tsc --noEmit         clean
 frontend  next build           20 routes, success
 e2e       npm run e2e         23/23 flows PASS, 0 browser errors
 ```
+
+## Follow-up review (2026-11-07)
+
+A focused review of the features added after the audit: demo sandboxes, short selling, long history, multi-asset tests and live price streaming. As before, each suspected defect was confirmed with a test or an experiment before it was fixed.
+
+| Priority | Finding | Resolution | Tests |
+|---|---|---|---|
+| P1 | **One empty upstream reply could hide an asset's history for a day.** With nothing stored yet, a transient empty response for the newest range was recorded as the asset's listing date, so every request returned "unavailable" for 24 hours. | An empty reply is only treated as proof when real data exists newer than the requested range; otherwise nothing is remembered and the next call retries. | `test_one_empty_response_does_not_hide_history_for_a_day` (failed before the fix) |
+| P1 | **Demo sign-ups were bounded only by the per-IP auth limit** (about 900 seeded sandboxes per hour per IP, each running a backtest). | `DEMO_MAX_ACCOUNTS` (default 500) caps live sandboxes; expired ones are purged before a new demo is refused with 429. | `test_demo_capacity_is_capped_after_purging_expired` |
+| P1 | **Anonymous demo visitors could run up OpenAI costs** through the assistant and AI analysis when an API key is configured. | Demo users get the rule-based engine unless `DEMO_ALLOW_LLM=true`. | `test_demo_users_get_no_paid_llm_calls_and_cannot_track_assets` (with a control showing the fake client *is* called for real accounts) |
+| P2 | **Demo users could add assets to the shared tracked list**, which adds backfill and streaming load for every user. | Tracking new assets returns 403 for demo accounts. | same test |
+| P2 | **A multi-asset request could download history for minutes** (6 assets x 20,000 missing bars, about 400 provider calls). | On-demand downloads are capped per asset (`PORTFOLIO_FETCH_BUDGET`); assets still filling are listed on the result, and the backfill job completes them. | `test_portfolio_bounds_on_demand_downloads` |
+| P3 | A short that gaps past its margin-call level loses more than its collateral; correct, but a -200% result read like a display bug. | Results carry `ruined: true` and the backtest page explains it. | `test_gap_past_margin_call_is_flagged_as_ruin` |
+| P3 | `fetch_budget or bars` treated an explicit budget of 0 as "unlimited". | Explicit `None` check. | covered by history tests |
+
+Reviewed with no defect found: cascade deletion of demo users (every user-owned table cascades; only links to shared assets don't, and assets are never deleted), short-side stop, target and trailing logic, stream and polling interplay (polling pauses only while the feed is healthy; a quiet coin's cached price expires and falls back to REST), and CSV export ownership.
+
+CI after these fixes: lint, mypy, backend tests on SQLite and PostgreSQL, the frontend build, and browser flows on Docker (demo mode on) and on the HTTPS deployment.
+

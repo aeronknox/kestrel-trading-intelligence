@@ -531,9 +531,11 @@ async def answer_rule_based(tools: AssistantTools, question: str) -> tuple[str, 
 
 
 async def answer(session: AsyncSession, user: User, question: str, history: list[dict]) -> tuple[str, dict]:
+    from app.services.demo import llm_allowed
+
     tools = AssistantTools(session, user)
     engine = "rule_based"
-    if get_client() is not None:
+    if get_client() is not None and llm_allowed(user):
         try:
             text, used, engine = await answer_with_llm(tools, history, question)
         except Exception as exc:  # noqa: BLE001
