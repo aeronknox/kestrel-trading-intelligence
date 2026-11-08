@@ -13,6 +13,7 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 | Backtesting | Long or short strategies (shorts use stops above entry and a margin call if price doubles); next-bar execution, fees, slippage, gap-aware stops; return, max drawdown, Sharpe/Sortino, a buy-and-hold benchmark with the same costs (overlaid on the equity curve, with excess return and beta), win rate, profit factor, CAGR, exposure; side-by-side comparison |
 | Optimization | Multi-asset tests (one strategy on 2–6 coins with capital split equally, against an equal-weight buy-and-hold, with per-coin results and price correlation); parameter sweeps over 1–2 settings (heatmap of every combination, robustness stats) and walk-forward tests that tune on one window and score only on the next, unseen one, against the untuned strategy and buy-and-hold, with a rule-based verdict |
 | Alerts | Notifications when a saved strategy's entry or exit rules fire on a newly closed live candle, checked every minute with the same rule engine as the backtester. Fires once when a rule becomes true, never replays history, and caps catch-up after downtime. Shown in the header and on an alerts page, with optional email to verified addresses. Never places orders |
+| Forward testing | Optional auto paper-trading per strategy: it buys and sells in the paper portfolio on its own live signals, stops, targets and time limit, mirroring the backtester. It respects the portfolio's risk limits, only sells what it bought, and shows round trips and win rate next to the backtest. Long strategies only; simulated only |
 | Paper Trading | $100k virtual balance, market and limit orders (open limit orders reserve cash or quantity; exposure limits are re-checked at fill time), positions, realized/unrealized P&L, risk limits, order and trade history, reset |
 | Portfolio | Equity and drawdown history, allocation, trade statistics |
 | Assistant | Chat grounded in platform data through tool calls; reports missing data as unavailable |
@@ -190,7 +191,7 @@ cd backend && python -m app.cli promote-admin you@example.com    # or demote-adm
 ### Tests
 
 ```bash
-cd backend  && pytest                  # 169 tests: indicators (incl. Wilder reference values),
+cd backend  && pytest                  # 175 tests: indicators (incl. Wilder reference values),
                                        # backtester (long and short), optimization and walk-forward
                                        # look-ahead checks, multi-asset tests, ML leakage, signals,
                                        # auth/RBAC, email tokens, demo sandboxes, rate limiting,
@@ -273,7 +274,7 @@ Interactive docs are at `/docs`. All routes are under `/api/v1`.
 | `/strategies` | CRUD, `templates`, `indicators` |
 | `/backtests` | run, list, get, `compare`, delete, `{id}/trades.csv`, `{id}/equity.csv` |
 | `/research` | `parameters`, `sweeps`, `walk-forward`, `portfolio`, list, get, delete, `{id}/results.csv` |
-| `/alerts` | list, `strategy/{id}` (get, put, delete), `events`, `events/read` |
+| `/alerts` | list, `strategy/{id}` (get, put, delete), `strategy/{id}/forward-test`, `events`, `events/read` |
 | `/paper` | `portfolio`, `orders`, `orders/{id}/cancel`, `trades`, `history`, `analytics`, `portfolio/risk-limits`, `portfolio/reset`, `trades.csv`, `history.csv` |
 | `/dashboard` | aggregated dashboard payload |
 | `/assistant` | `chat`, `conversations` |

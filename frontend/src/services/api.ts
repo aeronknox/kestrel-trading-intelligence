@@ -6,6 +6,7 @@
 import type {
   AlertEventsPage,
   AlertSettings,
+  ForwardTest,
   Analysis,
   AuditLog,
   Backtest,
@@ -189,6 +190,7 @@ export const api = {
     remove: (strategyId: number) => del<void>(`/alerts/strategy/${strategyId}`),
     events: (limit = 50) => get<AlertEventsPage>("/alerts/events", { limit }),
     markRead: (ids?: number[]) => post<AlertEventsPage>("/alerts/events/read", ids ? { ids } : {}),
+    forwardTest: (strategyId: number) => get<ForwardTest>(`/alerts/strategy/${strategyId}/forward-test`),
   },
   research: {
     parameters: (strategyId: number) => get<TunableParameter[]>("/research/parameters", { strategy_id: strategyId }),

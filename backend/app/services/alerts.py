@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.database.session import get_sessionmaker
 from app.indicators.technical import candles_to_frame
-from app.market_data.providers.base import timeframe_seconds
+from app.market_data.providers.base import Candle, timeframe_seconds
 from app.market_data.service import MAX_CANDLES, MarketDataService
 from app.models.alert import AlertEvent, StrategyAlert
 from app.models.strategy import Strategy
@@ -69,6 +69,31 @@ async def check_alert(session: AsyncSession, market: MarketDataService, alert: S
     tf = timedelta(seconds=timeframe_seconds(cfg.timeframe))
     source = series.source + (":sample" if series.is_sample else "")
     events: list[AlertEvent] = []
+
+    def make_event(kind: str, bar: Candle, matched: bool = False) -> AlertEvent:
+        rules = definition.entry if kind == "entry" else definition.exit
+        joined = f" {rules.logic.upper()} ".join(c.label() for c in rules.conditions)
+        what = f"{kind} rules matched ({joined})" if matched else f"forward test {kind}"
+        event = AlertEvent(
+            user_id=alert.user_id,
+            alert_id=alert.id,
+            strategy_id=strategy.id,
+            strategy_version=cfg.version,
+            kind=kind,
+            symbol=cfg.asset.symbol,
+            timeframe=cfg.timeframe,
+            bar_at=bar.ts,
+            close_price=bar.close,
+            data_source=source,
+            message=(
+                f"{strategy.name} v{cfg.version}: {what} on the {cfg.timeframe} "
+                f"{cfg.asset.symbol} bar that closed {(bar.ts + tf):%Y-%m-%d %H:%M} UTC at {_fmt_price(bar.close)}."
+            ),
+        )
+        session.add(event)
+        events.append(event)
+        return event
+
     for i in pending:
         for kind, sig in signals.items():
             if not (wanted[kind] and i > 0 and sig[i] and not sig[i - 1]):
@@ -79,27 +104,14 @@ async def check_alert(session: AsyncSession, market: MarketDataService, alert: S
             )
             if exists:
                 continue  # already recorded (e.g. by an overlapping check)
-            rules = definition.entry if kind == "entry" else definition.exit
-            joined = f" {rules.logic.upper()} ".join(c.label() for c in rules.conditions)
-            event = AlertEvent(
-                user_id=alert.user_id,
-                alert_id=alert.id,
-                strategy_id=strategy.id,
-                strategy_version=cfg.version,
-                kind=kind,
-                symbol=cfg.asset.symbol,
-                timeframe=cfg.timeframe,
-                bar_at=bar.ts,
-                close_price=bar.close,
-                data_source=source,
-                message=(
-                    f"{strategy.name} v{cfg.version}: {kind} rules matched ({joined}) on the {cfg.timeframe} "
-                    f"{cfg.asset.symbol} bar that closed {(bar.ts + tf):%Y-%m-%d %H:%M} UTC at {_fmt_price(bar.close)}."
-                ),
-            )
-            session.add(event)
-            events.append(event)
+            make_event(kind, bar, matched=True)
     alert.last_bar_at, alert.last_error = newest, None
+    if alert.auto_trade:
+        from app.services.forward_test import act
+
+        await session.flush()
+        by_key = {(e.kind, e.bar_at): e for e in events}
+        await act(session, market, alert, definition, cfg, closed, pending, signals, by_key, make_event)
     await session.flush()
     if events and alert.notify_email:
         await _email(session, alert, events)

@@ -28,6 +28,7 @@ class OrderOut(ORMModel):
     reject_reason: str | None
     created_at: datetime
     filled_at: datetime | None
+    strategy_id: int | None = None  # set when a strategy's forward test placed the order
 
 
 class TradeOut(ORMModel):

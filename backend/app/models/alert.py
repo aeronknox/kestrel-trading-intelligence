@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, IdMixin, UTCDateTime, utcnow
@@ -22,6 +22,8 @@ class StrategyAlert(IdMixin, Base):
     on_entry: Mapped[bool] = mapped_column(Boolean, default=True)
     on_exit: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_email: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Forward test: act on the signals with simulated paper orders (long strategies only).
+    auto_trade: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Newest closed bar already evaluated; events only fire for bars after it.
     last_bar_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
@@ -54,5 +56,6 @@ class AlertEvent(IdMixin, Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     read_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     emailed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("simulated_orders.id", ondelete="SET NULL"), nullable=True)
 
     strategy: Mapped[Strategy] = relationship(lazy="selectin")

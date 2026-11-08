@@ -210,6 +210,8 @@ class PaperTradingService:
         order_type: OrderType,
         quantity: float,
         limit_price: float | None = None,
+        *,
+        strategy_id: int | None = None,
     ) -> SimulatedOrder:
         if quantity <= 0:
             raise ValidationFailedError("Quantity must be positive")
@@ -227,6 +229,7 @@ class PaperTradingService:
             quantity=quantity,
             limit_price=limit_price,
             status=OrderStatus.OPEN,
+            strategy_id=strategy_id,
         )
         order.asset = asset
         self.session.add(order)

@@ -14,10 +14,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSepar
 import { Badge, Label, Switch } from "@/components/ui/primitives";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useMe } from "@/hooks/use-auth";
-import { formatDateTime, formatPrice, timeAgo } from "@/lib/format";
+import { formatDateTime, formatPct, formatPrice, formatQty, formatUsd, pnlClass, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
-import type { AlertEvent, AlertSettings, StrategyAlert } from "@/types/api";
+import type { AlertEvent, AlertSettings, BacktestSummary, StrategyAlert } from "@/types/api";
 
 const EVENTS_KEY = ["alert-events"] as const;
 const ALERTS_KEY = ["alerts"] as const;
@@ -87,7 +87,7 @@ export function AlertsBell() {
 }
 
 // ----------------------------------------------------- strategy page card
-export function StrategyAlertCard({ strategyId }: { strategyId: number }) {
+export function StrategyAlertCard({ strategyId, direction = "long" }: { strategyId: number; direction?: "long" | "short" }) {
   const qc = useQueryClient();
   const me = useMe();
   const alert = useQuery({ queryKey: [...ALERTS_KEY, strategyId], queryFn: () => api.alerts.get(strategyId) });
@@ -96,12 +96,13 @@ export function StrategyAlertCard({ strategyId }: { strategyId: number }) {
     onSuccess: (a) => {
       qc.setQueryData([...ALERTS_KEY, strategyId], a);
       qc.invalidateQueries({ queryKey: ALERTS_KEY, exact: true });
-      toast.success(a.enabled ? "Alerts on" : "Alerts paused");
+      qc.invalidateQueries({ queryKey: ["forward-test", strategyId] });
+      toast.success(a.auto_trade ? "Forward test on: the strategy will paper-trade its signals" : a.enabled ? "Alerts on" : "Alerts paused");
     },
     onError: (e: Error) => toast.error(e.message),
   });
   const a = alert.data;
-  const current: AlertSettings = a ?? { enabled: false, on_entry: true, on_exit: true, notify_email: false };
+  const current: AlertSettings = a ?? { enabled: false, on_entry: true, on_exit: true, notify_email: false, auto_trade: false };
   const set = (patch: Partial<AlertSettings>) => save.mutate({ ...current, ...patch });
   const verified = me.data?.email_verified ?? false;
 
@@ -131,6 +132,22 @@ export function StrategyAlertCard({ strategyId }: { strategyId: number }) {
                 checked={current.notify_email}
                 disabled={save.isPending || !current.enabled}
                 onChange={(v) => set({ notify_email: v })}
+              />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed border-border px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Auto paper-trade (forward test)</p>
+                <p className="text-xs text-muted-foreground">
+                  {direction === "short"
+                    ? "Not available for short strategies: paper trading is long-only."
+                    : "Buys and sells in your paper portfolio on this strategy's own signals, stops and targets, within your risk limits. Simulated only."}
+                </p>
+              </div>
+              <Switch
+                aria-label="Auto paper-trade"
+                checked={current.auto_trade}
+                disabled={save.isPending || !current.enabled || direction === "short"}
+                onCheckedChange={(v) => set({ auto_trade: v })}
               />
             </div>
             {current.notify_email && !verified && (
@@ -253,3 +270,72 @@ export function AlertsView() {
     </>
   );
 }
+
+// ------------------------------------------------------------ forward test
+export function ForwardTestCard({ strategyId, backtest }: { strategyId: number; backtest: BacktestSummary | null }) {
+  const q = useQuery({ queryKey: ["forward-test", strategyId], queryFn: () => api.alerts.forwardTest(strategyId), refetchInterval: POLL_MS });
+  const f = q.data;
+  if (!f || (!f.orders && !f.open_position)) return null;
+  const open = f.open_position;
+  return (
+    <Card className="mt-4">
+      <CardHeader>
+        <div>
+          <CardTitle>Forward test</CardTitle>
+          <CardDescription>
+            This strategy&apos;s own simulated paper trades on live candles since {formatDateTime(f.started_at)}. Stops are checked on closed candles
+            and fill at the live price, so results can trail the backtest slightly.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <MiniStat label="Realized P&L" value={<span className={pnlClass(f.realized_pnl)}>{formatUsd(f.realized_pnl, { sign: true })}</span>} />
+          <MiniStat label="Round trips" value={f.num_trades} sub={f.rejected ? `${f.rejected} order${f.rejected === 1 ? "" : "s"} rejected by risk limits` : undefined} />
+          <MiniStat
+            label="Win rate"
+            value={formatPct(f.win_rate, 0, false)}
+            sub={backtest?.win_rate !== null && backtest?.win_rate !== undefined ? `Backtest ${formatPct(backtest.win_rate, 0, false)}` : undefined}
+          />
+          <MiniStat
+            label="Open position"
+            value={open ? <span className={pnlClass(open.unrealized_pnl)}>{formatUsd(open.unrealized_pnl, { sign: true })}</span> : "Flat"}
+            sub={open ? `${formatQty(open.quantity)} ${open.symbol.split("-")[0]} from ${formatPrice(open.entry_price)}` : undefined}
+          />
+        </div>
+        {f.round_trips.length > 0 && (
+          <Table>
+            <THead>
+              <TR className="hover:bg-transparent"><TH>Entry</TH><TH>Exit</TH><TH className="text-right">Entry price</TH><TH className="text-right">Exit price</TH><TH className="text-right">P&amp;L</TH><TH className="text-right">Return</TH><TH>Why it exited</TH></TR>
+            </THead>
+            <TBody>
+              {f.round_trips.map((t) => (
+                <TR key={`${t.entry_at}-${t.exit_at}`}>
+                  <TD className="whitespace-nowrap text-muted-foreground">{formatDateTime(t.entry_at)}</TD>
+                  <TD className="whitespace-nowrap text-muted-foreground">{formatDateTime(t.exit_at)}</TD>
+                  <TD className="text-right tabular">{formatPrice(t.entry_price)}</TD>
+                  <TD className="text-right tabular">{formatPrice(t.exit_price)}</TD>
+                  <TD className={cn("text-right font-medium", pnlClass(t.pnl))}>{formatUsd(t.pnl, { sign: true })}</TD>
+                  <TD className={cn("text-right", pnlClass(t.return_pct))}>{formatPct(t.return_pct)}</TD>
+                  <TD className="text-xs text-muted-foreground">{t.note?.match(/sold on ([a-z -]+)/)?.[1] ?? "—"}</TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        )}
+        <p className="text-xs text-muted-foreground">{f.disclaimer}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MiniStat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+  return (
+    <div className="rounded-md border border-border px-3 py-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-lg font-semibold tabular">{value}</p>
+      {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
+    </div>
+  );
+}
+

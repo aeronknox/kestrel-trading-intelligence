@@ -114,7 +114,14 @@ function OrdersTable({ orders, cancellable }: { orders: Order[]; cancellable?: b
             <TD className="text-muted-foreground">{formatDateTime(o.created_at)}</TD>
             <TD className="font-medium">{o.asset.symbol}</TD>
             <TD className={cn("font-semibold uppercase", o.side === "buy" ? "text-gain" : "text-loss")}>{o.side}</TD>
-            <TD className="capitalize">{o.order_type}</TD>
+            <TD className="capitalize">
+              {o.order_type}
+              {o.strategy_id && (
+                <Link href={`/strategies/${o.strategy_id}`} className="ml-1.5" title="Placed by this strategy's forward test">
+                  <Badge variant="info">Auto</Badge>
+                </Link>
+              )}
+            </TD>
             <TD className="text-right">{formatQty(o.quantity)}</TD>
             <TD className="text-right">{formatPrice(o.limit_price)}</TD>
             <TD className="text-right">{formatPrice(o.filled_price)}</TD>

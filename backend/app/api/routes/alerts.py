@@ -7,10 +7,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 
 from app.api.deps import CurrentUser, DbSession
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ValidationFailedError
+from app.market_data.service import MarketDataService
 from app.models.alert import AlertEvent, StrategyAlert
 from app.schemas.common import ORMModel
 from app.services.alerts import DISCLAIMER
+from app.services.forward_test import LONG_ONLY, forward_test_summary
 from app.services.strategies import get_owned_strategy
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -21,6 +23,7 @@ class AlertSettings(BaseModel):
     on_entry: bool = True
     on_exit: bool = True
     notify_email: bool = False
+    auto_trade: bool = False  # forward test: simulated paper orders on the strategy's signals
 
 
 class AlertOut(AlertSettings):
@@ -49,6 +52,7 @@ class AlertEventOut(ORMModel):
     created_at: datetime
     read_at: datetime | None
     emailed_at: datetime | None
+    order_id: int | None = None
 
 
 class EventsPage(BaseModel):
@@ -65,7 +69,7 @@ def _out(a: StrategyAlert) -> AlertOut:
     cfg = a.strategy.current_config
     return AlertOut(
         id=a.id, strategy_id=a.strategy_id, strategy_name=a.strategy.name, enabled=a.enabled, on_entry=a.on_entry,
-        on_exit=a.on_exit, notify_email=a.notify_email, symbol=cfg.asset.symbol if cfg else None,
+        on_exit=a.on_exit, notify_email=a.notify_email, auto_trade=a.auto_trade, symbol=cfg.asset.symbol if cfg else None,
         timeframe=cfg.timeframe if cfg else None, last_bar_at=a.last_bar_at, last_checked_at=a.last_checked_at,
         last_error=a.last_error, created_at=a.created_at,
     )  # fmt: skip
@@ -87,6 +91,9 @@ async def get_alert(strategy_id: int, user: CurrentUser, db: DbSession) -> Alert
 @router.put("/strategy/{strategy_id}", response_model=AlertOut)
 async def upsert_alert(strategy_id: int, body: AlertSettings, user: CurrentUser, db: DbSession) -> AlertOut:
     strategy = await get_owned_strategy(db, strategy_id, user.id)
+    cfg = strategy.current_config
+    if body.auto_trade and cfg is not None and (cfg.risk or {}).get("direction", "long") != "long":
+        raise ValidationFailedError(LONG_ONLY)
     alert = await db.scalar(select(StrategyAlert).where(StrategyAlert.strategy_id == strategy_id))
     if alert is None:
         alert = StrategyAlert(user_id=user.id, strategy_id=strategy.id)
@@ -96,9 +103,17 @@ async def upsert_alert(strategy_id: int, body: AlertSettings, user: CurrentUser,
     # Demo accounts have no mailbox; their alerts stay in-app.
     notify_email = body.notify_email and not user.is_demo
     alert.enabled, alert.on_entry, alert.on_exit, alert.notify_email = body.enabled, body.on_entry, body.on_exit, notify_email
+    alert.auto_trade = body.auto_trade
     await db.flush()
     await db.refresh(alert, attribute_names=["strategy"])
     return _out(alert)
+
+
+@router.get("/strategy/{strategy_id}/forward-test")
+async def forward_test(strategy_id: int, user: CurrentUser, db: DbSession) -> dict:
+    """The strategy's own simulated paper trades (round trips) and any open position."""
+    await get_owned_strategy(db, strategy_id, user.id)
+    return {**await forward_test_summary(db, MarketDataService(db), user.id, strategy_id), "disclaimer": DISCLAIMER}
 
 
 @router.delete("/strategy/{strategy_id}", status_code=204)

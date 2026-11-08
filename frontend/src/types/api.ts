@@ -406,6 +406,8 @@ export interface Order {
   reject_reason: string | null;
   created_at: string;
   filled_at: string | null;
+  /** Set when a strategy's forward test placed the order. */
+  strategy_id?: number | null;
 }
 
 export interface Trade {
@@ -685,6 +687,8 @@ export interface AlertSettings {
   on_entry: boolean;
   on_exit: boolean;
   notify_email: boolean;
+  /** Forward test: place simulated paper orders on the strategy's signals (long strategies only). */
+  auto_trade: boolean;
 }
 
 export interface StrategyAlert extends AlertSettings {
@@ -713,6 +717,31 @@ export interface AlertEvent {
   created_at: string;
   read_at: string | null;
   emailed_at: string | null;
+  order_id?: number | null;
+}
+
+export interface ForwardTrip {
+  entry_at: string;
+  exit_at: string;
+  quantity: number;
+  entry_price: number;
+  exit_price: number;
+  pnl: number;
+  return_pct: number;
+  note: string | null;
+}
+
+export interface ForwardTest {
+  started_at: string | null;
+  orders: number;
+  rejected: number;
+  round_trips: ForwardTrip[];
+  open_position: { symbol: string; quantity: number; entry_price: number; entry_at: string; current_price: number; unrealized_pnl: number } | null;
+  realized_pnl: number;
+  num_trades: number;
+  win_rate: number | null;
+  as_of: string;
+  disclaimer: string;
 }
 
 export interface AlertEventsPage {
