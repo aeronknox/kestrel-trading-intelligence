@@ -2,9 +2,13 @@
 
 import asyncio
 import contextlib
+import os
+import socket
+import uuid
 
 from sqlalchemy import select
 
+from app.core.cache import get_cache
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.database.session import get_sessionmaker
@@ -23,6 +27,11 @@ SNAPSHOT_INTERVAL_SECONDS = 300
 BACKFILL_INTERVAL_SECONDS = 60
 ALERT_INTERVAL_SECONDS = 60
 DEMO_PURGE_INTERVAL_SECONDS = 900
+# Only the instance holding this lease runs jobs, so several API replicas and/or a dedicated
+# worker can run side by side without double-matching orders or double-sending alerts.
+LEASE_KEY = "lease:background-jobs"
+LEASE_TTL_SECONDS = 30.0
+LEASE_RENEW_SECONDS = 10.0
 BACKFILL_TIMEFRAMES = ("1h", "6h", "1d")
 
 
@@ -93,9 +102,17 @@ async def backfill_history(budget: int | None = None) -> int:
 class BackgroundJobs:
     def __init__(self) -> None:
         self._tasks: list[asyncio.Task] = []
+        self.owner = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+        self.is_leader = False
+
+    def status(self) -> dict:
+        return {"running": bool(self._tasks), "leader": self.is_leader, "instance": self.owner}
 
     def start(self) -> None:
+        if self._tasks:
+            return
         self._tasks = [
+            asyncio.create_task(self._lead(), name="jobs-leader"),
             asyncio.create_task(self._loop(process_all_open_orders, ORDER_INTERVAL_SECONDS), name="paper-orders"),
             asyncio.create_task(self._loop(snapshot_all_portfolios, SNAPSHOT_INTERVAL_SECONDS), name="paper-snapshots"),
             asyncio.create_task(self._loop(evaluate_alerts, ALERT_INTERVAL_SECONDS), name="strategy-alerts"),
@@ -109,10 +126,26 @@ class BackgroundJobs:
                 asyncio.create_task(self._loop(backfill_history, BACKFILL_INTERVAL_SECONDS), name="history-backfill")
             )
 
-    @staticmethod
-    async def _loop(fn, interval: int) -> None:  # type: ignore[no-untyped-def]
+    async def _lead(self) -> None:
+        """Hold (or wait for) the jobs lease; renewed well before it expires."""
+        while True:
+            try:
+                was = self.is_leader
+                self.is_leader = await get_cache().acquire_lease(LEASE_KEY, self.owner, LEASE_TTL_SECONDS)
+                if self.is_leader != was:
+                    logger.info("background_jobs_leadership", leader=self.is_leader, instance=self.owner)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - e.g. Redis briefly unreachable: stand down
+                self.is_leader = False
+                logger.warning("background_jobs_lease_failed", error=str(exc))
+            await asyncio.sleep(LEASE_RENEW_SECONDS)
+
+    async def _loop(self, fn, interval: float) -> None:  # type: ignore[no-untyped-def]
         while True:
             await asyncio.sleep(interval)
+            if not self.is_leader:
+                continue
             try:
                 await fn()
             except asyncio.CancelledError:
@@ -127,6 +160,10 @@ class BackgroundJobs:
             with contextlib.suppress(asyncio.CancelledError):
                 await t
         self._tasks = []
+        if self.is_leader:  # hand over immediately instead of waiting for the lease to expire
+            with contextlib.suppress(Exception):
+                await get_cache().release_lease(LEASE_KEY, self.owner)
+        self.is_leader = False
 
 
 jobs = BackgroundJobs()

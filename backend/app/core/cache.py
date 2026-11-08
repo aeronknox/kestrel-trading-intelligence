@@ -17,6 +17,8 @@ class Cache(Protocol):
     async def set_json(self, key: str, value: Any, ttl: float) -> None: ...
     async def incr_window(self, key: str, window_seconds: int) -> int: ...
     async def delete(self, key: str) -> None: ...
+    async def acquire_lease(self, key: str, owner: str, ttl: float) -> bool: ...
+    async def release_lease(self, key: str, owner: str) -> None: ...
     async def close(self) -> None: ...
 
 
@@ -64,6 +66,22 @@ class MemoryCache:
     async def delete(self, key: str) -> None:
         self._data.pop(key, None)
 
+    async def acquire_lease(self, key: str, owner: str, ttl: float) -> bool:
+        """Take the lease if it is free or expired, or renew it if `owner` already holds it."""
+        async with self._lock:
+            now = time.monotonic()
+            exp, value = self._data.get(key, (0.0, "null"))
+            if exp > now and json.loads(value) != owner:
+                return False
+            self._data[key] = (now + ttl, json.dumps(owner))
+            return True
+
+    async def release_lease(self, key: str, owner: str) -> None:
+        async with self._lock:
+            _exp, value = self._data.get(key, (0.0, "null"))
+            if json.loads(value) == owner:
+                self._data.pop(key, None)
+
     async def close(self) -> None:
         self._data.clear()
 
@@ -90,6 +108,20 @@ class RedisCache:
 
     async def delete(self, key: str) -> None:
         await self._client.delete(key)
+
+    # Atomic: only the current holder may renew or release, so two instances can't both win.
+    _ACQUIRE = (
+        "local cur = redis.call('GET', KEYS[1]) "
+        "if not cur or cur == ARGV[1] then redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2]) return 1 end "
+        "return 0"
+    )
+    _RELEASE = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0"
+
+    async def acquire_lease(self, key: str, owner: str, ttl: float) -> bool:
+        return bool(await self._client.eval(self._ACQUIRE, 1, key, owner, max(1, int(ttl * 1000))))
+
+    async def release_lease(self, key: str, owner: str) -> None:
+        await self._client.eval(self._RELEASE, 1, key, owner)
 
     async def close(self) -> None:
         await self._client.aclose()

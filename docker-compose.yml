@@ -50,6 +50,27 @@ services:
     ports:
       - "8000:8000"
 
+  # Optional dedicated job runner: `docker compose --profile worker up`. A Redis lease elects one
+  # job runner, so it is safe next to the API; set RUN_BACKGROUND_JOBS=false on the backend to keep
+  # jobs off the request path.
+  worker:
+    build: ./backend
+    profiles: ["worker"]
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-trading}:${POSTGRES_PASSWORD:-trading}@postgres:5432/${POSTGRES_DB:-trading}
+      REDIS_URL: redis://redis:6379/0
+      LOG_JSON: ${LOG_JSON:-true}
+    healthcheck:
+      disable: true  # no HTTP server; the backend's healthcheck does not apply
+    depends_on:
+      backend:
+        condition: service_healthy  # migrations have run
+
   frontend:
     build:
       context: ./frontend

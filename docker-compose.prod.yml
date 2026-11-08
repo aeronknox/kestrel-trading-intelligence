@@ -49,6 +49,11 @@ services:
       TRUST_PROXY_HEADERS: "true"
       PROXY_SHARED_SECRET: *proxy-secret
 
+  worker:  # only started with --profile worker
+    environment:
+      ENVIRONMENT: production
+      PUBLIC_APP_URL: https://${DOMAIN}
+
   postgres:
     ports: !reset []
 

@@ -69,7 +69,7 @@ The status reflects the state **after** this audit's fixes. "Found" lists what w
 ## Remaining issues (not fixed, by priority)
 
 1. **PostgreSQL and Docker unverified locally.** *Follow-up (2026-11-06):* the CI workflow now runs migrations and the full test suite on PostgreSQL 17 and brings up the Docker Compose stack for the browser flows. It is verified once the first GitHub Actions run is green.
-2. **Single-replica constraint.** Background jobs and the WebSocket broadcaster run in-process, so a second replica would double-run jobs. Move them to a worker with a Redis lock before scaling out.
+2. ~~**Single-replica constraint.**~~ *Fixed 2026-11-07:* background jobs are leader-elected through a Redis lease (atomic acquire/renew/release); an optional `python -m app.worker` runs them outside the API. Live price streams remain per API instance by design.
 3. ~~**Open limit buys don't reserve cash.**~~ *Fixed 2026-11-06:* open limit buys reserve their worst-case cost and open limit sells reserve quantity; the API exposes `reserved_cash` and `available_cash`.
 4. ~~**Risk limits are only partly re-checked at fill time.**~~ *Fixed 2026-11-06:* position-size, open-position and daily-loss limits are re-checked before a resting buy fills; a breach rejects the order with an "At fill time" reason.
 5. ~~**No email verification or password reset.**~~ *Fixed 2026-11-06:* single-use, expiring emailed tokens (stored as keyed hashes) for verification and password reset; reset revokes all sessions; the forgot-password response does not reveal whether an account exists; per-address cooldown against inbox flooding; console or SMTP delivery.

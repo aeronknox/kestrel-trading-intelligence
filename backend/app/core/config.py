@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     public_app_url: str = "http://localhost:3000"  # base for links in emails
     email_verification_ttl_hours: int = 48
     # Public demo: "Try the demo" creates a throwaway sandbox account per visitor.
+    # Background jobs (order matching, snapshots, backfill, alerts). Safe on several instances:
+    # a Redis lease elects one runner. Set false on API replicas when using `python -m app.worker`.
+    run_background_jobs: bool = True
     demo_mode: bool = False
     demo_ttl_hours: int = 24
     demo_max_accounts: int = 500  # live sandboxes at once; protects the database and CPU from mass sign-ups

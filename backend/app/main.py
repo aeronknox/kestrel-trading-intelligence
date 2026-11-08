@@ -49,8 +49,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001 - e.g. migrations not applied yet
         logger.error("asset_seed_failed", error=str(exc), hint="Run `alembic upgrade head`")
     if app.state.background:
-        ws.broadcaster.start()
-        jobs.start()
+        ws.broadcaster.start()  # live prices are per instance: each serves its own browsers
+        if settings.run_background_jobs:
+            jobs.start()
     if settings.is_production and not settings.cookie_secure:
         logger.warning("insecure_cookies_in_production", hint="Serve over HTTPS and set COOKIE_SECURE=true")
     if settings.is_production and settings.email_backend == "console":
@@ -158,6 +159,7 @@ def create_app(*, background: bool = True) -> FastAPI:
                 "stream": stream.status() if stream else {"enabled": False},
             },
             "ai_enabled": settings.ai_enabled,
+            "background_jobs": jobs.status(),
         }
 
     return app
