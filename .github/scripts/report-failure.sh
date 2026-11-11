@@ -10,7 +10,9 @@ log="$(mktemp)"
 status=${PIPESTATUS[0]}
 if [ "$status" -ne 0 ]; then
   echo "::error title=${title} failed (exit ${status})::$*"
-  grep -v '^\s*$' "$log" | tail -n 12 | cut -c1-500 | sed "s/^/::error title=${title}::/"
+  # Skip blank lines and Compose's per-container progress lines, which bury the actual error.
+  grep -v -E '^\s*$| Container [^ ]+ +(Waiting|Healthy|Started|Starting|Created|Creating|Running|Recreated?)$' "$log" \
+    | tail -n 15 | cut -c1-500 | sed "s/^/::error title=${title}::/"
 fi
 rm -f "$log"
 exit "$status"
