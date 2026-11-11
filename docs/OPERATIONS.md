@@ -156,7 +156,9 @@ cd backend && python scripts/loadtest.py --url http://localhost:8000 --users 20 
   --max-error-rate 0 --max-p95-ms 1500
 ```
 
-It exits non-zero when a threshold is exceeded, and reports 429 responses separately so rate limiting isn't mistaken for slowness. CI runs it against the Compose stack on PostgreSQL. Run it only against your own deployment.
+It exits non-zero when a threshold is exceeded, and reports 429 responses separately so rate limiting isn't mistaken for slowness. CI runs it against the Compose stack on PostgreSQL and posts the summary on the run page. Run it only against your own deployment.
+
+Baseline from CI (2026-11-11; 20 visitors, one API instance plus the worker, on a standard GitHub runner): 62 requests/s, overall p95 92 ms, no errors. The slowest p95s were demo sign-up at 631 ms (it seeds strategies and runs a backtest), the dashboard at 165 ms and backtests at 144 ms.
 
 Use SQLite only for local development. It allows one writer at a time, so under concurrent load requests queue for the write lock. The API waits up to 30 seconds for it rather than failing.
 
