@@ -118,7 +118,7 @@ jobs:
           sed -i "s|^RATE_LIMIT_PER_MINUTE=.*|RATE_LIMIT_PER_MINUTE=100000|" .env
           sed -i "s|^COMPUTE_RATE_LIMIT_PER_MINUTE=.*|COMPUTE_RATE_LIMIT_PER_MINUTE=100000|" .env
       - name: Build and start (with the dedicated worker and Prometheus)
-        run: docker compose --profile worker --profile monitoring up --build --detach --wait --wait-timeout 300
+        run: .github/scripts/report-failure.sh "Build and start" docker compose --profile worker --profile monitoring up --build --detach --wait --wait-timeout 300
       - name: Health
         run: |
           curl -fsS http://localhost:8000/health/ready | tee /dev/stderr | grep -q '"database":"ok"'
@@ -134,9 +134,15 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install browser
         working-directory: frontend
+        timeout-minutes: 15
         run: |
-          npm ci
-          npx playwright install --with-deps chromium
+          r=../.github/scripts/report-failure.sh
+          $r "npm ci" npm ci
+          $r "Install browser" npx playwright install chromium
+          # The runner image ships Chrome's system libraries; use apt only if the browser can't start without them.
+          if ! node -e "require('playwright').chromium.launch().then((b) => b.close())"; then
+            $r "Install browser system dependencies" npx playwright install-deps chromium
+          fi
       - name: Browser flows
         working-directory: frontend
         run: npm run e2e
@@ -214,7 +220,7 @@ jobs:
           sed -i "s|^MARKET_DATA_PROVIDER=.*|MARKET_DATA_PROVIDER=sample|" .env
           sed -i "s|^AUTH_RATE_LIMIT_PER_MINUTE=.*|AUTH_RATE_LIMIT_PER_MINUTE=100|" .env
       - name: Build and start (production override)
-        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build --detach --wait --wait-timeout 300
+        run: .github/scripts/report-failure.sh "Build and start" docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build --detach --wait --wait-timeout 300
       - name: HTTPS, redirect and exposure checks
         run: |
           # The local CA's certificate is self-signed, hence -k.
@@ -236,9 +242,15 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install browser
         working-directory: frontend
+        timeout-minutes: 15
         run: |
-          npm ci
-          npx playwright install --with-deps chromium
+          r=../.github/scripts/report-failure.sh
+          $r "npm ci" npm ci
+          $r "Install browser" npx playwright install chromium
+          # The runner image ships Chrome's system libraries; use apt only if the browser can't start without them.
+          if ! node -e "require('playwright').chromium.launch().then((b) => b.close())"; then
+            $r "Install browser system dependencies" npx playwright install-deps chromium
+          fi
       - name: Browser flows over HTTPS
         working-directory: frontend
         env:
