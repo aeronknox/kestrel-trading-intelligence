@@ -18,6 +18,7 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 | Portfolio | Equity and drawdown history, allocation, trade statistics |
 | Assistant | Chat grounded in platform data through tool calls; reports missing data as unavailable |
 | Admin | Role management, account disabling, audit log viewer |
+| Operations | Prometheus metrics from the API and worker (latency per route, background jobs, live-feed health, simulated orders), an optional Prometheus service with alert rules, and a [runbook](docs/OPERATIONS.md) for backups, restores, upgrades and secret rotation |
 
 ---
 
@@ -144,6 +145,10 @@ DOMAIN=trading.example.com docker compose -f docker-compose.yml -f docker-compos
 
 To try it locally first, use `DOMAIN=localhost` and open <https://localhost>. Caddy then uses its own local certificate authority, so the browser shows a certificate warning. Production mode refuses to start with the example `SECRET_KEY` or any key shorter than 32 characters.
 
+### Monitoring and backups
+
+`docker compose --profile monitoring up -d` adds Prometheus on <http://127.0.0.1:9090>. It scrapes the API's `/metrics` and the worker's port 9100 and loads the alert rules in [`deploy/prometheus-alerts.yml`](deploy/prometheus-alerts.yml). [docs/OPERATIONS.md](docs/OPERATIONS.md) lists every metric, what to do when each alert fires, and how to back up, restore, upgrade, rotate secrets and scale.
+
 ### Option B — Local development (no Docker)
 
 Requirements: Python 3.13+ (tested on 3.14) and Node.js 22+ (tested on 24). PostgreSQL and Redis are optional: the backend falls back to SQLite and an in-process cache.
@@ -191,12 +196,12 @@ cd backend && python -m app.cli promote-admin you@example.com    # or demote-adm
 ### Tests
 
 ```bash
-cd backend  && pytest                  # 181 tests: indicators (incl. Wilder reference values),
+cd backend  && pytest                  # 185 tests: indicators (incl. Wilder reference values),
                                        # backtester (long and short), optimization and walk-forward
                                        # look-ahead checks, multi-asset tests, ML leakage, signals,
                                        # auth/RBAC, email tokens, demo sandboxes, rate limiting,
                                        # paper-trading accounting, history loading, the live price
-                                       # stream (fake feed), alerts, CSV export, OpenAI tool loop
+                                       # stream (fake feed), alerts, CSV export, metrics, OpenAI tool loop
 cd backend  && ruff check . && mypy    # lint + type check
 cd frontend && npm run lint            # ESLint
 cd frontend && npm test                # 19 unit tests: rule builder, formatters, sweep-grid helpers
@@ -215,7 +220,7 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 - **Backend:** ruff lint and mypy type check, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
 - **Frontend:** ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
-- **Docker:** `docker compose --profile worker up --build --wait`, health checks, the 34 browser flows (with demo mode on), then the accessibility and phone-layout check against the containerized stack.
+- **Docker:** `docker compose --profile worker --profile monitoring up --build --wait`, health checks, the 35 browser flows (with demo mode on), and the accessibility and phone-layout check against the containerized stack. It then checks that Prometheus loaded the alert rules, scrapes both the API and the worker, and sees exactly one job leader. Finally it runs the runbook's backup, drop and restore sequence and checks that every account survives.
 - **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
 
 See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
@@ -235,6 +240,7 @@ All settings are environment variables; see [.env.example](.env.example).
 | `HISTORY_BACKFILL_ENABLED`, `HISTORY_BACKFILL_BARS_PER_MINUTE` | `true` / 3000 | Background download of long 1h/6h/1d history for tracked assets, and its rate |
 | `MARKET_STREAM_ENABLED`, `MARKET_WS_POLL_SECONDS` | `true` / 5 | Live prices from Coinbase's WebSocket feed; polling interval used as the fallback |
 | `RUN_BACKGROUND_JOBS` | `true` | Whether this API instance competes for the background-job lease (set `false` when using the worker) |
+| `METRICS_ENABLED`, `METRICS_TOKEN`, `WORKER_METRICS_PORT` | `true` / empty / 9100 | Prometheus metrics at the API's `/metrics` and on the worker's port (0 turns it off); with a token, scrapers must send `Authorization: Bearer <token>` |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | empty / `gpt-4.1-mini` | Optional LLM narration and assistant |
 | `PAPER_STARTING_BALANCE`, `PAPER_FEE_BPS`, `PAPER_SLIPPAGE_BPS` | 100000 / 10 / 5 | Simulation parameters |
 | `RATE_LIMIT_PER_MINUTE`, `AUTH_RATE_LIMIT_PER_MINUTE`, `COMPUTE_RATE_LIMIT_PER_MINUTE` | 240 / 15 / 30 | Per-IP limits |
@@ -286,5 +292,5 @@ Interactive docs are at `/docs`. All routes are under `/api/v1`.
 
 - Background jobs (limit-order matching every 15s, equity snapshots every 5 min, strategy alerts every minute, history backfill, demo cleanup) are leader-elected through a Redis lease, so several API replicas or a dedicated `python -m app.worker` (`docker compose --profile worker up`) never run them twice. With `RUN_BACKGROUND_JOBS=false` an API instance only serves requests. Without Redis the lease is per process, so run a single job runner. Live prices stream per API instance.
 - Live prices stream from Coinbase's public WebSocket feed (`MARKET_STREAM_ENABLED`) and are batched to browsers every 0.5s. If the feed drops, the app falls back to REST polling every `MARKET_WS_POLL_SECONDS` while it reconnects. Only the Coinbase provider streams.
-- Backtests hold one position at a time, long or short, without leverage. Shorts have no borrow or funding costs. Multi-asset tests split capital equally and never rebalance between coins. Paper trading is long-only. They can use up to 20,000 bars (about 2.3 years of 1h candles): history is stored in PostgreSQL, filled in by a background job for tracked assets (1h/6h/1d), and downloaded on demand otherwise, so the first long run on a new asset can take about half a minute. Research runs are capped at 2,000,000 simulated bars per request.
+- Backtests hold one position at a time, long or short, without leverage. Shorts have no borrow or funding costs. Multi-asset tests split capital equally and never rebalance between coins. Backtests can use up to 20,000 bars (about 2.3 years of 1h candles): history is stored in PostgreSQL, filled in by a background job for tracked assets (1h/6h/1d), and downloaded on demand otherwise, so the first long run on a new asset can take about half a minute. Research runs are capped at 2,000,000 simulated bars per request.
 - Paper trading is spot, unleveraged and simulated. Short selling is opt-in per portfolio. A short posts its own value as collateral, has no borrow or funding costs, and is force-covered if the price doubles. An order can close a position but not flip it from long to short.

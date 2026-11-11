@@ -44,10 +44,15 @@ class Settings(BaseSettings):
     smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
     public_app_url: str = "http://localhost:3000"  # base for links in emails
     email_verification_ttl_hours: int = 48
-    # Public demo: "Try the demo" creates a throwaway sandbox account per visitor.
     # Background jobs (order matching, snapshots, backfill, alerts). Safe on several instances:
     # a Redis lease elects one runner. Set false on API replicas when using `python -m app.worker`.
     run_background_jobs: bool = True
+    # Prometheus metrics: /metrics on the API, and this port on the worker (0 turns the worker's off).
+    # With METRICS_TOKEN set, scrapers must send "Authorization: Bearer <token>".
+    metrics_enabled: bool = True
+    metrics_token: str | None = None
+    worker_metrics_port: int = 9100
+    # Public demo: "Try the demo" creates a throwaway sandbox account per visitor.
     demo_mode: bool = False
     demo_ttl_hours: int = 24
     demo_max_accounts: int = 500  # live sandboxes at once; protects the database and CPU from mass sign-ups
@@ -98,7 +103,7 @@ class Settings(BaseSettings):
         return [v.lower() for v in value]
 
     @field_validator("redis_url", "openai_api_key", "openai_base_url", "proxy_shared_secret", "smtp_host",
-                     "smtp_username", "smtp_password", mode="before")  # fmt: skip
+                     "smtp_username", "smtp_password", "metrics_token", mode="before")  # fmt: skip
     @classmethod
     def _empty_to_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():

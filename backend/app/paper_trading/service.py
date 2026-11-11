@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundError, RiskLimitError, ValidationFailedError
 from app.core.logging import get_logger
+from app.core.metrics import MARGIN_CALLS, PAPER_FILLS, PAPER_ORDERS
 from app.market_data.service import MarketDataService
 from app.models.enums import OrderSide, OrderStatus, OrderType
 from app.models.market import Asset
@@ -234,7 +235,9 @@ class PaperTradingService:
         limit_price: float | None = None,
         *,
         strategy_id: int | None = None,
+        source: str | None = None,
     ) -> SimulatedOrder:
+        source = source or ("strategy" if strategy_id is not None else "user")
         if quantity <= 0:
             raise ValidationFailedError("Quantity must be positive")
         if order_type == OrderType.LIMIT and (limit_price is None or limit_price <= 0):
@@ -264,10 +267,12 @@ class PaperTradingService:
             order.status = OrderStatus.REJECTED
             order.reject_reason = exc.message
             await self.session.flush()
+            PAPER_ORDERS.labels(source, side.value, order.status.value).inc()
             return order
 
         if self._is_marketable(order, ticker.price):
             await self._fill(portfolio, order, ticker.price)
+        PAPER_ORDERS.labels(source, side.value, order.status.value).inc()
         return order
 
     @staticmethod
@@ -414,6 +419,7 @@ class PaperTradingService:
         portfolio.total_fees += fee
         now = datetime.now(UTC)
         order.status = OrderStatus.FILLED
+        PAPER_FILLS.labels(order.side.value).inc()
         order.filled_price = price
         order.fee = fee
         order.filled_at = now
@@ -449,7 +455,10 @@ class PaperTradingService:
         for v in await self.position_views(portfolio):
             if not v.is_short or v.price is None or v.price < 2 * v.position.avg_entry_price:
                 continue
-            order = await self.place_order(portfolio, v.position.asset, OrderSide.BUY, OrderType.MARKET, -v.position.quantity)
+            order = await self.place_order(
+                portfolio, v.position.asset, OrderSide.BUY, OrderType.MARKET, -v.position.quantity, source="margin_call"
+            )
+            MARGIN_CALLS.inc()
             order.note = f"Margin call: price {v.price:,.2f} reached twice the short's average entry {v.position.avg_entry_price:,.2f}"
             logger.info("paper_margin_call", portfolio_id=portfolio.id, symbol=v.position.asset.symbol, status=order.status.value)
             covers += order.status == OrderStatus.FILLED

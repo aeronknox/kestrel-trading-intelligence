@@ -1,0 +1,65 @@
+# Alert rules for the platform. Prometheus evaluates them and shows firing alerts at /alerts;
+# route them to email or chat by adding an Alertmanager. docs/OPERATIONS.md says what to do for each.
+
+groups:
+  - name: kestrel
+    rules:
+      - alert: ApiDown
+        expr: up{job="api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "API instance {{ $labels.instance }} is not answering scrapes"
+
+      - alert: NoBackgroundJobLeader
+        # No process holds the jobs lease: limit orders, margin calls, alerts and snapshots have stopped.
+        expr: sum(kestrel_background_jobs_leader) == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "No instance is running background jobs"
+
+      - alert: OrderMatchingStale
+        # The order job runs every 15s; resting limit orders and margin calls depend on it.
+        expr: time() - max(kestrel_background_job_last_success_timestamp_seconds{job="process_all_open_orders"}) > 300
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Paper order matching hasn't completed for over 5 minutes"
+
+      - alert: BackgroundJobFailing
+        expr: sum by (job) (increase(kestrel_background_job_runs_total{outcome="error"}[15m])) > 3
+        labels: { severity: warning }
+        annotations:
+          summary: "Background job {{ $labels.job }} failed more than 3 times in 15 minutes"
+
+      - alert: MarketStreamUnhealthy
+        # Prices fall back to REST polling, so the app keeps working, just with slower updates.
+        expr: max(kestrel_market_stream_healthy) == 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Live price feed has been unhealthy for 10 minutes (polling fallback in use)"
+
+      - alert: HighServerErrorRate
+        expr: |
+          sum(rate(kestrel_http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(kestrel_http_requests_total[5m])), 1e-9) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "More than 5% of API requests are failing with 5xx"
+
+      - alert: SlowApi
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(kestrel_http_request_duration_seconds_bucket{route!~".*/ws/.*"}[10m]))) > 2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "API p95 latency is above 2 seconds"
+
+      - alert: EmailFailing
+        expr: increase(kestrel_emails_total{outcome="failed"}[30m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "Verification, reset or alert emails are failing to send (check SMTP settings)"

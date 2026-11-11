@@ -6,6 +6,8 @@ Runs order matching, equity snapshots, history backfill, strategy alerts and dem
 outside the web server. Leadership is decided by a Redis lease, so it is safe to run this
 alongside API instances; set RUN_BACKGROUND_JOBS=false on the API replicas to keep jobs
 off the request path. Requires REDIS_URL when more than one process runs jobs.
+
+Prometheus metrics are served on WORKER_METRICS_PORT (default 9100; 0 disables).
 """
 
 import asyncio
@@ -15,6 +17,7 @@ import signal
 from app.core.cache import close_cache, get_cache, init_cache
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
+from app.core.metrics import serve_metrics
 from app.database.session import dispose_engine, init_engine
 from app.market_data.providers.registry import close_providers
 from app.services.background import jobs
@@ -34,12 +37,16 @@ async def run(stop: asyncio.Event | None = None) -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         with contextlib.suppress(NotImplementedError, RuntimeError):  # not available on Windows
             loop.add_signal_handler(sig, stop.set)
+    metrics_server = serve_metrics(settings.worker_metrics_port, settings.metrics_token) if settings.metrics_enabled else None
     jobs.start()
-    logger.info("worker_started", instance=jobs.owner)
+    logger.info("worker_started", instance=jobs.owner, metrics_port=metrics_server and metrics_server.server_port)
     try:
         await stop.wait()
     finally:
         await jobs.stop()
+        if metrics_server:
+            metrics_server.shutdown()
+            metrics_server.server_close()
         await close_providers()
         await close_cache()
         await dispose_engine()

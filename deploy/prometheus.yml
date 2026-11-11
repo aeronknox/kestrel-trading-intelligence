@@ -1,0 +1,27 @@
+# Prometheus for the Compose stack: `docker compose --profile monitoring up -d`.
+# UI on http://127.0.0.1:9090 (bound to localhost; use an SSH tunnel on a server).
+#
+# Each process keeps its own counters, so every API and worker instance is scraped and
+# dashboards sum() across them. If METRICS_TOKEN is set, uncomment `authorization` below
+# and put the same token in deploy/metrics-token (keep that file out of Git).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:8000"]
+    # authorization:
+    #   credentials_file: /etc/prometheus/metrics-token
+
+  - job_name: worker  # present only with --profile worker; otherwise this target shows as down
+    static_configs:
+      - targets: ["worker:9100"]
+    # authorization:
+    #   credentials_file: /etc/prometheus/metrics-token

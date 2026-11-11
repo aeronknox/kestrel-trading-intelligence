@@ -1,5 +1,6 @@
 """FastAPI application factory."""
 
+import hmac
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -29,12 +30,21 @@ from app.core.cache import close_cache, get_cache, init_cache
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
+from app.core.metrics import CONTENT_TYPE, HTTP_LATENCY, HTTP_REQUESTS, render
 from app.database.session import dispose_engine, get_sessionmaker, init_engine
 from app.market_data.providers.registry import close_providers, get_provider
 from app.market_data.service import MarketDataService
 from app.services.background import jobs
 
 logger = get_logger(__name__)
+
+
+def _route_template(request: Request) -> str:
+    """The route template, e.g. /api/v1/strategies/{strategy_id} for /api/v1/strategies/42, so metric labels stay a small set."""
+    if request.scope.get("route") is None:
+        return "unmatched"
+    params = {str(v): k for k, v in request.path_params.items()}
+    return "/".join(f"{{{params[seg]}}}" if seg in params else seg for seg in request.url.path.split("/"))
 
 
 @asynccontextmanager
@@ -107,7 +117,12 @@ def create_app(*, background: bool = True) -> FastAPI:
         structlog.contextvars.bind_contextvars(request_id=request_id)
         start = time.perf_counter()
         response = await call_next(request)
-        duration_ms = round((time.perf_counter() - start) * 1000, 1)
+        elapsed = time.perf_counter() - start
+        duration_ms = round(elapsed * 1000, 1)
+        if request.url.path != "/metrics":
+            route = _route_template(request)
+            HTTP_REQUESTS.labels(request.method, route, str(response.status_code)).inc()
+            HTTP_LATENCY.labels(request.method, route).observe(elapsed)
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -137,6 +152,17 @@ def create_app(*, background: bool = True) -> FastAPI:
     @app.get("/health", tags=["health"])
     async def health() -> dict:
         return {"status": "ok"}
+
+    @app.get("/metrics", tags=["health"], include_in_schema=False)
+    async def metrics(request: Request) -> Response:
+        """Prometheus scrape endpoint. Not routed publicly by the Caddy deployment."""
+        if not settings.metrics_enabled:
+            return Response(status_code=404)
+        if settings.metrics_token:
+            sent = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+            if not hmac.compare_digest(sent.encode(), settings.metrics_token.encode()):
+                return Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})
+        return Response(render(), media_type=CONTENT_TYPE)
 
     @app.get("/health/ready", tags=["health"])
     async def ready() -> dict:

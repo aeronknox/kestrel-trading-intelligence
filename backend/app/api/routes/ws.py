@@ -17,6 +17,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.metrics import counter, gauge, register_state
 from app.database.session import get_sessionmaker
 from app.market_data.providers.base import Ticker
 from app.market_data.providers.registry import get_provider
@@ -140,6 +141,23 @@ class MarketBroadcaster:
 
 
 broadcaster = MarketBroadcaster()
+
+
+def _stream_state():  # type: ignore[no-untyped-def]
+    yield gauge("kestrel_ws_clients", "Browsers connected to the live price socket", len(broadcaster.clients))
+    stream = broadcaster.stream
+    if stream is None:
+        return
+    status = stream.status()
+    yield gauge("kestrel_market_stream_connected", "1 while the exchange ticker feed is connected", status["connected"])
+    yield gauge("kestrel_market_stream_healthy", "1 while the feed is fresh (else REST polling takes over)", status["healthy"])
+    if status["last_message_age_s"] is not None:
+        yield gauge("kestrel_market_stream_last_message_age_seconds", "Seconds since the last feed message", status["last_message_age_s"])
+    yield counter("kestrel_market_stream_messages", "Ticker messages received from the feed", status["messages"])
+    yield counter("kestrel_market_stream_reconnects", "Feed reconnects", status["reconnects"])
+
+
+register_state(_stream_state)
 
 
 @router.websocket("/ws/market")

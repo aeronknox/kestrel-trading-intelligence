@@ -42,3 +42,6 @@ e2e/fail_*.png
 
 # Playwright failure screenshots
 frontend/e2e/fail_*.png
+
+# Prometheus scrape token (see deploy/prometheus.yml)
+deploy/metrics-token

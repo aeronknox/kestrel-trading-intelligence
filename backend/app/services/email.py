@@ -20,6 +20,7 @@ from email.utils import make_msgid
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.metrics import EMAILS
 
 logger = get_logger(__name__)
 
@@ -66,13 +67,16 @@ async def send_email(msg: OutgoingEmail) -> bool:
     backend = get_settings().email_backend
     if backend == "console":
         outbox.append(msg)
+        EMAILS.labels("console").inc()
         logger.info("email_console", to=msg.to, subject=msg.subject, body=msg.text)
         return True
     try:
         await asyncio.to_thread(_send_smtp, msg)
     except Exception as exc:  # noqa: BLE001 - see module docstring
+        EMAILS.labels("failed").inc()
         logger.warning("email_send_failed", to=msg.to, subject=msg.subject, error=f"{type(exc).__name__}: {exc}")
         return False
+    EMAILS.labels("sent").inc()
     logger.info("email_sent", to=msg.to, subject=msg.subject)
     return True
 

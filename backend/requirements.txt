@@ -17,3 +17,4 @@ scikit-learn==1.9.1
 openai==3.46.0
 structlog==26.1.0
 websockets==17.4
+prometheus-client==0.26.0

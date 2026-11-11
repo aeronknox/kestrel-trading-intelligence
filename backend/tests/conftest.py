@@ -18,6 +18,7 @@ os.environ.update(
         "COMPUTE_RATE_LIMIT_PER_MINUTE": "100000",
         "ADMIN_EMAILS": "admin@example.com",
         "SECRET_KEY": "test-secret-key-that-is-long-enough",
+        "WORKER_METRICS_PORT": "0",  # tests that need it pick a free port
     }
 )
 

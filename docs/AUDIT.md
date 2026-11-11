@@ -77,6 +77,7 @@ The status reflects the state **after** this audit's fixes. "Found" lists what w
 7. **Backtests** use 24/7 annualization (equities would need a trading calendar). *Update 2026-11-07:* short strategies and multi-asset tests are supported. *Update 2026-11-06:* the 2,000-bar cap is now 20,000 bars, backed by stored, backfilled history.
 8. *Addressed 2026-11-06 by `docker-compose.prod.yml` (Caddy, automatic HTTPS), which gives each client its own rate limit; still applies to the plain development Compose file.* **The rate-limit bucket is shared without a reverse proxy.** When the browser reaches Next.js directly (default Compose), the API sees every user as the Next.js container, so the per-IP limits are shared. Per-account lockout still applies. Put a reverse proxy in front and set `TRUST_PROXY_HEADERS`/`PROXY_SHARED_SECRET` for per-client limits.
 9. ~~**First portfolio creation can race.**~~ *Fixed 2026-11-06:* a partial unique index (migration `0002`) allows one active portfolio per user, and the losing request reuses the winner's portfolio.
+10. ~~**No metrics, alerting or operations runbook.**~~ *Fixed 2026-11-11:* Prometheus metrics from the API and the worker, an optional Prometheus service with alert rules, and [OPERATIONS.md](OPERATIONS.md) for backups, restores, upgrades and secret rotation. CI runs the backup-and-restore procedure.
 
 ## Test results at end of audit
 

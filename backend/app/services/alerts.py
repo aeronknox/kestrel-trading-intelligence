@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.core.metrics import ALERT_EVENTS
 from app.database.session import get_sessionmaker
 from app.indicators.technical import candles_to_frame
 from app.market_data.providers.base import Candle, timeframe_seconds
@@ -92,6 +93,7 @@ async def check_alert(session: AsyncSession, market: MarketDataService, alert: S
         )
         session.add(event)
         events.append(event)
+        ALERT_EVENTS.labels(kind).inc()
         return event
 
     for i in pending:

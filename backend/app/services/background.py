@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import os
 import socket
+import time
 import uuid
 
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from sqlalchemy import select
 from app.core.cache import get_cache
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.metrics import JOB_DURATION, JOB_LAST_SUCCESS, JOB_RUNS, gauge, register_state
 from app.database.session import get_sessionmaker
 from app.market_data.service import HISTORY_MAX_BARS, MarketDataService
 from app.models.enums import OrderStatus
@@ -145,12 +147,19 @@ class BackgroundJobs:
             await asyncio.sleep(interval)
             if not self.is_leader:
                 continue
+            start = time.perf_counter()
             try:
                 await fn()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
+                JOB_RUNS.labels(fn.__name__, "error").inc()
                 logger.warning("background_job_failed", job=fn.__name__, error=str(exc))
+            else:
+                JOB_RUNS.labels(fn.__name__, "ok").inc()
+                JOB_LAST_SUCCESS.labels(fn.__name__).set_to_current_time()
+            finally:
+                JOB_DURATION.labels(fn.__name__).observe(time.perf_counter() - start)
 
     async def stop(self) -> None:
         for t in self._tasks:
@@ -166,3 +175,11 @@ class BackgroundJobs:
 
 
 jobs = BackgroundJobs()
+
+
+def _job_state():  # type: ignore[no-untyped-def]
+    yield gauge("kestrel_background_jobs_running", "1 if this process runs the job loops", bool(jobs._tasks))
+    yield gauge("kestrel_background_jobs_leader", "1 if this process holds the jobs lease", jobs.is_leader)
+
+
+register_state(_job_state)

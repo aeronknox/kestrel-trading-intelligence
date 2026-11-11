@@ -107,16 +107,16 @@ jobs:
           sed -i "s|^AUTH_RATE_LIMIT_PER_MINUTE=.*|AUTH_RATE_LIMIT_PER_MINUTE=100|" .env
           # Exercise the public demo sandbox in the browser flows.
           sed -i "s|^DEMO_MODE=.*|DEMO_MODE=true|" .env
-      - name: Build and start (with the dedicated worker)
-        run: docker compose --profile worker up --build --detach --wait --wait-timeout 300
+      - name: Build and start (with the dedicated worker and Prometheus)
+        run: docker compose --profile worker --profile monitoring up --build --detach --wait --wait-timeout 300
       - name: Health
         run: |
           curl -fsS http://localhost:8000/health/ready | tee /dev/stderr | grep -q '"database":"ok"'
           curl -fsS -o /dev/null http://localhost:3000/login
           # The worker is running and one of the two job runners holds the Redis lease.
-          docker compose --profile worker ps worker --format '{{.State}}' | grep -q running
-          for i in $(seq 1 20); do docker compose --profile worker logs worker | grep -q worker_started && break; sleep 2; done
-          docker compose --profile worker logs worker | grep -q worker_started
+          docker compose --profile worker --profile monitoring ps worker --format '{{.State}}' | grep -q running
+          for i in $(seq 1 20); do docker compose --profile worker --profile monitoring logs worker | grep -q worker_started && break; sleep 2; done
+          docker compose --profile worker --profile monitoring logs worker | grep -q worker_started
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -131,9 +131,38 @@ jobs:
       - name: Accessibility (axe, both themes) and phone-width layout
         working-directory: frontend
         run: npm run a11y
+      - name: Metrics and alert rules
+        run: |
+          # The API's own metrics, including the paper orders the browser flows just placed.
+          curl -fsS http://localhost:8000/metrics > metrics.txt
+          grep -q '^kestrel_http_requests_total{.*route="/api/v1/paper/orders"' metrics.txt
+          grep -q '^kestrel_paper_orders_total{.*source="user"' metrics.txt
+          # Prometheus loaded the rules and scrapes both the API and the worker.
+          curl -fsS http://localhost:9090/api/v1/rules | jq -e '[.data.groups[].rules[]] | length >= 8'
+          for i in $(seq 1 30); do
+            up=$(curl -fsS http://localhost:9090/api/v1/targets | jq '[.data.activeTargets[] | select(.health == "up")] | length')
+            [ "$up" = "2" ] && break; sleep 2
+          done
+          curl -fsS http://localhost:9090/api/v1/targets | jq -e '[.data.activeTargets[] | select(.health == "up")] | length == 2'
+          # Exactly one process (API or worker) holds the background-jobs lease.
+          curl -fsS --get http://localhost:9090/api/v1/query --data-urlencode 'query=sum(kestrel_background_jobs_leader)' | tee /dev/stderr | jq -e '.data.result[0].value[1] == "1"'
+      - name: Backup and restore (the docs/OPERATIONS.md procedure)
+        run: |
+          dc() { docker compose --profile worker --profile monitoring "$@"; }
+          users() { dc exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select count(*) from users"'; }
+          before=$(users); echo "users before: $before"; [ "$before" -gt 0 ]
+          mkdir -p backups
+          dc exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' > backups/ci.dump
+          dc stop backend worker frontend
+          dc exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+          [ "$(users 2>/dev/null || echo gone)" = "gone" ]  # really empty
+          dc exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' < backups/ci.dump
+          dc up -d --wait --wait-timeout 180
+          after=$(users); echo "users after: $after"; [ "$after" = "$before" ]
+          curl -fsS http://localhost:8000/health/ready | grep -q '"database":"ok"'
       - name: Logs on failure
         if: failure()
-        run: docker compose --profile worker logs --no-color --tail 200
+        run: docker compose --profile worker --profile monitoring logs --no-color --tail 200
       - name: Upload failure screenshots
         if: failure()
         uses: actions/upload-artifact@v4
@@ -143,7 +172,7 @@ jobs:
           if-no-files-found: ignore
       - name: Stop
         if: always()
-        run: docker compose --profile worker down --volumes
+        run: docker compose --profile worker --profile monitoring down --volumes
 
   https:
     name: HTTPS deployment (Caddy) + browser flows

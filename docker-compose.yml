@@ -71,6 +71,23 @@ services:
       backend:
         condition: service_healthy  # migrations have run
 
+  # Optional metrics and alert rules: `docker compose --profile monitoring up -d`, then
+  # http://127.0.0.1:9090. Scrapes the API's /metrics and the worker's port 9100.
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
+      - promdata:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+
   frontend:
     build:
       context: ./frontend
@@ -89,3 +106,4 @@ services:
 
 volumes:
   pgdata:
+  promdata:
