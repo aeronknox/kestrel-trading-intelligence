@@ -352,6 +352,22 @@ await step("invalid reset and verification links are explained", async () => {
   expectedStatuses = [];
 });
 
+await step("content security policy blocks injected scripts", async () => {
+  const resp = await page.goto(`${BASE}/login`);
+  const csp = (await resp.headers())["content-security-policy"] ?? "";
+  const nonce = /'nonce-([^']+)'/.exec(csp)?.[1];
+  if (!nonce || /script-src[^;]*unsafe-inline/.test(csp)) throw new Error(`weak or missing CSP: ${csp}`);
+  // Every script the server rendered carries this request's nonce...
+  const unsigned = await page.locator("script").evaluateAll((els, n) => els.filter((e) => e.nonce !== n).length, nonce);
+  if (unsigned) throw new Error(`${unsigned} scripts without the page nonce`);
+  // ...and markup injected the way an XSS payload would be cannot run code.
+  const before = errors.length;
+  await page.evaluate(() => document.body.insertAdjacentHTML("beforeend", '<img src="data:," onerror="window.__xss = 1">'));
+  await page.waitForTimeout(500);
+  if (await page.evaluate(() => window.__xss)) throw new Error("injected inline handler ran");
+  errors.splice(before).filter((e) => !/Content Security Policy/.test(e)).forEach((e) => errors.push(e)); // the blocked handler is expected
+});
+
 await step("demo sandbox (when DEMO_MODE is on)", async () => {
   const config = await (await page.request.get(`${BASE}/api/v1/auth/config`)).json();
   if (!config.demo_enabled) return; // the button only exists on demo deployments
@@ -372,5 +388,11 @@ await step("demo sandbox (when DEMO_MODE is on)", async () => {
 
 console.log(results.join("\n"));
 console.log(errors.length ? "\nBROWSER ERRORS:\n" + [...new Set(errors)].join("\n") : "\nNO_BROWSER_ERRORS");
+// On GitHub Actions, failures also become annotations, readable on the run page without signing in.
+if (process.env.GITHUB_ACTIONS) {
+  const clean = (t) => t.replace(/\r?\n/g, " ").replace(/%/g, "%25").slice(0, 900);
+  for (const r of results.filter((r) => r.startsWith("FAIL"))) console.log(`::error title=Browser flow failed::${clean(r)}`);
+  for (const e of new Set(errors)) console.log(`::error title=Browser error::${clean(e)}`);
+}
 await browser.close();
 process.exit(results.some((r) => r.startsWith("FAIL")) || errors.length ? 1 : 0);

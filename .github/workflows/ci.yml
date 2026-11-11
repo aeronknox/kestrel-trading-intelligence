@@ -51,6 +51,10 @@ jobs:
         run: ruff check .
       - name: Type check (mypy)
         run: mypy
+      - name: Dependency audit (known vulnerabilities in pinned packages)
+        run: |
+          pip install pip-audit==2.10.1
+          pip-audit -r requirements.txt -r requirements-dev.txt
 
       - name: Migrations on PostgreSQL (upgrade, drift check, downgrade, upgrade)
         env:
@@ -86,6 +90,9 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      # What ships to browsers and the Next.js server; dev tooling is reviewed through Dependabot.
+      - name: Dependency audit (production packages)
+        run: npm audit --omit=dev --audit-level=moderate
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test

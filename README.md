@@ -102,7 +102,9 @@ docker-compose.yml
 - Per-IP rate limiting, backed by Redis or an in-memory fallback, with stricter auth and compute buckets
 - Pydantic validation on every input; strategy DSL parameters are range-checked
 - Centralized error handling returns structured JSON errors with request IDs and never leaks stack traces
-- Security headers on both tiers (CSP, `X-Frame-Options`, `nosniff`, Referrer-Policy, HSTS when `COOKIE_SECURE=true`) and a WebSocket origin check
+- A strict Content-Security-Policy: each page request gets a fresh script nonce ([`src/proxy.ts`](frontend/src/proxy.ts)), so only the app's own scripts run and injected markup can't execute code. A browser flow checks this by injecting an XSS payload
+- Other security headers on both tiers (`X-Frame-Options`, `nosniff`, Referrer-Policy, Cross-Origin-Opener-Policy, HSTS when `COOKIE_SECURE=true`) and a WebSocket origin check
+- Dependency audits in CI (`pip-audit` on the pinned Python packages, `npm audit` on production packages) and weekly Dependabot updates for Python, npm, Docker images and GitHub Actions
 - CORS allow-list, secrets read only from the environment, and `.env` git-ignored
 
 ---
@@ -207,10 +209,10 @@ cd backend  && python scripts/loadtest.py --url http://localhost:8000 --users 20
                                        # load test: concurrent demo visitors browsing the API
                                        # (needs DEMO_MODE=true and raised rate limits on the target)
 cd frontend && npm run lint            # ESLint
-cd frontend && npm test                # 19 unit tests: rule builder, formatters, sweep-grid helpers
+cd frontend && npm test                # 22 unit tests: rule builder, formatters, sweep-grid helpers, CSP
 cd frontend && npm run typecheck && npm run build
 cd frontend && npx playwright install chromium && npm run e2e
-                                       # 35 browser flows against a running stack (:3000 + :8000)
+                                       # 36 browser flows against a running stack (:3000 + :8000)
 cd frontend && npm run a11y            # axe (WCAG 2.1 A/AA) on every page in both themes + no sideways
                                        # scrolling at 390px; fails on critical/serious findings
 ```
@@ -221,9 +223,9 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to `main` and on pull requests:
 
-- **Backend:** ruff lint and mypy type check, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
-- **Frontend:** ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
-- **Docker:** `docker compose --profile worker --profile monitoring up --build --wait`, health checks, the 35 browser flows (with demo mode on), and the accessibility and phone-layout check against the containerized stack. It then checks that Prometheus loaded the alert rules, scrapes both the API and the worker, and sees exactly one job leader. A 20-visitor load test on PostgreSQL fails the build on any error or a p95 above 1.5 seconds. Finally it runs the runbook's backup, drop and restore sequence and checks that every account survives.
+- **Backend:** ruff lint, mypy type check and a dependency audit, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
+- **Frontend:** dependency audit, ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
+- **Docker:** `docker compose --profile worker --profile monitoring up --build --wait`, health checks, the 36 browser flows (with demo mode on), and the accessibility and phone-layout check against the containerized stack. It then checks that Prometheus loaded the alert rules, scrapes both the API and the worker, and sees exactly one job leader. A 20-visitor load test on PostgreSQL fails the build on any error or a p95 above 1.5 seconds. Finally it runs the runbook's backup, drop and restore sequence and checks that every account survives.
 - **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
 
 See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
