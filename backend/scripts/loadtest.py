@@ -16,6 +16,7 @@ Everything it does is simulated: demo accounts and paper orders only.
 
 import argparse
 import asyncio
+import os
 import random
 import statistics
 import sys
@@ -144,7 +145,7 @@ def pct(values: list[float], q: float) -> float:
     return statistics.quantiles(values, n=100, method="inclusive")[q - 1] if q < 100 else max(values)  # type: ignore[index]
 
 
-def report(stats: Stats, elapsed: float) -> tuple[float, float]:
+def report(stats: Stats, elapsed: float) -> tuple[float, float, str]:
     rows = sorted(stats.latencies.items(), key=lambda kv: -len(kv[1]))
     print(f"\n{'endpoint':<36}{'count':>7}{'err':>6}{'429':>6}{'p50 ms':>9}{'p95 ms':>9}{'p99 ms':>9}{'max ms':>9}")
     for name, lat in rows:
@@ -156,14 +157,17 @@ def report(stats: Stats, elapsed: float) -> tuple[float, float]:
     total, errors, limited = len(everything), sum(stats.errors.values()), sum(stats.limited.values())
     p95 = pct(everything, 95) * 1000 if everything else 0.0
     error_rate = errors / total if total else 1.0
-    print(
-        f"\n{total} requests in {elapsed:.0f}s ({total / elapsed:.1f}/s), p95 {p95:.0f} ms, errors {errors} ({error_rate:.2%}), rate-limited {limited}"
+    summary = (
+        f"{total} requests in {elapsed:.0f}s ({total / elapsed:.1f}/s), p95 {p95:.0f} ms, errors {errors} ({error_rate:.2%})"
     )
+    print(f"\n{summary}, rate-limited {limited}")
+    slowest = sorted(rows, key=lambda kv: -pct(kv[1], 95))[:4]
+    summary += ". Slowest p95: " + ", ".join(f"{name} {pct(lat, 95) * 1000:.0f} ms" for name, lat in slowest)
     for name, sample in stats.samples.items():
         print(f"  first error on {name}: {sample}")
     if limited:
         print("  Some requests were rate-limited: raise the target's *_RATE_LIMIT_PER_MINUTE settings for load tests.")
-    return p95, error_rate
+    return p95, error_rate, summary
 
 
 async def main() -> int:
@@ -195,18 +199,21 @@ async def main() -> int:
         return 2
     signed_in = len(stats.latencies["POST /auth/demo"]) - stats.errors["POST /auth/demo"] - stats.limited["POST /auth/demo"]
     print(f"{signed_in}/{args.users} virtual users signed in")
-    p95, error_rate = report(stats, elapsed)
-    failed = False
+    p95, error_rate, summary = report(stats, elapsed)
+    failures = []
     if args.max_p95_ms is not None and p95 > args.max_p95_ms:
-        print(f"FAIL: p95 {p95:.0f} ms > {args.max_p95_ms:.0f} ms")
-        failed = True
+        failures.append(f"p95 {p95:.0f} ms > {args.max_p95_ms:.0f} ms")
     if args.max_error_rate is not None and error_rate > args.max_error_rate:
-        print(f"FAIL: error rate {error_rate:.2%} > {args.max_error_rate:.2%}")
-        failed = True
+        failures.append(f"error rate {error_rate:.2%} > {args.max_error_rate:.2%}")
     if signed_in < args.users:
-        print("FAIL: not every virtual user could sign in")
-        failed = True
-    return 1 if failed else 0
+        failures.append(f"only {signed_in}/{args.users} virtual users could sign in")
+    for failure in failures:
+        print(f"FAIL: {failure}")
+    if os.environ.get("GITHUB_ACTIONS"):  # results on the run page, readable without signing in
+        print(f"::notice title=Load test ({args.users} users)::{summary}")
+        for failure in failures:
+            print(f"::error title=Load test failed::{failure}")
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

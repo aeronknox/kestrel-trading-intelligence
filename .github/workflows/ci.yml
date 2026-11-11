@@ -160,7 +160,7 @@ jobs:
         run: |
           # Runs inside the Compose network with the backend image (it has httpx); fails on any error or a slow p95.
           docker compose --profile worker --profile monitoring run --rm --no-deps --entrypoint python \
-            -v "$PWD/backend/scripts:/scripts:ro" backend \
+            -v "$PWD/backend/scripts:/scripts:ro" -e GITHUB_ACTIONS backend \
             /scripts/loadtest.py --url http://backend:8000 --users 20 --duration 45 --ramp 5 --seed 7 \
             --max-error-rate 0 --max-p95-ms 1500
       - name: Backup and restore (the docs/OPERATIONS.md procedure)
@@ -179,7 +179,12 @@ jobs:
           curl -fsS http://localhost:8000/health/ready | grep -q '"database":"ok"'
       - name: Logs on failure
         if: failure()
-        run: docker compose --profile worker --profile monitoring logs --no-color --tail 200
+        run: |
+          docker compose --profile worker --profile monitoring logs --no-color --tail 200
+          # Server-side errors as annotations (readable on the run page without signing in).
+          docker compose --profile worker --profile monitoring logs --no-color backend worker 2>/dev/null \
+            | grep -E '"level": ?"(error|warning)"|\[(error|warning) *\]|Traceback|Error:' | grep -v 'redis_unavailable' \
+            | tail -n 15 | cut -c1-600 | sed 's/^/::error title=Server log::/' || true
       - name: Upload failure screenshots
         if: failure()
         uses: actions/upload-artifact@v4
@@ -238,7 +243,12 @@ jobs:
           npm run e2e
       - name: Logs on failure
         if: failure()
-        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --no-color --tail 200
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --no-color --tail 200
+          # Server-side errors as annotations (readable on the run page without signing in).
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --no-color backend 2>/dev/null \
+            | grep -E '"level": ?"(error|warning)"|\[(error|warning) *\]|Traceback|Error:' | grep -v 'redis_unavailable' \
+            | tail -n 15 | cut -c1-600 | sed 's/^/::error title=Server log::/' || true
       - name: Upload failure screenshots
         if: failure()
         uses: actions/upload-artifact@v4

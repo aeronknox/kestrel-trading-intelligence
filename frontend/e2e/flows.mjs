@@ -8,6 +8,20 @@ const BASE = process.env.BASE ?? "http://localhost:3000";
 const email = `audit${Date.now()}@example.com`;
 const results = [];
 const errors = [];
+const started = Date.now();
+
+/** On GitHub Actions, failures become annotations: readable on the run page without signing in. */
+function annotate(title, text) {
+  if (!process.env.GITHUB_ACTIONS) return;
+  console.log(`::error title=${title}::${String(text).replace(/\r?\n/g, " ").replace(/%/g, "%25").slice(0, 900)}`);
+}
+// A crash part-way through must still say what had failed so far.
+for (const event of ["uncaughtException", "unhandledRejection"]) {
+  process.on(event, (e) => {
+    annotate("Browser flows crashed", `${e?.stack ?? e} | results so far: ${results.join(", ")}`);
+    process.exit(1);
+  });
+}
 
 const browser = await chromium.launch();
 // IGNORE_HTTPS_ERRORS=1 accepts the self-signed certificate of a local HTTPS trial (Caddy with DOMAIN=localhost).
@@ -35,6 +49,7 @@ async function step(name, fn) {
     results.push(`PASS ${name}`);
   } catch (e) {
     results.push(`FAIL ${name}: ${String(e.message).split("\n")[0]}`);
+    annotate("Browser flow failed", `${name} at ${page.url()} after ${Math.round((Date.now() - started) / 1000)}s: ${e.message}`);
     await page.screenshot({ path: `e2e/fail_${name.replace(/\W+/g, "_")}.png` }).catch(() => {});
   }
 }
@@ -389,10 +404,6 @@ await step("demo sandbox (when DEMO_MODE is on)", async () => {
 console.log(results.join("\n"));
 console.log(errors.length ? "\nBROWSER ERRORS:\n" + [...new Set(errors)].join("\n") : "\nNO_BROWSER_ERRORS");
 // On GitHub Actions, failures also become annotations, readable on the run page without signing in.
-if (process.env.GITHUB_ACTIONS) {
-  const clean = (t) => t.replace(/\r?\n/g, " ").replace(/%/g, "%25").slice(0, 900);
-  for (const r of results.filter((r) => r.startsWith("FAIL"))) console.log(`::error title=Browser flow failed::${clean(r)}`);
-  for (const e of new Set(errors)) console.log(`::error title=Browser error::${clean(e)}`);
-}
+for (const e of [...new Set(errors)].slice(0, 8)) annotate("Browser error", e);
 await browser.close();
 process.exit(results.some((r) => r.startsWith("FAIL")) || errors.length ? 1 : 0);
