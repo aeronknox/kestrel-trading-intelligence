@@ -1,5 +1,6 @@
 """Orchestrates a full analysis run: data → indicators → patterns → ML → signal → narrative."""
 
+import asyncio
 from datetime import UTC, datetime
 
 import pandas as pd
@@ -69,7 +70,8 @@ async def run_analysis(
     series = await market.get_candles(asset, timeframe, limit=ANALYSIS_BARS)
     closed = series.closed()
     df = candles_to_frame(closed)
-    result = compute_analysis(df, is_sample=series.is_sample, stale=series.stale)
+    # CPU-bound (indicators, pattern scan, model training): off the event loop so other requests keep flowing.
+    result = await asyncio.to_thread(compute_analysis, df, is_sample=series.is_sample, stale=series.stale)
 
     facts = {
         "symbol": asset.symbol,

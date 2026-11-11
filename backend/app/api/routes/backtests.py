@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Query, Response
@@ -76,7 +77,8 @@ async def create_backtest(body: BacktestRequest, user: CurrentUser, db: DbSessio
         if len(closed) < 100:
             raise ValidationFailedError(f"Only {len(closed)} closed candles available; need at least 100")
         df = candles_to_frame(closed)
-        output = run_backtest(
+        output = await asyncio.to_thread(  # CPU-bound: keep the event loop free for other requests
+            run_backtest,
             df,
             definition,
             BacktestConfig(

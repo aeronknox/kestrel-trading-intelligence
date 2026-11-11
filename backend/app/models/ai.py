@@ -13,7 +13,10 @@ class AIAnalysisResult(IdMixin, Base):
     only `narrative` may be LLM-written, and `narrative_source` records which."""
 
     __tablename__ = "ai_analysis_results"
-    __table_args__ = (Index("ix_ai_analysis_asset_created", "asset_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_ai_analysis_asset_created", "asset_id", "created_at"),
+        Index("ix_ai_analysis_user_created", "user_id", "created_at"),  # dashboard and history lists
+    )
 
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"))

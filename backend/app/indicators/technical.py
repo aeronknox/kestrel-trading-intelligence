@@ -149,14 +149,23 @@ def _clean(value: float) -> float | None:
     return float(value)
 
 
+_EPOCH = pd.Timestamp(0, tz="UTC")
+
+
 def series_to_points(df: pd.DataFrame, column: str) -> list[dict]:
     """Serialize a column to [{time, value}] skipping warm-up NaNs (chart friendly)."""
-    points = []
-    for ts, value in zip(df["ts"], df[column], strict=True):
-        v = _clean(value)
-        if v is not None:
-            points.append({"time": int(pd.Timestamp(ts).timestamp()), "value": v})
-    return points
+    return columns_to_points(df, [column])[column]
+
+
+def columns_to_points(df: pd.DataFrame, columns: Sequence[str]) -> dict[str, list[dict]]:
+    """series_to_points for several columns, converting the timestamps once (vectorized)."""
+    seconds = ((pd.to_datetime(df["ts"], utc=True) - _EPOCH) // pd.Timedelta(seconds=1)).to_numpy()
+    out: dict[str, list[dict]] = {}
+    for column in columns:
+        values = df[column].to_numpy(dtype=float, na_value=np.nan)
+        keep = np.isfinite(values)
+        out[column] = [{"time": t, "value": v} for t, v in zip(seconds[keep].tolist(), values[keep].tolist(), strict=True)]
+    return out
 
 
 def latest_snapshot(df: pd.DataFrame) -> dict[str, float | None]:

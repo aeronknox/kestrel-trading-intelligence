@@ -18,7 +18,9 @@ def _make_engine(url: str) -> AsyncEngine:
         db_path = url.split("///", 1)[-1]
         if db_path and db_path != ":memory:":
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        kwargs = {"connect_args": {"check_same_thread": False}}
+        # SQLite allows one writer at a time; wait for the lock (up to 30s) rather than failing
+        # with "database is locked" when requests overlap. PostgreSQL is the multi-user database.
+        kwargs = {"connect_args": {"check_same_thread": False, "timeout": 30}}
     else:
         kwargs.update(pool_size=10, max_overflow=20)
     engine = create_async_engine(url, **kwargs)

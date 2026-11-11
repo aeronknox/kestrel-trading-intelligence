@@ -10,6 +10,7 @@ requests are consistent with each other without storing state.
 import hashlib
 import math
 from datetime import UTC, datetime
+from functools import lru_cache
 
 from app.market_data.providers.base import (
     Candle,
@@ -45,32 +46,43 @@ def _unit(seed: str) -> float:
     return int.from_bytes(h, "big") / 2**64
 
 
+def _price(symbol: str, k: int, granularity: int) -> float:
+    base = _BASE_PRICES.get(symbol.split("-")[0], 100.0)
+    phase = _unit(symbol) * 1000
+    # Express time in hours so the shape is similar across timeframes.
+    t = k * granularity / 3600.0
+    log_dev = (
+        0.18 * math.sin((t + phase) / 700.0)
+        + 0.07 * math.sin((t + phase) / 90.0)
+        + 0.025 * math.sin((t + phase) / 11.0)
+        + 0.006 * (_unit(f"{symbol}:{granularity}:{k}") - 0.5)
+    )
+    return base * math.exp(log_dev)
+
+
+# Bars are a pure function of their arguments, so they are memoized (as tuples: each caller
+# still gets its own Candle). Long backtests and every chart re-request the same bars.
+@lru_cache(maxsize=100_000)  # ~25 MB at most
+def _ohlcv(symbol: str, k: int, granularity: int) -> tuple[datetime, float, float, float, float, float]:
+    o = _price(symbol, k - 1, granularity)
+    c = _price(symbol, k, granularity)
+    wiggle = abs(c - o) * 0.6 + o * 0.0015 * _unit(f"w:{symbol}:{k}")
+    high = max(o, c) + wiggle * _unit(f"h:{symbol}:{k}")
+    low = min(o, c) - wiggle * _unit(f"l:{symbol}:{k}")
+    volume = 50 + 1000 * _unit(f"v:{symbol}:{granularity}:{k}") * (1 + abs(c - o) / o * 50)
+    return utc_from_ts(k * granularity), o, high, low, c, volume
+
+
 class SampleProvider(MarketDataProvider):
     name = "sample"
     is_sample = True
     attribution = "SAMPLE DATA — synthetic prices for development only, not real market data"
 
     def _price(self, symbol: str, k: int, granularity: int) -> float:
-        base = _BASE_PRICES.get(symbol.split("-")[0], 100.0)
-        phase = _unit(symbol) * 1000
-        # Express time in hours so the shape is similar across timeframes.
-        t = k * granularity / 3600.0
-        log_dev = (
-            0.18 * math.sin((t + phase) / 700.0)
-            + 0.07 * math.sin((t + phase) / 90.0)
-            + 0.025 * math.sin((t + phase) / 11.0)
-            + 0.006 * (_unit(f"{symbol}:{granularity}:{k}") - 0.5)
-        )
-        return base * math.exp(log_dev)
+        return _price(symbol, k, granularity)
 
     def _candle(self, symbol: str, k: int, granularity: int) -> Candle:
-        o = self._price(symbol, k - 1, granularity)
-        c = self._price(symbol, k, granularity)
-        wiggle = abs(c - o) * 0.6 + o * 0.0015 * _unit(f"w:{symbol}:{k}")
-        high = max(o, c) + wiggle * _unit(f"h:{symbol}:{k}")
-        low = min(o, c) - wiggle * _unit(f"l:{symbol}:{k}")
-        volume = 50 + 1000 * _unit(f"v:{symbol}:{granularity}:{k}") * (1 + abs(c - o) / o * 50)
-        return Candle(ts=utc_from_ts(k * granularity), open=o, high=high, low=low, close=c, volume=volume)
+        return Candle(*_ohlcv(symbol, k, granularity))
 
     async def get_candles(
         self, provider_symbol: str, timeframe: str, limit: int = 300, end: datetime | None = None

@@ -15,7 +15,7 @@ class BacktestSession(IdMixin, Base):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     strategy_id: Mapped[int] = mapped_column(ForeignKey("strategies.id", ondelete="CASCADE"), index=True)
-    strategy_config_id: Mapped[int] = mapped_column(ForeignKey("strategy_configurations.id", ondelete="CASCADE"))
+    strategy_config_id: Mapped[int] = mapped_column(ForeignKey("strategy_configurations.id", ondelete="CASCADE"), index=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
     timeframe: Mapped[str] = mapped_column(String(8))
     start_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
@@ -67,7 +67,7 @@ class ResearchRun(IdMixin, Base):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     strategy_id: Mapped[int] = mapped_column(ForeignKey("strategies.id", ondelete="CASCADE"), index=True)
-    strategy_config_id: Mapped[int] = mapped_column(ForeignKey("strategy_configurations.id", ondelete="CASCADE"))
+    strategy_config_id: Mapped[int] = mapped_column(ForeignKey("strategy_configurations.id", ondelete="CASCADE"), index=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
     kind: Mapped[str] = mapped_column(String(16))  # "sweep" | "walk_forward"
     timeframe: Mapped[str] = mapped_column(String(8))

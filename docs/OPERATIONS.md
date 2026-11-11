@@ -145,6 +145,21 @@ Never commit `.env`. Git ignores it.
 - **Live prices** are per instance: each API instance holds its own Coinbase feed for its own browsers.
 - **Heavy research:** backtests, sweeps and walk-forward tests run in the API process and are rate-limited by `COMPUTE_RATE_LIMIT_PER_MINUTE`. Watch `kestrel_http_request_duration_seconds` for `/api/v1/research/*` and `/api/v1/backtests`.
 
+## Load testing
+
+[`backend/scripts/loadtest.py`](../backend/scripts/loadtest.py) simulates visitors: each signs in to its own demo sandbox, then loops through what the web app requests. Most steps load pages (dashboard, markets, charts, paper trading, strategies, alerts), some place simulated paper orders, and a few run backtests. It prints latency percentiles and errors per endpoint.
+
+```bash
+# On the target: DEMO_MODE=true and high RATE_LIMIT_PER_MINUTE / AUTH_RATE_LIMIT_PER_MINUTE /
+# COMPUTE_RATE_LIMIT_PER_MINUTE, since every request comes from one address.
+cd backend && python scripts/loadtest.py --url http://localhost:8000 --users 20 --duration 60 \
+  --max-error-rate 0 --max-p95-ms 1500
+```
+
+It exits non-zero when a threshold is exceeded, and reports 429 responses separately so rate limiting isn't mistaken for slowness. CI runs it against the Compose stack on PostgreSQL. Run it only against your own deployment.
+
+Use SQLite only for local development. It allows one writer at a time, so under concurrent load requests queue for the write lock. The API waits up to 30 seconds for it rather than failing.
+
 ## Routine tasks
 
 ```bash

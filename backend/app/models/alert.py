@@ -44,7 +44,7 @@ class AlertEvent(IdMixin, Base):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     alert_id: Mapped[int] = mapped_column(ForeignKey("strategy_alerts.id", ondelete="CASCADE"))
-    strategy_id: Mapped[int] = mapped_column(ForeignKey("strategies.id", ondelete="CASCADE"))
+    strategy_id: Mapped[int] = mapped_column(ForeignKey("strategies.id", ondelete="CASCADE"), index=True)
     strategy_version: Mapped[int] = mapped_column(Integer)
     kind: Mapped[str] = mapped_column(String(8))  # "entry" | "exit"
     symbol: Mapped[str] = mapped_column(String(32))
@@ -56,6 +56,9 @@ class AlertEvent(IdMixin, Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     read_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     emailed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
-    order_id: Mapped[int | None] = mapped_column(ForeignKey("simulated_orders.id", ondelete="SET NULL"), nullable=True)
+    # Indexed so deleting orders (a portfolio reset) doesn't scan every event to null this out.
+    order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("simulated_orders.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     strategy: Mapped[Strategy] = relationship(lazy="selectin")

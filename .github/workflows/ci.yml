@@ -107,6 +107,9 @@ jobs:
           sed -i "s|^AUTH_RATE_LIMIT_PER_MINUTE=.*|AUTH_RATE_LIMIT_PER_MINUTE=100|" .env
           # Exercise the public demo sandbox in the browser flows.
           sed -i "s|^DEMO_MODE=.*|DEMO_MODE=true|" .env
+          # The load test sends everything from one address.
+          sed -i "s|^RATE_LIMIT_PER_MINUTE=.*|RATE_LIMIT_PER_MINUTE=100000|" .env
+          sed -i "s|^COMPUTE_RATE_LIMIT_PER_MINUTE=.*|COMPUTE_RATE_LIMIT_PER_MINUTE=100000|" .env
       - name: Build and start (with the dedicated worker and Prometheus)
         run: docker compose --profile worker --profile monitoring up --build --detach --wait --wait-timeout 300
       - name: Health
@@ -146,6 +149,13 @@ jobs:
           curl -fsS http://localhost:9090/api/v1/targets | jq -e '[.data.activeTargets[] | select(.health == "up")] | length == 2'
           # Exactly one process (API or worker) holds the background-jobs lease.
           curl -fsS --get http://localhost:9090/api/v1/query --data-urlencode 'query=sum(kestrel_background_jobs_leader)' | tee /dev/stderr | jq -e '.data.result[0].value[1] == "1"'
+      - name: Load test (20 concurrent visitors on PostgreSQL)
+        run: |
+          # Runs inside the Compose network with the backend image (it has httpx); fails on any error or a slow p95.
+          docker compose --profile worker --profile monitoring run --rm --no-deps --entrypoint python \
+            -v "$PWD/backend/scripts:/scripts:ro" backend \
+            /scripts/loadtest.py --url http://backend:8000 --users 20 --duration 45 --ramp 5 --seed 7 \
+            --max-error-rate 0 --max-p95-ms 1500
       - name: Backup and restore (the docs/OPERATIONS.md procedure)
         run: |
           dc() { docker compose --profile worker --profile monitoring "$@"; }

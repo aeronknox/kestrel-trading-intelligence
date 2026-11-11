@@ -147,3 +147,36 @@ async def test_concurrent_candle_fetches_share_a_session_safely(app) -> None:  #
         await s.commit()
         per_asset = (await s.execute(select(MarketData.asset_id, func.count()).group_by(MarketData.asset_id))).all()
         assert sorted(n for _, n in per_asset) == [29] * len(assets)
+
+
+async def test_chart_is_computed_once_until_any_candle_changes(auth_client, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from app.api.routes import market as market_routes
+    from app.core.cache import get_cache
+    from app.market_data.providers.sample import SampleProvider
+
+    computed: list[int] = []
+    real = market_routes.add_standard_indicators
+    monkeypatch.setattr(market_routes, "add_standard_indicators", lambda df: computed.append(1) or real(df))
+    market_routes._chart_memo.clear()
+    url, params = "/api/v1/market/assets/BTC-USD/candles", {"timeframe": "1h", "limit": 50}
+
+    first = await auth_client.get(url, params=params)
+    second = await auth_client.get(url, params=params)
+    assert first.status_code == second.status_code == 200
+    assert first.headers["content-type"] == "application/json"
+    assert first.json() == second.json() and first.json()["meta"]["is_sample"] is True
+    assert len(computed) == 1  # the second viewer reused the first one's work
+
+    # Revising an older bar (not only the newest) must produce a fresh chart.
+    original = SampleProvider.get_candles
+
+    async def revised(self, provider_symbol, timeframe, limit=300, end=None):  # type: ignore[no-untyped-def]
+        candles = await original(self, provider_symbol, timeframe, limit, end)
+        candles[-10].close *= 1.5
+        return candles
+
+    monkeypatch.setattr(SampleProvider, "get_candles", revised)
+    get_cache()._data.clear()  # type: ignore[attr-defined]
+    third = (await auth_client.get(url, params=params)).json()
+    assert len(computed) == 2
+    assert third["candles"][-10]["close"] == pytest.approx(first.json()["candles"][-10]["close"] * 1.5)

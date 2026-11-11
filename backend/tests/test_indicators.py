@@ -109,3 +109,14 @@ def test_macd_signal_waits_for_full_warmup() -> None:
     m = ta.macd(s)
     assert m["macd"].first_valid_index() == 25  # slow EMA(26) seed
     assert m["signal"].first_valid_index() == 25 + 8  # then EMA(9) of the MACD line
+
+
+def test_columns_to_points_skips_warmup_and_uses_unix_seconds() -> None:
+    df = pd.DataFrame(
+        {"ts": pd.to_datetime([0, 3600, 7200], unit="s", utc=True), "a": [np.nan, 1.5, np.inf], "b": [1, 2, 3]}
+    )
+    out = ta.columns_to_points(df, ["a", "b"])
+    assert out["a"] == [{"time": 3600, "value": 1.5}]  # NaN warm-up and inf are dropped
+    assert out["b"] == [{"time": 0, "value": 1.0}, {"time": 3600, "value": 2.0}, {"time": 7200, "value": 3.0}]
+    assert all(type(p["time"]) is int and type(p["value"]) is float for p in out["b"])  # plain JSON types
+    assert ta.series_to_points(df, "a") == out["a"]

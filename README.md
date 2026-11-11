@@ -196,13 +196,16 @@ cd backend && python -m app.cli promote-admin you@example.com    # or demote-adm
 ### Tests
 
 ```bash
-cd backend  && pytest                  # 185 tests: indicators (incl. Wilder reference values),
+cd backend  && pytest                  # 187 tests: indicators (incl. Wilder reference values),
                                        # backtester (long and short), optimization and walk-forward
                                        # look-ahead checks, multi-asset tests, ML leakage, signals,
                                        # auth/RBAC, email tokens, demo sandboxes, rate limiting,
                                        # paper-trading accounting, history loading, the live price
                                        # stream (fake feed), alerts, CSV export, metrics, OpenAI tool loop
 cd backend  && ruff check . && mypy    # lint + type check
+cd backend  && python scripts/loadtest.py --url http://localhost:8000 --users 20
+                                       # load test: concurrent demo visitors browsing the API
+                                       # (needs DEMO_MODE=true and raised rate limits on the target)
 cd frontend && npm run lint            # ESLint
 cd frontend && npm test                # 19 unit tests: rule builder, formatters, sweep-grid helpers
 cd frontend && npm run typecheck && npm run build
@@ -220,7 +223,7 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 - **Backend:** ruff lint and mypy type check, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
 - **Frontend:** ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
-- **Docker:** `docker compose --profile worker --profile monitoring up --build --wait`, health checks, the 35 browser flows (with demo mode on), and the accessibility and phone-layout check against the containerized stack. It then checks that Prometheus loaded the alert rules, scrapes both the API and the worker, and sees exactly one job leader. Finally it runs the runbook's backup, drop and restore sequence and checks that every account survives.
+- **Docker:** `docker compose --profile worker --profile monitoring up --build --wait`, health checks, the 35 browser flows (with demo mode on), and the accessibility and phone-layout check against the containerized stack. It then checks that Prometheus loaded the alert rules, scrapes both the API and the worker, and sees exactly one job leader. A 20-visitor load test on PostgreSQL fails the build on any error or a p95 above 1.5 seconds. Finally it runs the runbook's backup, drop and restore sequence and checks that every account survives.
 - **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
 
 See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
