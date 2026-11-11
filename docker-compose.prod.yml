@@ -10,7 +10,7 @@ x-proxy-secret: &proxy-secret ${PROXY_SHARED_SECRET:?Set PROXY_SHARED_SECRET in 
 
 services:
   caddy:
-    image: caddy:2.10-alpine
+    image: caddy:2.11-alpine
     restart: unless-stopped
     ports:
       - "80:80"
