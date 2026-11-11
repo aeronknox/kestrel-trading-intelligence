@@ -16,7 +16,7 @@ permissions:
 jobs:
   backend:
     name: Backend (lint, types, SQLite + PostgreSQL)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: Playwright browser dependencies support it
     services:
       postgres:
         image: postgres:17-alpine
@@ -76,7 +76,7 @@ jobs:
 
   frontend:
     name: Frontend (lint, typecheck, unit tests, build)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: Playwright browser dependencies support it
     defaults:
       run:
         working-directory: frontend
@@ -100,7 +100,7 @@ jobs:
 
   docker:
     name: Docker Compose stack + browser flows
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: Playwright browser dependencies support it
     needs: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
@@ -132,12 +132,14 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Browser flows
+      - name: Install browser
         working-directory: frontend
         run: |
           npm ci
           npx playwright install --with-deps chromium
-          npm run e2e
+      - name: Browser flows
+        working-directory: frontend
+        run: npm run e2e
       - name: Accessibility (axe, both themes) and phone-width layout
         working-directory: frontend
         run: npm run a11y
@@ -198,7 +200,7 @@ jobs:
 
   https:
     name: HTTPS deployment (Caddy) + browser flows
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: Playwright browser dependencies support it
     needs: [backend, frontend]
     env:
       DOMAIN: localhost
@@ -232,15 +234,17 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Install browser
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
       - name: Browser flows over HTTPS
         working-directory: frontend
         env:
           BASE: https://localhost
           IGNORE_HTTPS_ERRORS: "1"
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-          npm run e2e
+        run: npm run e2e
       - name: Logs on failure
         if: failure()
         run: |
