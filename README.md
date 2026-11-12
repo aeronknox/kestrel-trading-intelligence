@@ -12,7 +12,7 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 | Strategy Builder | Visual rule builder (13 indicators, 6 operators, ALL/ANY logic), risk exits, templates, immutable versioning |
 | Backtesting | Long or short strategies (shorts use stops above entry and a margin call if price doubles); next-bar execution, fees, slippage, gap-aware stops; return, max drawdown, Sharpe/Sortino, a buy-and-hold benchmark with the same costs (overlaid on the equity curve, with excess return and beta), win rate, profit factor, CAGR, exposure; side-by-side comparison |
 | Optimization | Multi-asset tests (one strategy on 2–6 coins with capital split equally, against an equal-weight buy-and-hold, with per-coin results and price correlation); parameter sweeps over 1–2 settings (heatmap of every combination, robustness stats) and walk-forward tests that tune on one window and score only on the next, unseen one, against the untuned strategy and buy-and-hold, with a rule-based verdict |
-| Alerts | Notifications when a saved strategy's entry or exit rules fire on a newly closed live candle, checked every minute with the same rule engine as the backtester. Fires once when a rule becomes true, never replays history, and caps catch-up after downtime. Shown in the header and on an alerts page, with optional email to verified addresses. Never places orders |
+| Alerts | Notifications when a saved strategy's entry or exit rules fire on a newly closed live candle, checked every minute with the same rule engine as the backtester. Fires once when a rule becomes true, never replays history, and caps catch-up after downtime. Shown in the header and on an alerts page, with optional email to verified addresses and webhooks to Slack, Discord or any HTTPS endpoint (generic ones are HMAC-signed). Alerts alone place no orders |
 | Forward testing | Optional auto paper-trading per strategy: it buys and sells in the paper portfolio on its own live signals, stops, targets and time limit, mirroring the backtester. It respects the portfolio's risk limits, only sells what it bought, and shows round trips and win rate next to the backtest. Short strategies short and cover when short selling is enabled; simulated only |
 | Paper Trading | $100k virtual balance, market and limit orders, optional short selling (proceeds held as collateral, margin call if price doubles) (open limit orders reserve cash or quantity; exposure limits are re-checked at fill time), positions, realized/unrealized P&L, risk limits, order and trade history, reset |
 | Portfolio | Equity and drawdown history, allocation, trade statistics |
@@ -104,6 +104,7 @@ docker-compose.yml
 - Centralized error handling returns structured JSON errors with request IDs and never leaks stack traces
 - A strict Content-Security-Policy: each page request gets a fresh script nonce ([`src/proxy.ts`](frontend/src/proxy.ts)), so only the app's own scripts run and injected markup can't execute code. A browser flow checks this by injecting an XSS payload
 - Other security headers on both tiers (`X-Frame-Options`, `nosniff`, Referrer-Policy, Cross-Origin-Opener-Policy, HSTS when `COOKIE_SECURE=true`) and a WebSocket origin check
+- Alert webhooks are SSRF-safe: https only, every resolved address must be public (no loopback, private, link-local or cloud-metadata ranges), the connection is pinned to the checked address while TLS still verifies the hostname (no DNS rebinding), and redirects are never followed
 - Dependency audits in CI (`pip-audit` on the pinned Python packages, `npm audit` on production packages) and weekly Dependabot updates for Python, npm, Docker images and GitHub Actions
 - CORS allow-list, secrets read only from the environment, and `.env` git-ignored
 
@@ -198,7 +199,7 @@ cd backend && python -m app.cli promote-admin you@example.com    # or demote-adm
 ### Tests
 
 ```bash
-cd backend  && pytest                  # 187 tests: indicators (incl. Wilder reference values),
+cd backend  && pytest                  # 212 tests: indicators (incl. Wilder reference values),
                                        # backtester (long and short), optimization and walk-forward
                                        # look-ahead checks, multi-asset tests, ML leakage, signals,
                                        # auth/RBAC, email tokens, demo sandboxes, rate limiting,
@@ -212,7 +213,7 @@ cd frontend && npm run lint            # ESLint
 cd frontend && npm test                # 22 unit tests: rule builder, formatters, sweep-grid helpers, CSP
 cd frontend && npm run typecheck && npm run build
 cd frontend && npx playwright install chromium && npm run e2e
-                                       # 36 browser flows against a running stack (:3000 + :8000)
+                                       # 37 browser flows against a running stack (:3000 + :8000)
 cd frontend && npm run a11y            # axe (WCAG 2.1 A/AA) on every page in both themes + no sideways
                                        # scrolling at 390px; fails on critical/serious findings
 ```
@@ -225,7 +226,7 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 - **Backend:** ruff lint, mypy type check and a dependency audit, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
 - **Frontend:** dependency audit, ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
-- **Docker:** `docker compose --profile worker --profile monitoring up --build --wait`, health checks, the 36 browser flows (with demo mode on), and the accessibility and phone-layout check against the containerized stack. It then checks that Prometheus loaded the alert rules, scrapes both the API and the worker, and sees exactly one job leader. A 20-visitor load test on PostgreSQL fails the build on any error or a p95 above 1.5 seconds. Finally it runs the runbook's backup, drop and restore sequence and checks that every account survives.
+- **Docker:** `docker compose --profile worker --profile monitoring up --build --wait`, health checks, the 37 browser flows (with demo mode on), and the accessibility and phone-layout check against the containerized stack. It then checks that Prometheus loaded the alert rules, scrapes both the API and the worker, and sees exactly one job leader. A 20-visitor load test on PostgreSQL fails the build on any error or a p95 above 1.5 seconds. Finally it runs the runbook's backup, drop and restore sequence and checks that every account survives.
 - **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
 
 See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
@@ -253,6 +254,7 @@ All settings are environment variables; see [.env.example](.env.example).
 | `ADMIN_EMAILS` | empty | Comma-separated emails granted the admin role once the address is verified by email (or use the CLI below) |
 | `EMAIL_BACKEND` | `console` | `console` logs emails and their links (development); `smtp` delivers them via `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SECURITY` from `EMAIL_FROM` |
 | `PUBLIC_APP_URL` | `http://localhost:3000` | Base URL for links in verification and password-reset emails |
+| `WEBHOOK_ALLOW_PRIVATE` | `false` | Lets alert webhooks use http and private or loopback addresses. Only for testing with a local receiver, never on a shared server |
 | `DEMO_MODE`, `DEMO_TTL_HOURS` | `false` / 24 | Public "Try the demo" sandboxes, and how long they live |
 | `DEMO_MAX_ACCOUNTS`, `DEMO_ALLOW_LLM` | 500 / `false` | Cap on live sandboxes; whether demo visitors may use paid LLM calls |
 | `TRUST_PROXY_HEADERS` (frontend), `PROXY_SHARED_SECRET` (both) | `false` / empty | Set both only when a reverse proxy in front of Next.js sets `X-Forwarded-For`; the API then trusts the client IP for rate limiting and audit |

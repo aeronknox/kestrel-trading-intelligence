@@ -24,6 +24,7 @@ class AlertSettings(BaseModel):
     on_entry: bool = True
     on_exit: bool = True
     notify_email: bool = False
+    notify_webhook: bool = False  # to the webhook set in account settings
     auto_trade: bool = False  # forward test: simulated paper orders on the strategy's signals
 
 
@@ -70,7 +71,7 @@ def _out(a: StrategyAlert) -> AlertOut:
     cfg = a.strategy.current_config
     return AlertOut(
         id=a.id, strategy_id=a.strategy_id, strategy_name=a.strategy.name, enabled=a.enabled, on_entry=a.on_entry,
-        on_exit=a.on_exit, notify_email=a.notify_email, auto_trade=a.auto_trade, symbol=cfg.asset.symbol if cfg else None,
+        on_exit=a.on_exit, notify_email=a.notify_email, notify_webhook=a.notify_webhook, auto_trade=a.auto_trade, symbol=cfg.asset.symbol if cfg else None,
         timeframe=cfg.timeframe if cfg else None, last_bar_at=a.last_bar_at, last_checked_at=a.last_checked_at,
         last_error=a.last_error, created_at=a.created_at,
     )  # fmt: skip
@@ -107,6 +108,7 @@ async def upsert_alert(strategy_id: int, body: AlertSettings, user: CurrentUser,
     notify_email = body.notify_email and not user.is_demo
     alert.enabled, alert.on_entry, alert.on_exit, alert.notify_email = body.enabled, body.on_entry, body.on_exit, notify_email
     alert.auto_trade = body.auto_trade
+    alert.notify_webhook = body.notify_webhook and not user.is_demo
     await db.flush()
     await db.refresh(alert, attribute_names=["strategy"])
     return _out(alert)

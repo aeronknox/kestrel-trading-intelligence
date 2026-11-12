@@ -16,6 +16,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useMe } from "@/hooks/use-auth";
 import { formatDateTime, formatPct, formatPrice, formatQty, formatUsd, pnlClass, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { WEBHOOK_KEY } from "@/features/settings/webhook-card";
 import { api } from "@/services/api";
 import type { AlertEvent, AlertSettings, BacktestSummary, StrategyAlert } from "@/types/api";
 
@@ -102,7 +103,9 @@ export function StrategyAlertCard({ strategyId, direction = "long" }: { strategy
     onError: (e: Error) => toast.error(e.message),
   });
   const a = alert.data;
-  const current: AlertSettings = a ?? { enabled: false, on_entry: true, on_exit: true, notify_email: false, auto_trade: false };
+  const current: AlertSettings = a ?? { enabled: false, on_entry: true, on_exit: true, notify_email: false, notify_webhook: false, auto_trade: false };
+  const webhook = useQuery({ queryKey: WEBHOOK_KEY, queryFn: api.users.webhook, enabled: me.data ? !me.data.is_demo : false });
+  const hasWebhook = Boolean(webhook.data?.url);
   const set = (patch: Partial<AlertSettings>) => save.mutate({ ...current, ...patch });
   const verified = me.data?.email_verified ?? false;
 
@@ -112,7 +115,7 @@ export function StrategyAlertCard({ strategyId, direction = "long" }: { strategy
         <div>
           <CardTitle className="flex items-center gap-2"><Bell className="size-4" /> Alerts</CardTitle>
           <CardDescription>
-            Get notified when this strategy&apos;s rules fire on a newly closed candle (checked every minute). Notifications only; no orders are placed.
+            Get notified when this strategy&apos;s rules fire on a newly closed candle (checked every minute). Notifications only; no real-money orders are ever placed.
           </CardDescription>
         </div>
         {a?.enabled && <Badge variant="gain">Watching</Badge>}
@@ -122,7 +125,7 @@ export function StrategyAlertCard({ strategyId, direction = "long" }: { strategy
           <LoadingRows rows={2} />
         ) : (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Toggle id="alert-enabled" label="Alerts on" checked={current.enabled} disabled={save.isPending} onChange={(v) => set({ enabled: v })} />
               <Toggle id="alert-entry" label="Entry signals" checked={current.on_entry} disabled={save.isPending || !current.enabled} onChange={(v) => set({ on_entry: v })} />
               <Toggle id="alert-exit" label="Exit signals" checked={current.on_exit} disabled={save.isPending || !current.enabled} onChange={(v) => set({ on_exit: v })} />
@@ -133,7 +136,19 @@ export function StrategyAlertCard({ strategyId, direction = "long" }: { strategy
                 disabled={save.isPending || !current.enabled}
                 onChange={(v) => set({ notify_email: v })}
               />
+              <Toggle
+                id="alert-webhook"
+                label="Post to webhook"
+                checked={current.notify_webhook}
+                disabled={save.isPending || !current.enabled || (!hasWebhook && !current.notify_webhook)}
+                onChange={(v) => set({ notify_webhook: v })}
+              />
             </div>
+            {!hasWebhook && !me.data?.is_demo && (
+              <p className="text-xs text-muted-foreground">
+                To post alerts to Slack, Discord or your own endpoint, add a webhook in <Link href="/settings" className="underline underline-offset-2">Settings</Link>.
+              </p>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed border-border px-3 py-2">
               <div className="min-w-0">
                 <p className="text-sm font-medium">Auto paper-trade (forward test)</p>
@@ -250,6 +265,7 @@ export function AlertsView() {
                         <p className="text-xs text-muted-foreground">
                           {a.symbol} {a.timeframe} · {[a.on_entry && "entry", a.on_exit && "exit"].filter(Boolean).join(" + ") || "no signals"}
                           {a.notify_email ? " · email" : ""}
+                          {a.notify_webhook ? " · webhook" : ""}
                         </p>
                         {a.last_error && <p className="text-xs text-warn">{a.last_error}</p>}
                       </TD>

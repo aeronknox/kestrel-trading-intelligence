@@ -22,6 +22,7 @@ class StrategyAlert(IdMixin, Base):
     on_entry: Mapped[bool] = mapped_column(Boolean, default=True)
     on_exit: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_email: Mapped[bool] = mapped_column(Boolean, default=False)
+    notify_webhook: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Forward test: act on the signals with simulated paper orders (long strategies only).
     auto_trade: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Newest closed bar already evaluated; events only fire for bars after it.

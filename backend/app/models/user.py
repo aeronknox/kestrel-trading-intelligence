@@ -45,6 +45,11 @@ class UserSettings(IdMixin, TimestampMixin, Base):
     default_symbol: Mapped[str] = mapped_column(String(32), default="BTC-USD")
     risk_tolerance: Mapped[str] = mapped_column(String(16), default="moderate")
     preferences: Mapped[dict] = mapped_column(JSONType, default=dict)
+    # Alert webhook (Slack, Discord or any https endpoint) and the secret that signs its payloads.
+    webhook_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    webhook_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    webhook_last_status: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    webhook_last_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="settings")
 

@@ -56,6 +56,7 @@ PAPER_FILLS = Counter("kestrel_paper_fills_total", "Simulated paper order fills"
 MARGIN_CALLS = Counter("kestrel_paper_margin_calls_total", "Shorts force-covered by a simulated margin call", registry=REGISTRY)
 ALERT_EVENTS = Counter("kestrel_alert_events_total", "Strategy alert events recorded", ["kind"], registry=REGISTRY)
 EMAILS = Counter("kestrel_emails_total", "Outgoing email by outcome", ["outcome"], registry=REGISTRY)
+WEBHOOKS = Counter("kestrel_webhooks_total", "Outgoing alert webhooks by outcome", ["outcome"], registry=REGISTRY)
 
 
 class StateCollector(Collector):

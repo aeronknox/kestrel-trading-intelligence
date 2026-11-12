@@ -695,8 +695,19 @@ export interface AlertSettings {
   on_entry: boolean;
   on_exit: boolean;
   notify_email: boolean;
-  /** Forward test: place simulated paper orders on the strategy's signals (long strategies only). */
+  /** Post events to the webhook set in account settings. */
+  notify_webhook: boolean;
+  /** Forward test: place simulated paper orders on the strategy's signals. */
   auto_trade: boolean;
+}
+
+export interface Webhook {
+  url: string | null;
+  format: "slack" | "discord" | "json" | null;
+  /** Signs generic JSON deliveries (X-Kestrel-Signature). */
+  secret: string | null;
+  last_status: string | null;
+  last_at: string | null;
 }
 
 export interface StrategyAlert extends AlertSettings {

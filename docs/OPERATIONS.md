@@ -62,6 +62,7 @@ The UI listens on <http://127.0.0.1:9090>, bound to localhost. On a server, reac
 | `kestrel_paper_fills_total{side}`, `kestrel_paper_margin_calls_total` | counter | Simulated fills and forced short covers |
 | `kestrel_alert_events_total{kind}` | counter | Strategy alert events (`entry`, `exit`) |
 | `kestrel_emails_total{outcome}` | counter | Email `sent`, `failed` or `console` (logged only) |
+| `kestrel_webhooks_total{outcome}` | counter | Alert webhook deliveries `sent` or `failed` |
 
 Each process keeps its own counters. Prometheus scrapes every instance; use `sum()` across them.
 
@@ -75,6 +76,7 @@ Each process keeps its own counters. Prometheus scrapes every instance; use `sum
 | **BackgroundJobFailing** | Search the logs for `background_job_failed` with the job's name. Market-data outages show up here first; the jobs retry on their own. |
 | **MarketStreamUnhealthy** | Prices still update by polling, only more slowly. Check outbound access to `wss://ws-feed.exchange.coinbase.com`. Set `MARKET_STREAM_ENABLED=false` to stop retrying. |
 | **HighServerErrorRate** / **SlowApi** | Break `kestrel_http_requests_total` down by `route` to find the endpoint, then check the logs for its `request_id`. Long backtests and research runs are CPU-bound; see [Scaling](#scaling). |
+| Webhook failures (no alert rule) | A user's endpoint is down or rejecting requests. Each user sees the last delivery result in Settings, and `alert_webhook_failed` is logged. A failing webhook never stops alert checks. |
 | **EmailFailing** | `email_send_failed` in the logs has the SMTP error. Check the `SMTP_*` settings. Verification and reset links can be resent from the app. |
 
 ## Backups

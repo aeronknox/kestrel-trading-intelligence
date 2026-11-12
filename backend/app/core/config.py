@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
     public_app_url: str = "http://localhost:3000"  # base for links in emails
     email_verification_ttl_hours: int = 48
+    # Alert webhooks may only reach public https addresses. True also allows http and private
+    # or loopback addresses: for testing with a local receiver, never on a shared server.
+    webhook_allow_private: bool = False
     # Background jobs (order matching, snapshots, backfill, alerts). Safe on several instances:
     # a Redis lease elects one runner. Set false on API replicas when using `python -m app.worker`.
     run_background_jobs: bool = True

@@ -324,6 +324,18 @@ await step("settings save preferences", async () => {
   await toast(/Preferences saved/);
 });
 
+await step("alert webhook refuses internal addresses", async () => {
+  expectedStatuses = [422];
+  await page.goto(`${BASE}/settings`);
+  await page.getByLabel("Webhook URL").fill("https://169.254.169.254/latest/meta-data");
+  await page.getByRole("button", { name: "Save webhook" }).click();
+  await toast(/public internet address/);
+  await page.getByLabel("Webhook URL").fill("http://hooks.example.com/x");
+  await page.getByRole("button", { name: "Save webhook" }).click();
+  await toast(/must start with https/);
+  expectedStatuses = [];
+});
+
 await step("non-admin blocked from admin page", async () => {
   await page.goto(`${BASE}/admin`);
   await page.getByText("Administrator access required").waitFor();

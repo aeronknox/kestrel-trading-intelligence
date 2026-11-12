@@ -25,7 +25,8 @@ from app.market_data.providers.base import Candle, timeframe_seconds
 from app.market_data.service import MAX_CANDLES, MarketDataService
 from app.models.alert import AlertEvent, StrategyAlert
 from app.models.strategy import Strategy
-from app.models.user import User
+from app.models.user import User, UserSettings
+from app.services import webhooks
 from app.services.email import OutgoingEmail, send_email
 from app.strategies.definition import StrategyDefinition
 from app.strategies.evaluator import evaluate_rules, max_warmup
@@ -33,7 +34,10 @@ from app.strategies.evaluator import evaluate_rules, max_warmup
 logger = get_logger(__name__)
 
 MAX_CATCH_UP_BARS = 3
-DISCLAIMER = "Simulated research signal for paper trading. No order was placed; this is not financial advice."
+DISCLAIMER = (
+    "Simulated research signal. No real-money order is ever placed (forward tests place simulated paper orders only); "
+    "this is not financial advice."
+)
 
 
 def _fmt_price(price: float) -> str:
@@ -117,6 +121,8 @@ async def check_alert(session: AsyncSession, market: MarketDataService, alert: S
     await session.flush()
     if events and alert.notify_email:
         await _email(session, alert, events)
+    if events and alert.notify_webhook:
+        await _webhook(session, alert, events)
     return events
 
 
@@ -135,6 +141,27 @@ async def _email(session: AsyncSession, alert: StrategyAlert, events: list[Alert
         sent = datetime.now(UTC)
         for e in events:
             e.emailed_at = sent
+
+
+async def _webhook(session: AsyncSession, alert: StrategyAlert, events: list[AlertEvent]) -> None:
+    """Best-effort: a failing endpoint is recorded on the user's settings, never fails the check."""
+    settings = await session.scalar(select(UserSettings).where(UserSettings.user_id == alert.user_id))
+    if settings is None or not settings.webhook_url or not settings.webhook_secret:
+        return
+    kinds = " and ".join(sorted({e.kind for e in events}))
+    title = f"{kinds.capitalize()} signal: {alert.strategy.name} ({events[0].symbol} {events[0].timeframe})"
+    fields = ("id", "kind", "symbol", "timeframe", "close_price", "message", "data_source", "order_id")
+    details = [{**{f: getattr(e, f) for f in fields}, "bar_at": e.bar_at.isoformat()} for e in events]
+    event = {"type": "strategy_alert", "strategy_id": alert.strategy_id, "strategy_name": alert.strategy.name,
+             "events": details, "disclaimer": DISCLAIMER}  # fmt: skip
+    fmt = webhooks.webhook_format(settings.webhook_url)
+    payload = webhooks.build_payload(fmt, title, [e.message for e in events] + [DISCLAIMER], event)
+    try:
+        settings.webhook_last_status = await webhooks.deliver(settings.webhook_url, settings.webhook_secret, payload)
+    except webhooks.WebhookError as exc:
+        settings.webhook_last_status = f"Failed: {exc}"[:255]
+        logger.warning("alert_webhook_failed", user_id=alert.user_id, error=str(exc))
+    settings.webhook_last_at = datetime.now(UTC)
 
 
 async def evaluate_alerts() -> int:

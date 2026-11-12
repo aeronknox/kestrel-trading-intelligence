@@ -15,6 +15,8 @@ import { formatDate } from "@/lib/format";
 import { api } from "@/services/api";
 import { TIMEFRAMES, type Timeframe, type UserSettings } from "@/types/api";
 
+import { WebhookCard } from "./webhook-card";
+
 export function SettingsView() {
   const me = useMe();
   const qc = useQueryClient();
@@ -126,6 +128,8 @@ export function SettingsView() {
             </div>
           </CardContent>
         </Card>
+
+        <WebhookCard isDemo={me.data.is_demo} />
 
         {!me.data.is_demo && (
           <Card>

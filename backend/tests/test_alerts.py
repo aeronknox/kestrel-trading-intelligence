@@ -104,7 +104,7 @@ async def test_alert_fires_once_when_rule_becomes_true(auth_client, market) -> N
     assert await evaluate_alerts() == 0  # same bar never fires twice
 
     page = (await auth_client.get("/api/v1/alerts/events")).json()
-    assert page["unread"] == 1 and "No order was placed" in page["disclaimer"]
+    assert page["unread"] == 1 and "No real-money order is ever placed" in page["disclaimer"]
     ev = page["events"][0]
     assert ev["kind"] == "entry" and ev["close_price"] == 110.0 and ev["symbol"] == "BTC-USD"
     assert ev["bar_at"].startswith(datetime.fromtimestamp((_now_k() - 1) * H, tz=UTC).strftime("%Y-%m-%dT%H"))
@@ -170,7 +170,7 @@ async def test_email_only_to_verified_addresses(client, market) -> None:  # type
     assert await evaluate_alerts() == 1
     msg = email_service.outbox[-1]
     assert msg.to == "trader@example.com" and msg.subject.startswith("Entry signal: Alert test")
-    assert "No order was placed" in msg.text
+    assert "No real-money order is ever placed" in msg.text
     assert (await client.get("/api/v1/alerts/events")).json()["events"][0]["emailed_at"] is not None
 
 
