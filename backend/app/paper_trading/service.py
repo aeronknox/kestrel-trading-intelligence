@@ -23,10 +23,11 @@ Exposure limits (position size, open positions, daily loss) count longs and shor
 are checked when an order is placed and again when a resting order fills.
 """
 
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -114,10 +115,13 @@ class PaperTradingService:
         return [PositionView(p, t.price if (t := tickers.get(p.asset.symbol)) else None) for p in positions]
 
     async def reservations(
-        self, portfolio: PaperPortfolio, *, exclude_order_id: int | None = None
+        self, portfolio: PaperPortfolio, *, exclude_order_id: int | None = None, exclude_oco_group: str | None = None
     ) -> tuple[float, dict[int, float]]:
         """Buying power held back by open orders that add risk, and quantity per asset held back by
-        open orders that reduce a position (sells against a long, covering buys against a short)."""
+        open orders that reduce a position (sells against a long, covering buys against a short).
+
+        Orders in one OCO group can't all fill, so a group reserves only its largest order. Reduce-only
+        (protective) orders reserve nothing: they shrink with the position and are cancelled when it closes."""
         await self.session.flush()  # autoflush is off; include status changes made in this request
         stmt = select(SimulatedOrder).where(
             SimulatedOrder.portfolio_id == portfolio.id, SimulatedOrder.status == OrderStatus.OPEN
@@ -127,14 +131,27 @@ class PaperTradingService:
         held = {p.asset_id: p.quantity for p in portfolio.positions}
         cash = 0.0
         quantities: dict[int, float] = {}
+        groups: dict[tuple[int, str], float] = {}
         for order in (await self.session.scalars(stmt)).all():
+            if exclude_oco_group is not None and order.oco_group == exclude_oco_group:
+                continue
+            if order.reduce_only:
+                continue  # protective orders shrink with the position instead of blocking other exits
             q = held.get(order.asset_id, 0.0)
             reduces = (order.side == OrderSide.SELL and q > QTY_EPSILON) or (order.side == OrderSide.BUY and q < -QTY_EPSILON)
-            if reduces:
+            if reduces and order.oco_group:
+                key = (order.asset_id, order.oco_group)
+                groups[key] = max(groups.get(key, 0.0), order.quantity)
+            elif reduces:
                 quantities[order.asset_id] = quantities.get(order.asset_id, 0.0) + order.quantity
+            elif order.stop_price is not None:
+                # A stop becomes a market order: allow for slippage past the stop.
+                cash += order.quantity * order.stop_price * (1 + self.slip_rate) * (1 + self.fee_rate)
             else:
                 # Worst case at the limit: a buy never fills above it, a short never sells below it.
                 cash += order.quantity * (order.limit_price or 0.0) * (1 + self.fee_rate)
+        for (asset_id, _), qty in groups.items():
+            quantities[asset_id] = quantities.get(asset_id, 0.0) + qty
         return cash, quantities
 
     @staticmethod
@@ -234,6 +251,10 @@ class PaperTradingService:
         quantity: float,
         limit_price: float | None = None,
         *,
+        stop_price: float | None = None,
+        reduce_only: bool = False,
+        oco_group: str | None = None,
+        note: str | None = None,
         strategy_id: int | None = None,
         source: str | None = None,
     ) -> SimulatedOrder:
@@ -242,10 +263,20 @@ class PaperTradingService:
             raise ValidationFailedError("Quantity must be positive")
         if order_type == OrderType.LIMIT and (limit_price is None or limit_price <= 0):
             raise ValidationFailedError("Limit orders require a positive limit price")
-        if order_type == OrderType.MARKET:
+        if order_type == OrderType.STOP and (stop_price is None or stop_price <= 0):
+            raise ValidationFailedError("Stop orders require a positive stop price")
+        if order_type != OrderType.LIMIT:
             limit_price = None
+        if order_type != OrderType.STOP:
+            stop_price = None
 
         ticker = await self.market.get_ticker(asset)
+        if stop_price is not None and self._triggered(side, stop_price, ticker.price):
+            direction = "at or above" if side == OrderSide.BUY else "at or below"
+            raise ValidationFailedError(
+                f"A {side.value} stop at {stop_price:,.2f} would trigger at once: the price ({ticker.price:,.2f}) is already "
+                f"{direction} it. Use a market order, or move the stop."
+            )
         order = SimulatedOrder(
             portfolio_id=portfolio.id,
             asset_id=asset.id,
@@ -253,6 +284,10 @@ class PaperTradingService:
             order_type=order_type,
             quantity=quantity,
             limit_price=limit_price,
+            stop_price=stop_price,
+            reduce_only=reduce_only,
+            oco_group=oco_group,
+            note=note,
             status=OrderStatus.OPEN,
             strategy_id=strategy_id,
         )
@@ -260,9 +295,11 @@ class PaperTradingService:
         self.session.add(order)
         await self.session.flush()
 
-        reference_price = limit_price if limit_price is not None else ticker.price  # validated above for limits
+        reference_price = limit_price if limit_price is not None else stop_price if stop_price is not None else ticker.price
         try:
-            await self._check_risk(portfolio, asset, side, quantity, reference_price, order_id=order.id)
+            await self._check_risk(
+                portfolio, asset, side, quantity, reference_price, order_id=order.id, reduce_only=reduce_only, oco_group=oco_group
+            )
         except RiskLimitError as exc:
             order.status = OrderStatus.REJECTED
             order.reject_reason = exc.message
@@ -276,9 +313,17 @@ class PaperTradingService:
         return order
 
     @staticmethod
-    def _is_marketable(order: SimulatedOrder, price: float) -> bool:
+    def _triggered(side: OrderSide, stop_price: float, price: float) -> bool:
+        """A buy stop fires once the price rises to it; a sell stop once it falls to it."""
+        return price >= stop_price if side == OrderSide.BUY else price <= stop_price
+
+    @classmethod
+    def _is_marketable(cls, order: SimulatedOrder, price: float) -> bool:
         if order.order_type == OrderType.MARKET:
             return True
+        if order.order_type == OrderType.STOP:
+            assert order.stop_price is not None
+            return cls._triggered(order.side, order.stop_price, price)
         assert order.limit_price is not None
         return price <= order.limit_price if order.side == OrderSide.BUY else price >= order.limit_price
 
@@ -294,13 +339,17 @@ class PaperTradingService:
         price: float,
         *,
         order_id: int | None = None,
+        reduce_only: bool = False,
+        oco_group: str | None = None,
     ) -> None:
         notional = quantity * price
         if notional < MIN_NOTIONAL:
             raise RiskLimitError(f"Order notional must be at least ${MIN_NOTIONAL:.2f}")
-        reserved_cash, reserved_qty = await self.reservations(portfolio, exclude_order_id=order_id)
+        reserved_cash, reserved_qty = await self.reservations(portfolio, exclude_order_id=order_id, exclude_oco_group=oco_group)
         position = await self._position(portfolio, asset.id)
         held = position.quantity if position else 0.0
+        if reduce_only and not ((side == OrderSide.SELL and held > QTY_EPSILON) or (side == OrderSide.BUY and held < -QTY_EPSILON)):
+            raise RiskLimitError("Reduce-only orders need an open position on the other side to reduce")
         reserved = reserved_qty.get(asset.id, 0.0)
         base = asset.base_currency
         if side == OrderSide.SELL and held > QTY_EPSILON:  # reducing a long
@@ -363,6 +412,7 @@ class PaperTradingService:
         held = position.quantity if position else 0.0
         realized = 0.0
         closing = False
+        flat = False
 
         def reject(reason: str) -> None:
             order.status = OrderStatus.REJECTED
@@ -415,6 +465,7 @@ class PaperTradingService:
             if abs(position.quantity) <= QTY_EPSILON:
                 portfolio.positions.remove(position)
                 await self.session.delete(position)
+                flat = True
 
         portfolio.total_fees += fee
         now = datetime.now(UTC)
@@ -438,7 +489,64 @@ class PaperTradingService:
             )
         )
         await self.session.flush()
+        if order.oco_group:
+            await self._cancel_open(portfolio, "Cancelled: the other order of its pair filled",
+                                    SimulatedOrder.oco_group == order.oco_group, SimulatedOrder.id != order.id)  # fmt: skip
+        if flat:
+            await self._cancel_open(portfolio, "Cancelled: the position it protected is closed",
+                                    SimulatedOrder.asset_id == order.asset_id, SimulatedOrder.reduce_only.is_(True))  # fmt: skip
         await self.record_snapshot(portfolio, force=True)
+
+    async def _cancel_open(self, portfolio: PaperPortfolio, note: str, *conditions: ColumnElement[bool]) -> int:
+        orders = (
+            await self.session.scalars(
+                select(SimulatedOrder).where(
+                    SimulatedOrder.portfolio_id == portfolio.id, SimulatedOrder.status == OrderStatus.OPEN, *conditions
+                )
+            )
+        ).all()
+        for o in orders:
+            o.status, o.note = OrderStatus.CANCELLED, note
+        await self.session.flush()
+        return len(orders)
+
+    async def protect_position(
+        self, portfolio: PaperPortfolio, asset: Asset, stop_loss: float | None, take_profit: float | None
+    ) -> list[SimulatedOrder]:
+        """Attach a reduce-only stop-loss and/or take-profit to a position, as a one-cancels-other pair.
+        Replaces the position's previous protection."""
+        if stop_loss is None and take_profit is None:
+            raise ValidationFailedError("Set a stop-loss, a take-profit, or both")
+        position = await self._position(portfolio, asset.id)
+        if position is None or abs(position.quantity) <= QTY_EPSILON:
+            raise ValidationFailedError(f"No open {asset.symbol} position to protect")
+        long = position.quantity > 0
+        price = (await self.market.get_ticker(asset)).price
+        if stop_loss is not None and (stop_loss >= price if long else stop_loss <= price):
+            raise ValidationFailedError(
+                f"The stop-loss must be {'below' if long else 'above'} the current price ({price:,.2f}) for a {'long' if long else 'short'}"
+            )
+        if take_profit is not None and (take_profit <= price if long else take_profit >= price):
+            raise ValidationFailedError(
+                f"The take-profit must be {'above' if long else 'below'} the current price ({price:,.2f}) for a {'long' if long else 'short'}"
+            )
+        await self._cancel_open(portfolio, "Replaced by new protection",
+                                SimulatedOrder.asset_id == asset.id, SimulatedOrder.reduce_only.is_(True),
+                                SimulatedOrder.oco_group.is_not(None))  # fmt: skip
+        side = OrderSide.SELL if long else OrderSide.BUY
+        qty, group = abs(position.quantity), uuid.uuid4().hex
+        orders = []
+        if stop_loss is not None:
+            orders.append(await self.place_order(portfolio, asset, side, OrderType.STOP, qty, stop_price=stop_loss,
+                                                 reduce_only=True, oco_group=group, note="Stop-loss"))  # fmt: skip
+        if take_profit is not None:
+            orders.append(await self.place_order(portfolio, asset, side, OrderType.LIMIT, qty, take_profit,
+                                                 reduce_only=True, oco_group=group, note="Take-profit"))  # fmt: skip
+        # All or nothing: half a bracket would look protected but isn't. Raising rolls back both orders.
+        for o in orders:
+            if o.status == OrderStatus.REJECTED:
+                raise ValidationFailedError(f"{o.note} rejected: {o.reject_reason}")
+        return orders
 
     @staticmethod
     def _new_position(portfolio: PaperPortfolio, order: SimulatedOrder) -> PortfolioPosition:
@@ -477,7 +585,7 @@ class PaperTradingService:
         return order
 
     async def process_open_orders(self, portfolio: PaperPortfolio) -> int:
-        """Fill any resting limit orders whose price has been reached. Returns fills.
+        """Fill resting limit orders whose price has been reached and stops whose trigger has. Returns fills.
 
         Callers must hold the portfolio row lock (`get_or_create_portfolio(lock=True)` or
         SELECT ... FOR UPDATE); otherwise concurrent requests could fill the same order
@@ -495,17 +603,28 @@ class PaperTradingService:
             return fills
         tickers = await self.market.get_tickers(list({o.asset_id: o.asset for o in orders}.values()))
         for order in orders:
+            if order.status != OrderStatus.OPEN:
+                continue  # cancelled earlier in this pass (the other order of its OCO pair filled)
+            position = await self._position(portfolio, order.asset_id)
+            held = position.quantity if position else 0.0
+            if order.reduce_only:
+                if not ((order.side == OrderSide.SELL and held > QTY_EPSILON) or (order.side == OrderSide.BUY and held < -QTY_EPSILON)):
+                    order.status, order.note = OrderStatus.CANCELLED, "Cancelled: the position it protected is closed"
+                    continue
+                order.quantity = min(order.quantity, abs(held))  # the position was partly closed meanwhile
             t = tickers.get(order.asset.symbol)
             if t is None or not self._is_marketable(order, t.price):
                 continue
-            position = await self._position(portfolio, order.asset_id)
-            held = position.quantity if position else 0.0
             adds_risk = (order.side == OrderSide.BUY and held >= -QTY_EPSILON) or (order.side == OrderSide.SELL and held <= QTY_EPSILON)
             if adds_risk:
                 # Prices and holdings may have moved since the order was placed.
-                assert order.limit_price is not None
                 slipped = t.price * (1 + self.slip_rate) if order.side == OrderSide.BUY else t.price * (1 - self.slip_rate)
-                fill_price = min(slipped, order.limit_price) if order.side == OrderSide.BUY else max(slipped, order.limit_price)
+                if order.limit_price is None:  # a triggered stop fills at market
+                    fill_price = slipped
+                elif order.side == OrderSide.BUY:
+                    fill_price = min(slipped, order.limit_price)
+                else:
+                    fill_price = max(slipped, order.limit_price)
                 try:
                     await self._check_exposure(portfolio, order.asset, order.quantity * fill_price)
                 except RiskLimitError as exc:

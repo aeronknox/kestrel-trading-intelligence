@@ -25,12 +25,12 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
   const [type, setType] = useState<OrderType>("market");
   const [mode, setMode] = useState<"qty" | "usd">("usd");
   const [amount, setAmount] = useState("");
-  // A limit price only makes sense for the symbol it was typed for.
+  // A limit or stop price only makes sense for the symbol it was typed for.
   const [limitState, setLimitState] = useState({ symbol, value: "" });
   const limit = limitState.symbol === symbol ? limitState.value : "";
   const setLimit = (value: string) => setLimitState({ symbol, value });
 
-  const price = type === "limit" && Number(limit) > 0 ? Number(limit) : ticker?.price;
+  const price = type !== "market" && Number(limit) > 0 ? Number(limit) : ticker?.price;
   const num = Number(amount);
   const qty = !isNum(num) || num <= 0 || !price ? 0 : mode === "qty" ? num : num / price;
   const execPrice = price ? price * (1 + ((side === "buy" ? 1 : -1) * portfolio.slippage_bps) / 10_000) : 0;
@@ -44,11 +44,20 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
   const opensRisk = action === "Buy" || action === "Sell short";
 
   const place = useMutation({
-    mutationFn: () => api.paper.placeOrder({ symbol, side, order_type: type, quantity: Number(qty.toPrecision(12)), limit_price: type === "limit" ? Number(limit) : null }),
+    mutationFn: () =>
+      api.paper.placeOrder({
+        symbol,
+        side,
+        order_type: type,
+        quantity: Number(qty.toPrecision(12)),
+        limit_price: type === "limit" ? Number(limit) : null,
+        stop_price: type === "stop" ? Number(limit) : null,
+      }),
     onSuccess: (o) => {
       qc.invalidateQueries({ queryKey: ["paper"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       if (o.status === "filled") toast.success(`Filled: ${o.side} ${formatQty(o.quantity)} ${o.asset.base_currency} @ ${formatPrice(o.filled_price)}`);
+      else if (o.status === "open" && o.order_type === "stop") toast.info(`Stop order placed — becomes a market order at ${formatPrice(o.stop_price)}`);
       else if (o.status === "open") toast.info(`Limit order placed — rests until price reaches ${formatPrice(o.limit_price)}`);
       else toast.error(`Order rejected: ${o.reject_reason}`);
       if (o.status !== "rejected") setAmount("");
@@ -56,7 +65,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const invalid = qty <= 0 || (type === "limit" && !(Number(limit) > 0)) || !ticker;
+  const invalid = qty <= 0 || (type !== "market" && !(Number(limit) > 0)) || !ticker;
 
   return (
     <Card>
@@ -87,7 +96,18 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
         <Segmented value={type} onValueChange={(v) => setType(v as OrderType)} label="Order type" className="w-full">
             <SegmentedItem value="market" className="flex-1">Market</SegmentedItem>
             <SegmentedItem value="limit" className="flex-1">Limit</SegmentedItem>
+            <SegmentedItem value="stop" className="flex-1">Stop</SegmentedItem>
           </Segmented>
+        {type === "stop" && (
+          <Field
+            label="Stop price (USD)"
+            hint={side === "buy"
+              ? "Becomes a market order once the price rises to this level (e.g. buy a breakout, or cap a short's loss)."
+              : "Becomes a market order once the price falls to this level (e.g. a stop-loss). A gap can fill below it."}
+          >
+            <Input type="number" min={0} step="any" value={limit} onChange={(e) => setLimit(e.target.value)} placeholder={formatPrice(ticker?.price)} />
+          </Field>
+        )}
         {type === "limit" && (
           <Field label="Limit price (USD)" hint={side === "buy" ? "Fills when the price is at or below this level." : "Fills when the price is at or above this level."}>
             <Input type="number" min={0} step="any" value={limit} onChange={(e) => setLimit(e.target.value)} placeholder={formatPrice(ticker?.price)} />

@@ -75,6 +75,11 @@ class SimulatedOrder(IdMixin, Base):
     order_type: Mapped[OrderType] = mapped_column(_enum(OrderType))
     quantity: Mapped[float] = mapped_column(Money)
     limit_price: Mapped[float | None] = mapped_column(Money, nullable=True)
+    stop_price: Mapped[float | None] = mapped_column(Money, nullable=True)
+    # Only ever shrinks a position; cancelled automatically once that position is closed.
+    reduce_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # One-cancels-other: when an order in the group fills, the rest are cancelled.
+    oco_group: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[OrderStatus] = mapped_column(_enum(OrderStatus), default=OrderStatus.OPEN)
     filled_price: Mapped[float | None] = mapped_column(Money, nullable=True)
     fee: Mapped[float] = mapped_column(Money, default=0.0)

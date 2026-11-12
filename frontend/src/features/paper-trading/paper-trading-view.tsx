@@ -23,11 +23,12 @@ import { api } from "@/services/api";
 import type { Order, Portfolio } from "@/types/api";
 
 import { OrderTicket } from "./order-ticket";
+import { ProtectDialog, protection } from "./protect-dialog";
 import { RiskLimitsDialog } from "./risk-limits-dialog";
 
 const STATUS_VARIANT = { filled: "gain", open: "info", rejected: "loss", cancelled: "secondary" } as const;
 
-function PositionsTable({ portfolio }: { portfolio: Portfolio }) {
+function PositionsTable({ portfolio, openOrders }: { portfolio: Portfolio; openOrders: Order[] }) {
   const { tickers } = useMarketStream();
   const qc = useQueryClient();
   const close = useMutation({
@@ -59,6 +60,7 @@ function PositionsTable({ portfolio }: { portfolio: Portfolio }) {
           const upnl = price ? (price - p.avg_entry_price) * p.quantity : p.unrealized_pnl;
           const short = p.quantity < 0;
           const upct = price ? (price / p.avg_entry_price - 1) * 100 * (short ? -1 : 1) : p.unrealized_pnl_pct;
+          const guard = protection(p, openOrders);
           return (
             <TR key={p.id}>
               <TD>
@@ -67,6 +69,13 @@ function PositionsTable({ portfolio }: { portfolio: Portfolio }) {
                   <span className="font-medium">{p.asset.symbol}</span>
                   {short && <Badge variant="loss">Short</Badge>}
                 </Link>
+                {(guard.stopLoss || guard.takeProfit) && (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {guard.stopLoss && <>SL {formatPrice(guard.stopLoss)}</>}
+                    {guard.stopLoss && guard.takeProfit && " · "}
+                    {guard.takeProfit && <>TP {formatPrice(guard.takeProfit)}</>}
+                  </p>
+                )}
               </TD>
               <TD className="text-right">{formatQty(p.quantity)}</TD>
               <TD className="hidden text-right 2xl:table-cell">{formatPrice(p.avg_entry_price)}</TD>
@@ -76,7 +85,8 @@ function PositionsTable({ portfolio }: { portfolio: Portfolio }) {
                 {formatUsd(upnl, { sign: true })} <span className="text-xs">({formatPct(upct, 1)})</span>
               </TD>
               <TD className="hidden text-right text-muted-foreground 2xl:table-cell">{formatPct(p.allocation_pct, 1, false)}</TD>
-              <TD className="text-right">
+              <TD className="whitespace-nowrap text-right">
+                <ProtectDialog position={p} price={price} openOrders={openOrders} />
                 <Button
                   size="sm"
                   variant="outline"
@@ -109,7 +119,7 @@ function OrdersTable({ orders, cancellable }: { orders: Order[]; cancellable?: b
     <Table>
       <THead>
         <TR className="hover:bg-transparent">
-          <TH>Time</TH><TH>Asset</TH><TH>Side</TH><TH>Type</TH><TH className="text-right">Qty</TH><TH className="text-right">Limit</TH><TH className="text-right">Fill price</TH><TH className="text-right">Fee</TH><TH>Status</TH>{cancellable && <TH />}
+          <TH>Time</TH><TH>Asset</TH><TH>Side</TH><TH>Type</TH><TH className="text-right">Qty</TH><TH className="text-right">Limit / stop</TH><TH className="text-right">Fill price</TH><TH className="text-right">Fee</TH><TH>Status</TH>{cancellable && <TH />}
         </TR>
       </THead>
       <TBody>
@@ -127,13 +137,13 @@ function OrdersTable({ orders, cancellable }: { orders: Order[]; cancellable?: b
               )}
             </TD>
             <TD className="text-right">{formatQty(o.quantity)}</TD>
-            <TD className="text-right">{formatPrice(o.limit_price)}</TD>
+            <TD className="text-right">{o.stop_price ? <span title="Stop: becomes a market order at this price">stop {formatPrice(o.stop_price)}</span> : formatPrice(o.limit_price)}</TD>
             <TD className="text-right">{formatPrice(o.filled_price)}</TD>
             <TD className="text-right text-muted-foreground">{o.fee ? formatUsd(o.fee) : "—"}</TD>
             <TD>
               <Badge variant={STATUS_VARIANT[o.status]} title={o.reject_reason ?? undefined}>{o.status}</Badge>
               {o.reject_reason && <p className="mt-0.5 max-w-56 truncate text-[11px] text-muted-foreground" title={o.reject_reason}>{o.reject_reason}</p>}
-              {o.note && <p className="mt-0.5 max-w-56 truncate text-[11px] text-warn" title={o.note}>{o.note}</p>}
+              {o.note && <p className={cn("mt-0.5 max-w-56 truncate text-[11px]", o.note.startsWith("Margin call") ? "text-warn" : "text-muted-foreground")} title={o.note}>{o.note}</p>}
             </TD>
             {cancellable && (
               <TD className="text-right">
@@ -231,7 +241,7 @@ export function PaperTradingView() {
                 <span className="text-xs text-muted-foreground">Max {p.risk_limits.max_position_pct}% per position · {p.risk_limits.max_open_positions} positions · {p.risk_limits.daily_loss_limit_pct}% daily loss limit</span>
               </CardHeader>
               <CardContent className="px-2">
-                <PositionsTable portfolio={p} />
+                <PositionsTable portfolio={p} openOrders={openOrders} />
               </CardContent>
             </Card>
             <Card>

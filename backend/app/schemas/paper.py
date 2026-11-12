@@ -14,6 +14,15 @@ class OrderCreate(BaseModel):
     order_type: OrderType = OrderType.MARKET
     quantity: float = Field(gt=0, le=1e12)
     limit_price: float | None = Field(None, gt=0)
+    stop_price: float | None = Field(None, gt=0, description="Trigger price for stop orders")
+    reduce_only: bool = Field(False, description="Only ever shrink a position; cancelled once it is closed")
+
+
+class ProtectPosition(BaseModel):
+    """A one-cancels-other stop-loss and take-profit for an open position (replaces earlier ones)."""
+
+    stop_loss: float | None = Field(None, gt=0)
+    take_profit: float | None = Field(None, gt=0)
 
 
 class OrderOut(ORMModel):
@@ -23,6 +32,9 @@ class OrderOut(ORMModel):
     order_type: OrderType
     quantity: float
     limit_price: float | None
+    stop_price: float | None = None
+    reduce_only: bool = False
+    oco_group: str | None = None
     status: OrderStatus
     filled_price: float | None
     fee: float

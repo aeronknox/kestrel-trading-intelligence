@@ -18,6 +18,7 @@ function annotate(title, text) {
 // A crash part-way through must still say what had failed so far.
 for (const event of ["uncaughtException", "unhandledRejection"]) {
   process.on(event, (e) => {
+    console.error(`Browser flows crashed: ${e?.stack ?? e}\nResults so far:\n${results.join("\n")}`);
     annotate("Browser flows crashed", `${e?.stack ?? e} | results so far: ${results.join(", ")}`);
     process.exit(1);
   });
@@ -254,7 +255,7 @@ await step("paper market buy via ticket", async () => {
   await page.getByPlaceholder("0.00").fill("1000");
   await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
   await toast(/Filled: buy/);
-  await page.getByRole("button", { name: "Close" }).first().waitFor();
+  await page.getByRole("button", { name: "Close", exact: true }).first().waitFor();
 });
 
 await step("paper limit order + cancel", async () => {
@@ -267,10 +268,32 @@ await step("paper limit order + cancel", async () => {
   await toast(/Order cancelled/);
 });
 
+await step("paper stop order + position protection", async () => {
+  // A buy stop far above the market rests (and reserves cash) until cancelled.
+  await page.getByRole("radio", { name: "Stop" }).click();
+  await page.getByLabel(/Stop price/).fill("100000000");
+  await page.getByPlaceholder("0.00").fill("50");
+  await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
+  await toast(/Stop order placed/);
+  await page.getByText(/^stop \$?100,000,000/).first().waitFor();
+  await page.getByLabel("Cancel order").first().click();
+  await toast(/Order cancelled/);
+  // One-cancels-other stop-loss and take-profit on the open ETH position.
+  await page.getByRole("button", { name: "Protect ETH-USD" }).click();
+  await page.getByLabel(/Stop-loss price/).fill("100");
+  await page.getByLabel(/Take-profit price/).fill("100000000");
+  await page.getByRole("button", { name: "Protect position" }).click();
+  await toast(/ETH-USD protected/);
+  await page.getByText(/^SL \$?100\.00/).first().waitFor();
+  await page.getByText("Stop-loss", { exact: true }).first().waitFor();
+});
+
 await step("paper close position", async () => {
+  // Protection never blocks closing; closing cancels it.
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Close" }).first().click();
+  await page.getByRole("button", { name: "Close", exact: true }).first().click();
   await toast(/Closed ETH-USD/);
+  await page.getByText("No open orders").waitFor();
 });
 
 await step("paper trades CSV export", async () => {
@@ -292,7 +315,7 @@ await step("paper short sale and cover", async () => {
   await toast(/Filled: sell/);
   await page.getByText("Short", { exact: true }).first().waitFor();
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Cover" }).first().click();
+  await page.getByRole("button", { name: "Cover", exact: true }).first().click();
   await toast(/Closed SOL/);
 });
 

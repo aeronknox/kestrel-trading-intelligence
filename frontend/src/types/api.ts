@@ -390,7 +390,8 @@ export interface Backtest {
 
 // ----------------------------------------------------------- paper trading
 export type OrderSide = "buy" | "sell";
-export type OrderType = "market" | "limit";
+/** "stop" is a stop-market order: it becomes a market order once the price reaches stop_price. */
+export type OrderType = "market" | "limit" | "stop";
 export type OrderStatus = "open" | "filled" | "cancelled" | "rejected";
 
 export interface Order {
@@ -400,6 +401,11 @@ export interface Order {
   order_type: OrderType;
   quantity: number;
   limit_price: number | null;
+  stop_price?: number | null;
+  /** Only shrinks a position; cancelled automatically once the position is closed. */
+  reduce_only?: boolean;
+  /** One-cancels-other group, e.g. a position's stop-loss and take-profit. */
+  oco_group?: string | null;
   status: OrderStatus;
   filled_price: number | null;
   fee: number;

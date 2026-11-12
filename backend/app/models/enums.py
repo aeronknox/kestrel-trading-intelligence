@@ -35,6 +35,7 @@ class OrderSide(StrEnum):
 class OrderType(StrEnum):
     MARKET = "market"
     LIMIT = "limit"
+    STOP = "stop"  # stop-market: becomes a market order once the price reaches stop_price
 
 
 class OrderStatus(StrEnum):
