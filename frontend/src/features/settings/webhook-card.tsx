@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge, Field, Input } from "@/components/ui/primitives";
+import { Badge, Field, Input, Label, Switch } from "@/components/ui/primitives";
 import { timeAgo } from "@/lib/format";
 import { api } from "@/services/api";
 import type { Webhook } from "@/types/api";
@@ -48,6 +48,14 @@ export function WebhookCard({ isDemo }: { isDemo: boolean }) {
       saved(w);
       setDraft(null);
       toast.success("Webhook removed");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const options = useMutation({
+    mutationFn: (orders: boolean) => api.users.setWebhookOptions({ orders }),
+    onSuccess: (w) => {
+      saved(w);
+      toast.success(w.orders ? "Paper order fills will be posted too" : "Only strategy alerts will be posted");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -123,6 +131,17 @@ export function WebhookCard({ isDemo }: { isDemo: boolean }) {
                       "Not delivered yet"
                     )}
                   </p>
+                </div>
+
+                <div className="flex items-start justify-between gap-4 rounded-md border border-border p-3">
+                  <div>
+                    <Label htmlFor="webhook-orders">Also post paper order fills</Label>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      Stop-losses, take-profits, trailing stops and limit orders that fill (or are rejected) in the background, and margin calls.
+                      They always appear in the notification bell.
+                    </p>
+                  </div>
+                  <Switch id="webhook-orders" checked={w.orders} disabled={options.isPending} onCheckedChange={(on) => options.mutate(on)} />
                 </div>
 
                 {w.format === "json" && w.secret && (

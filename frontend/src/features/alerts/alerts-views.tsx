@@ -40,15 +40,50 @@ function useMarkRead() {
   });
 }
 
+const NOTIFICATIONS_KEY = ["notifications"] as const;
+const ORDER_BADGE = {
+  order_filled: { label: "Filled", variant: "info" },
+  order_rejected: { label: "Rejected", variant: "warn" },
+  margin_call: { label: "Margin call", variant: "loss" },
+} as const;
+
+/** Strategy alert events and paper-order notifications, newest first. */
+function useFeed(limit: number) {
+  const events = useEvents(limit);
+  const orders = useQuery({ queryKey: [...NOTIFICATIONS_KEY, limit], queryFn: () => api.notifications.list(limit), refetchInterval: 30_000 });
+  const items = [
+    ...(events.data?.events ?? []).map((e) => ({
+      key: `a${e.id}`, at: e.created_at, read: Boolean(e.read_at), badge: <KindBadge kind={e.kind} />,
+      symbol: e.symbol, detail: e.timeframe, text: e.message,
+    })),
+    ...(orders.data?.notifications ?? []).map((n) => ({
+      key: `n${n.id}`, at: n.created_at, read: Boolean(n.read_at), badge: <Badge variant={ORDER_BADGE[n.kind].variant}>{ORDER_BADGE[n.kind].label}</Badge>,
+      symbol: n.symbol ?? "", detail: "paper", text: n.message,
+    })),
+  ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
+  return { items, unread: (events.data?.unread ?? 0) + (orders.data?.unread ?? 0), alertsUnread: events.data?.unread ?? 0, ordersUnread: orders.data?.unread ?? 0 };
+}
+
 // ------------------------------------------------------------- header bell
 export function AlertsBell() {
-  const events = useEvents(8);
+  const feed = useFeed(10);
   const markRead = useMarkRead();
-  const unread = events.data?.unread ?? 0;
+  const qc = useQueryClient();
+  const markOrders = useMutation({
+    mutationFn: () => api.notifications.markRead(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: NOTIFICATIONS_KEY }),
+  });
+  const unread = feed.unread;
   return (
-    <DropdownMenu onOpenChange={(open) => !open && unread > 0 && markRead.mutate(undefined)}>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open) return;
+        if (feed.alertsUnread) markRead.mutate(undefined);
+        if (feed.ordersUnread) markOrders.mutate();
+      }}
+    >
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" className="relative" aria-label={unread ? `Alerts, ${unread} unread` : "Alerts"}>
+        <Button variant="ghost" size="icon-sm" className="relative" aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}>
           {unread ? <BellRing /> : <Bell />}
           {unread > 0 && (
             <span className="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-4 font-semibold text-primary-foreground tabular">
@@ -58,26 +93,29 @@ export function AlertsBell() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
-        <DropdownMenuLabel className="flex items-center justify-between">
-          <span className="font-medium text-foreground">Strategy alerts</span>
-          <Link href="/alerts" className="text-xs font-normal text-primary hover:underline">View all</Link>
+        <DropdownMenuLabel className="flex items-center justify-between gap-2">
+          <span className="font-medium text-foreground">Notifications</span>
+          <span className="flex gap-3 text-xs font-normal">
+            <Link href="/alerts" className="text-primary hover:underline">Strategy alerts</Link>
+            <Link href="/paper-trading" className="text-primary hover:underline">Paper orders</Link>
+          </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {!events.data?.events.length ? (
+        {!feed.items.length ? (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-            No alerts yet. Turn them on from a strategy&apos;s page.
+            Nothing yet. Strategy alerts and paper orders that fill in the background (stop-losses, take-profits, limits) show up here.
           </p>
         ) : (
           <ul className="max-h-96 overflow-y-auto">
-            {events.data.events.map((e) => (
-              <li key={e.id} className={cn("border-b border-border px-3 py-2 last:border-0", !e.read_at && "bg-primary/5")}>
+            {feed.items.map((e) => (
+              <li key={e.key} className={cn("border-b border-border px-3 py-2 last:border-0", !e.read && "bg-primary/5")}>
                 <div className="flex items-center gap-2 text-xs">
-                  <KindBadge kind={e.kind} />
+                  {e.badge}
                   <span className="font-medium">{e.symbol}</span>
-                  <span className="text-muted-foreground">{e.timeframe}</span>
-                  <span className="ml-auto text-muted-foreground">{timeAgo(e.created_at)}</span>
+                  <span className="text-muted-foreground">{e.detail}</span>
+                  <span className="ml-auto text-muted-foreground">{timeAgo(e.at)}</span>
                 </div>
-                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{e.message}</p>
+                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{e.text}</p>
               </li>
             ))}
           </ul>

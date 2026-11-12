@@ -5,6 +5,7 @@ from app.models.alert import AlertEvent, StrategyAlert
 from app.models.audit import AuditLog
 from app.models.backtest import BacktestResult, BacktestSession, ResearchRun
 from app.models.market import Asset, MarketData, Watchlist, WatchlistItem
+from app.models.notification import Notification
 from app.models.paper import (
     PaperPortfolio,
     PortfolioPosition,
@@ -26,6 +27,7 @@ __all__ = [
     "BacktestResult",
     "BacktestSession",
     "MarketData",
+    "Notification",
     "PaperPortfolio",
     "PortfolioPosition",
     "PortfolioSnapshot",

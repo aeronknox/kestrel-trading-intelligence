@@ -45,6 +45,7 @@ from app.models.paper import (
     SimulatedOrder,
     SimulatedTrade,
 )
+from app.services.notifications import notify_order
 
 logger = get_logger(__name__)
 
@@ -604,6 +605,7 @@ class PaperTradingService:
             MARGIN_CALLS.inc()
             order.note = f"Margin call: price {v.price:,.2f} reached twice the short's average entry {v.position.avg_entry_price:,.2f}"
             logger.info("paper_margin_call", portfolio_id=portfolio.id, symbol=v.position.asset.symbol, status=order.status.value)
+            await notify_order(self.session, portfolio.user_id, order, margin_call=True)
             covers += order.status == OrderStatus.FILLED
         return covers
 
@@ -669,9 +671,11 @@ class PaperTradingService:
                 except RiskLimitError as exc:
                     order.status = OrderStatus.REJECTED
                     order.reject_reason = f"At fill time: {exc.message}"[:255]
+                    await notify_order(self.session, portfolio.user_id, order)
                     continue
             await self._fill(portfolio, order, t.price)
             fills += order.status == OrderStatus.FILLED
+            await notify_order(self.session, portfolio.user_id, order)  # filled, or rejected at fill time
         return fills
 
     # --------------------------------------------------------------- history

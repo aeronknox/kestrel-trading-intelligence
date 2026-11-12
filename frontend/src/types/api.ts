@@ -712,6 +712,8 @@ export interface AlertSettings {
 
 export interface Webhook {
   url: string | null;
+  /** Also post simulated paper order fills, rejections and margin calls. */
+  orders: boolean;
   format: "slack" | "discord" | "json" | null;
   /** Signs generic JSON deliveries (X-Kestrel-Signature). */
   secret: string | null;
@@ -770,6 +772,23 @@ export interface ForwardTest {
   win_rate: number | null;
   as_of: string;
   disclaimer: string;
+}
+
+/** A simulated paper order that filled or failed in the background (not a strategy alert). */
+export interface AppNotification {
+  id: number;
+  kind: "order_filled" | "order_rejected" | "margin_call";
+  title: string;
+  message: string;
+  symbol: string | null;
+  order_id: number | null;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface NotificationsPage {
+  notifications: AppNotification[];
+  unread: number;
 }
 
 export interface AlertEventsPage {

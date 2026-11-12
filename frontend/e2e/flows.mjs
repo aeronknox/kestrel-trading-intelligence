@@ -156,8 +156,8 @@ await step("strategy alerts switch on and are listed", async () => {
   await page.getByText("Watching").waitFor();
   await page.getByRole("switch", { name: "Auto paper-trade" }).click();
   await toast(/Forward test on/);
-  await page.getByRole("button", { name: /^Alerts/ }).click(); // header bell
-  await page.getByText("Strategy alerts").waitFor();
+  await page.getByRole("button", { name: /^Notifications/ }).click(); // header bell
+  await page.getByRole("menu").getByText("Notifications", { exact: true }).waitFor();
   await page.keyboard.press("Escape");
   await page.goto(`${BASE}/alerts`);
   await page.getByText("Watched strategies").waitFor();

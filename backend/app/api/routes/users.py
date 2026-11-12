@@ -45,6 +45,7 @@ async def update_settings(body: UserSettingsUpdate, user: CurrentUser, db: DbSes
 # ----------------------------------------------------------------- alert webhook
 class WebhookOut(BaseModel):
     url: str | None
+    orders: bool = False  # also post simulated paper order fills, rejections and margin calls
     format: webhooks.WebhookFormat | None
     # Signs generic JSON deliveries (X-Kestrel-Signature); shown only to its owner.
     secret: str | None
@@ -63,7 +64,8 @@ class WebhookTestOut(BaseModel):
 
 def _webhook_out(s: UserSettings | None) -> WebhookOut:
     url = s.webhook_url if s else None
-    return WebhookOut(url=url, format=webhooks.webhook_format(url) if url else None, secret=s.webhook_secret if s and url else None,
+    return WebhookOut(url=url, orders=bool(s and s.webhook_orders), format=webhooks.webhook_format(url) if url else None,
+                      secret=s.webhook_secret if s and url else None,
                       last_status=s.webhook_last_status if s else None, last_at=s.webhook_last_at if s else None)  # fmt: skip
 
 
@@ -102,6 +104,17 @@ async def delete_webhook(user: CurrentUser, db: DbSession) -> WebhookOut:
     s.webhook_url = s.webhook_secret = s.webhook_last_status = None
     s.webhook_last_at = None
     await audit(db, "user.webhook_removed", user_id=user.id)
+    return _webhook_out(s)
+
+
+class WebhookOptions(BaseModel):
+    orders: bool
+
+
+@router.patch("/users/me/webhook", response_model=WebhookOut)
+async def update_webhook_options(body: WebhookOptions, user: CurrentUser, db: DbSession) -> WebhookOut:
+    s = await _settings_for_webhook(user, db)
+    s.webhook_orders = body.orders
     return _webhook_out(s)
 
 

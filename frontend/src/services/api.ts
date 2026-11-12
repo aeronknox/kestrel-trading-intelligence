@@ -39,6 +39,7 @@ import type {
   StrategyAlert,
   TunableParameter,
   Webhook,
+  NotificationsPage,
   StrategyInput,
   StrategyTemplate,
   Ticker,
@@ -142,6 +143,7 @@ export const api = {
     removeWebhook: () => del<Webhook>("/users/me/webhook"),
     testWebhook: () => post<{ ok: boolean; webhook: Webhook }>("/users/me/webhook/test"),
     rotateWebhookSecret: () => post<Webhook>("/users/me/webhook/secret"),
+    setWebhookOptions: (body: { orders: boolean }) => patch<Webhook>("/users/me/webhook", body),
   },
   admin: {
     users: () => get<User[]>("/admin/users"),
@@ -220,6 +222,10 @@ export const api = {
     analytics: () => get<PortfolioAnalytics>("/paper/analytics"),
     updateRiskLimits: (body: RiskLimits) => put<Portfolio>("/paper/portfolio/risk-limits", body),
     reset: () => post<Portfolio>("/paper/portfolio/reset"),
+  },
+  notifications: {
+    list: (limit = 50) => get<NotificationsPage>("/notifications", { limit }),
+    markRead: (ids?: number[]) => post<NotificationsPage>("/notifications/read", ids ? { ids } : {}),
   },
   dashboard: () => get<Dashboard>("/dashboard"),
   assistant: {

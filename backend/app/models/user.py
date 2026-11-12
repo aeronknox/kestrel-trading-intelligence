@@ -50,6 +50,8 @@ class UserSettings(IdMixin, TimestampMixin, Base):
     webhook_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     webhook_last_status: Mapped[str | None] = mapped_column(String(255), nullable=True)
     webhook_last_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    # Also post simulated paper order fills, rejections and margin calls (not only strategy alerts).
+    webhook_orders: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     user: Mapped[User] = relationship(back_populates="settings")
 
