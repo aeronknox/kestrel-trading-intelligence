@@ -276,10 +276,17 @@ await step("paper limit order + cancel", async () => {
   await page.getByRole("radio", { name: "Limit" }).click();
   await page.getByLabel(/Limit price/).fill("1");
   await page.getByPlaceholder("0.00").fill("50");
+  // Good for a day only: the order shows when it expires.
+  await page.getByLabel("Time in force").click();
+  await page.getByRole("option", { name: "1 day" }).click();
   await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
-  await toast(/Limit order placed/);
-  await page.getByRole("row").filter({ has: page.getByRole("cell", { name: "1.00", exact: true }) }).getByLabel("Cancel order").click(); // its own row, not a protective order
+  await toast(/Limit order placed .*, or expires /);
+  const limitRow = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "1.00", exact: true }) }); // its own row, not a protective order
+  await limitRow.getByText(/^Expires /).waitFor();
+  await limitRow.getByLabel("Cancel order").click();
   await toast(/Order cancelled/);
+  await page.getByLabel("Time in force").click();
+  await page.getByRole("option", { name: "Good till cancelled" }).click();
 });
 
 await step("paper stop order + position protection", async () => {

@@ -11,10 +11,18 @@ import { Segmented, SegmentedItem } from "@/components/ui/segmented";
 import { Badge, Field, Input, Label, Switch } from "@/components/ui/primitives";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLiveTicker } from "@/hooks/use-market-stream";
-import { formatPct, formatPrice, formatQty, formatUsd, isNum } from "@/lib/format";
+import { formatDateTime, formatPct, formatPrice, formatQty, formatUsd, isNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import type { OrderSide, OrderType, Portfolio } from "@/types/api";
+
+/** Time in force for resting orders: hours until an unfilled order expires ("gtc": until cancelled). */
+const TIME_IN_FORCE = [
+  ["gtc", "Good till cancelled"],
+  ["1", "1 hour"],
+  ["24", "1 day"],
+  ["168", "1 week"],
+] as const;
 
 /** Whether a `side` order on `symbol` would open or add to a position (rather than reduce one). */
 function opensRiskFor(side: OrderSide, portfolio: Portfolio, symbol: string): boolean {
@@ -31,6 +39,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
   const [type, setType] = useState<OrderType>("market");
   const [mode, setMode] = useState<"qty" | "usd">("usd");
   const [amount, setAmount] = useState("");
+  const [tif, setTif] = useState("gtc");
   // A limit or stop price only makes sense for the symbol it was typed for.
   const [limitState, setLimitState] = useState({ symbol, value: "" });
   const limit = limitState.symbol === symbol ? limitState.value : "";
@@ -92,6 +101,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
         trail_pct: type === "trailing_stop" ? Number(limit) : null,
         stop_loss: bracket ? slNum : null,
         take_profit: bracket ? tpNum : null,
+        expires_in_hours: type !== "market" && tif !== "gtc" ? Number(tif) : null,
       }),
     onSuccess: (o) => {
       qc.invalidateQueries({ queryKey: ["paper"] });
@@ -101,7 +111,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
       else if (o.status === "open" && o.order_type === "trailing_stop")
         toast.info(`Trailing stop placed — ${o.trail_pct}% behind the price, stop now at ${formatPrice(o.stop_price)}`);
       else if (o.status === "open" && o.order_type === "stop") toast.info(`Stop order placed — becomes a market order at ${formatPrice(o.stop_price)}`);
-      else if (o.status === "open") toast.info(`Limit order placed — rests until price reaches ${formatPrice(o.limit_price)}`);
+      else if (o.status === "open") toast.info(`Limit order placed — rests until price reaches ${formatPrice(o.limit_price)}${o.expires_at ? `, or expires ${formatDateTime(o.expires_at)}` : ""}`);
       else toast.error(`Order rejected: ${o.reject_reason}`);
       if (o.status !== "rejected") setAmount("");
     },
@@ -170,6 +180,19 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
         {type === "limit" && (
           <Field label="Limit price (USD)" hint={side === "buy" ? "Fills when the price is at or below this level." : "Fills when the price is at or above this level."}>
             <Input type="number" min={0} step="any" value={limit} onChange={(e) => setLimit(e.target.value)} placeholder={formatPrice(ticker?.price)} />
+          </Field>
+        )}
+        {type !== "market" && (
+          <Field
+            label="Time in force"
+            hint={tif === "gtc" ? "Rests until it fills or you cancel it." : "If it hasn't filled by then, it is cancelled automatically and you are notified."}
+          >
+            <Select value={tif} onValueChange={setTif}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {TIME_IN_FORCE.map(([v, label]) => <SelectItem key={v} value={v}>{label}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </Field>
         )}
         <Field label={mode === "usd" ? "Amount (USD)" : `Quantity (${symbol.split("-")[0]})`}>

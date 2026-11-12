@@ -26,7 +26,7 @@ import { OrderTicket } from "./order-ticket";
 import { ProtectDialog, protection } from "./protect-dialog";
 import { RiskLimitsDialog } from "./risk-limits-dialog";
 
-const STATUS_VARIANT = { filled: "gain", open: "info", rejected: "loss", cancelled: "secondary" } as const;
+const STATUS_VARIANT = { filled: "gain", open: "info", rejected: "loss", cancelled: "secondary", expired: "secondary" } as const;
 
 function PositionsTable({ portfolio, openOrders }: { portfolio: Portfolio; openOrders: Order[] }) {
   const { tickers } = useMarketStream();
@@ -150,6 +150,7 @@ function OrdersTable({ orders, cancellable }: { orders: Order[]; cancellable?: b
             <TD className="text-right text-muted-foreground">{o.fee ? formatUsd(o.fee) : "—"}</TD>
             <TD>
               <Badge variant={STATUS_VARIANT[o.status]} title={o.reject_reason ?? undefined}>{o.status}</Badge>
+              {o.status === "open" && o.expires_at && <p className="mt-0.5 text-[11px] text-muted-foreground">Expires {formatDateTime(o.expires_at)}</p>}
               {o.reject_reason && <p className="mt-0.5 max-w-56 truncate text-[11px] text-muted-foreground" title={o.reject_reason}>{o.reject_reason}</p>}
               {o.note && <p className={cn("mt-0.5 max-w-56 truncate text-[11px]", o.note.startsWith("Margin call") ? "text-warn" : "text-muted-foreground")} title={o.note}>{o.note}</p>}
             </TD>

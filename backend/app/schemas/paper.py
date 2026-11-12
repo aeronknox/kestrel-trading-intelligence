@@ -7,6 +7,8 @@ from app.models.enums import OrderSide, OrderStatus, OrderType
 from app.schemas.common import ORMModel
 from app.schemas.market import AssetOut
 
+MAX_EXPIRY_HOURS = 90 * 24
+
 
 class OrderCreate(BaseModel):
     symbol: str = Field(min_length=1, max_length=32)
@@ -19,6 +21,9 @@ class OrderCreate(BaseModel):
     reduce_only: bool = Field(False, description="Only ever shrink a position; cancelled once it is closed")
     stop_loss: float | None = Field(None, gt=0, description="Attach a stop-loss once this entry fills")
     take_profit: float | None = Field(None, gt=0, description="Attach a take-profit once this entry fills")
+    expires_in_hours: float | None = Field(
+        None, gt=0, le=MAX_EXPIRY_HOURS, description="Resting orders: expire if not filled within this many hours (default: until cancelled)"
+    )
 
 
 class ProtectPosition(BaseModel):
@@ -49,6 +54,7 @@ class OrderOut(ORMModel):
     reject_reason: str | None
     created_at: datetime
     filled_at: datetime | None
+    expires_at: datetime | None = None
     strategy_id: int | None = None  # set when a strategy's forward test placed the order
     note: str | None = None  # e.g. "Margin call: ..." for orders the system placed
 

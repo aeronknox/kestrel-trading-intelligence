@@ -44,6 +44,7 @@ const NOTIFICATIONS_KEY = ["notifications"] as const;
 const ORDER_BADGE = {
   order_filled: { label: "Filled", variant: "info" },
   order_rejected: { label: "Rejected", variant: "warn" },
+  order_expired: { label: "Expired", variant: "secondary" },
   margin_call: { label: "Margin call", variant: "loss" },
 } as const;
 

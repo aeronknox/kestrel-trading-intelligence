@@ -117,3 +117,52 @@ async def test_notifications_are_private(auth_client, provider) -> None:  # type
 @pytest.fixture(autouse=True)
 def _no_real_network(monkeypatch):  # type: ignore[no-untyped-def]
     monkeypatch.setattr(webhooks, "transport", httpx.MockTransport(Receiver()))
+
+
+async def test_resting_orders_expire_release_their_reservation_and_notify(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import update
+
+    from app.database.session import get_sessionmaker
+    from app.models.paper import SimulatedOrder
+
+    await provider.set_price("SOL-USD", 100.0)
+    cash = (await auth_client.get(f"{API}/paper/portfolio")).json()["available_cash"]
+    order = await buy(auth_client, order_type="limit", limit_price=90, expires_in_hours=24)
+    assert order["status"] == "open" and order["expires_at"] is not None
+    expires = datetime.fromisoformat(order["expires_at"])
+    assert timedelta(hours=23.9) < expires - datetime.now(UTC) <= timedelta(hours=24)
+    gtc = await buy(auth_client, order_type="limit", limit_price=80, quantity=1)  # good till cancelled
+    assert gtc["expires_at"] is None
+    assert (await auth_client.get(f"{API}/paper/portfolio")).json()["available_cash"] < cash - 900
+
+    await feed(auth_client)  # not yet due: still open
+    async with get_sessionmaker()() as s:  # a day passes
+        await s.execute(update(SimulatedOrder).where(SimulatedOrder.id == order["id"]).values(expires_at=datetime.now(UTC) - timedelta(seconds=1)))
+        await s.commit()
+    page = await feed(auth_client)
+    n = page["notifications"][0]
+    assert (n["kind"], n["title"]) == ("order_expired", "Limit buy expired · SOL-USD")
+    assert "expired unfilled" in n["message"]
+    orders = {o["id"]: o for o in (await auth_client.get(f"{API}/paper/orders")).json()}
+    assert orders[order["id"]]["status"] == "expired" and orders[order["id"]]["note"].startswith("Expired: not filled by")
+    assert orders[gtc["id"]]["status"] == "open"
+    released = (await auth_client.get(f"{API}/paper/portfolio")).json()["available_cash"]
+    assert released == pytest.approx(cash - 80 * 1.001, rel=1e-6)  # only the GTC order still reserves cash
+
+    # An expired order can't fill even if the price gets there.
+    await provider.set_price("SOL-USD", 85.0)
+    await feed(auth_client)
+    orders = {o["id"]: o for o in (await auth_client.get(f"{API}/paper/orders")).json()}
+    assert orders[order["id"]]["status"] == "expired" and orders[gtc["id"]]["status"] == "open"
+
+
+async def test_only_resting_orders_take_an_expiry(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    resp = await auth_client.post(f"{API}/paper/orders", json={"symbol": "SOL-USD", "side": "buy", "quantity": 1, "expires_in_hours": 1})
+    assert resp.status_code == 422 and "only limit, stop and trailing-stop orders can expire" in resp.text
+    for hours in (0, -1, 24 * 91):
+        resp = await auth_client.post(f"{API}/paper/orders", json={
+            "symbol": "SOL-USD", "side": "buy", "order_type": "limit", "limit_price": 90, "quantity": 1, "expires_in_hours": hours})  # fmt: skip
+        assert resp.status_code == 422

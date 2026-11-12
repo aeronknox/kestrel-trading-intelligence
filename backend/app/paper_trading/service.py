@@ -263,6 +263,7 @@ class PaperTradingService:
         strategy_id: int | None = None,
         source: str | None = None,
         enforce_trade_plan: bool = False,
+        expires_at: datetime | None = None,
     ) -> SimulatedOrder:
         source = source or ("strategy" if strategy_id is not None else "user")
         if quantity <= 0:
@@ -273,6 +274,8 @@ class PaperTradingService:
             raise ValidationFailedError("Stop orders require a positive stop price")
         if order_type == OrderType.TRAILING_STOP and not (trail_pct is not None and 0 < trail_pct <= MAX_TRAIL_PCT):
             raise ValidationFailedError(f"Trailing stops require a trail between 0 and {MAX_TRAIL_PCT:g}%")
+        if expires_at is not None and order_type == OrderType.MARKET:
+            raise ValidationFailedError("Market orders fill at once; only limit, stop and trailing-stop orders can expire")
         if order_type != OrderType.LIMIT:
             limit_price = None
         if order_type != OrderType.STOP:
@@ -309,6 +312,7 @@ class PaperTradingService:
             reduce_only=reduce_only,
             oco_group=oco_group,
             note=note,
+            expires_at=expires_at,
             status=OrderStatus.OPEN,
             strategy_id=strategy_id,
         )
@@ -716,6 +720,15 @@ class PaperTradingService:
                 .order_by(SimulatedOrder.created_at)
             )
         ).all()
+        if not orders:
+            return fills
+        now = datetime.now(UTC)
+        for order in orders:
+            if order.expires_at is not None and order.expires_at <= now:
+                order.status = OrderStatus.EXPIRED
+                order.note = f"Expired: not filled by {order.expires_at:%Y-%m-%d %H:%M} UTC"
+                await notify_order(self.session, portfolio.user_id, order)
+        orders = [o for o in orders if o.status == OrderStatus.OPEN]
         if not orders:
             return fills
         tickers = await self.market.get_tickers(list({o.asset_id: o.asset for o in orders}.values()))

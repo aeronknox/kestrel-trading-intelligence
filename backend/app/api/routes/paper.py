@@ -1,10 +1,13 @@
 """Paper trading API — SIMULATED ONLY. No brokerage connectivity exists."""
 
+from datetime import timedelta
+
 from fastapi import APIRouter, Query, Response
 
 from app.api.deps import CurrentUser, DbSession, rate_limit
 from app.core.config import get_settings
 from app.core.exceptions import ValidationFailedError
+from app.database.base import utcnow
 from app.market_data.service import MarketDataService
 from app.models.enums import OrderStatus
 from app.paper_trading.service import PaperTradingService
@@ -125,6 +128,7 @@ async def place_order(body: OrderCreate, user: CurrentUser, db: DbSession) -> ob
         bracket_take_profit=body.take_profit,
         reduce_only=body.reduce_only,
         enforce_trade_plan=True,
+        expires_at=utcnow() + timedelta(hours=body.expires_in_hours) if body.expires_in_hours else None,
     )
     await audit(db, "paper.order_placed", user_id=user.id, entity_type="order", entity_id=order.id,
                 details={"symbol": asset.symbol, "side": body.side.value, "type": body.order_type.value,

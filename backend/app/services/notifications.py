@@ -53,6 +53,10 @@ async def notify_order(session: AsyncSession, user_id: int, order: SimulatedOrde
             message += " The other order of its pair was cancelled."
         if order.note and order.note.startswith("Filled, but"):
             message += f" {order.note}."
+    elif order.status == OrderStatus.EXPIRED:
+        kind = "order_expired"
+        title = f"{describe(order)} expired · {symbol}"
+        message = f"{describe(order)} for {order.quantity:g} {symbol} expired unfilled; anything it reserved is released."
     elif order.status == OrderStatus.REJECTED:
         kind = "order_rejected"
         title = f"{describe(order)} rejected · {symbol}"

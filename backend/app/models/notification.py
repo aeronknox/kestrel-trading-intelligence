@@ -15,7 +15,7 @@ class Notification(IdMixin, Base):
     __table_args__ = (Index("ix_notifications_user_created", "user_id", "created_at"),)
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    kind: Mapped[str] = mapped_column(String(24))  # order_filled | order_rejected | margin_call
+    kind: Mapped[str] = mapped_column(String(24))  # order_filled | order_rejected | order_expired | margin_call
     title: Mapped[str] = mapped_column(String(160))
     message: Mapped[str] = mapped_column(Text)
     symbol: Mapped[str | None] = mapped_column(String(32), nullable=True)

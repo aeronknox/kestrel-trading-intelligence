@@ -100,6 +100,8 @@ class SimulatedOrder(IdMixin, Base):
     note: Mapped[str | None] = mapped_column(String(255), nullable=True)  # e.g. why the system placed it
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     filled_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    # Time in force: None is good-till-cancelled; otherwise a resting order still open at this time expires.
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     # Set when a strategy's forward test placed the order (null for manual orders).
     strategy_id: Mapped[int | None] = mapped_column(
         ForeignKey("strategies.id", ondelete="SET NULL"), nullable=True, index=True

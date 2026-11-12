@@ -44,6 +44,7 @@ class OrderStatus(StrEnum):
     FILLED = "filled"
     CANCELLED = "cancelled"
     REJECTED = "rejected"
+    EXPIRED = "expired"  # a resting order not filled before its expires_at
 
 
 class MessageRole(StrEnum):

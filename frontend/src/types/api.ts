@@ -392,7 +392,7 @@ export interface Backtest {
 export type OrderSide = "buy" | "sell";
 /** "stop" is a stop-market order: it becomes a market order once the price reaches stop_price. */
 export type OrderType = "market" | "limit" | "stop" | "trailing_stop";
-export type OrderStatus = "open" | "filled" | "cancelled" | "rejected";
+export type OrderStatus = "open" | "filled" | "cancelled" | "rejected" | "expired";
 
 export interface Order {
   id: number;
@@ -418,6 +418,8 @@ export interface Order {
   reject_reason: string | null;
   created_at: string;
   filled_at: string | null;
+  /** Time in force: a resting order still open at this time expires. Null: good till cancelled. */
+  expires_at?: string | null;
   /** Set when a strategy's forward test placed the order. */
   strategy_id?: number | null;
   /** Why the system placed it, e.g. a margin call. */
@@ -851,7 +853,7 @@ export interface JournalPage {
 /** A simulated paper order that filled or failed in the background (not a strategy alert). */
 export interface AppNotification {
   id: number;
-  kind: "order_filled" | "order_rejected" | "margin_call";
+  kind: "order_filled" | "order_rejected" | "order_expired" | "margin_call";
   title: string;
   message: string;
   symbol: string | null;
