@@ -51,6 +51,8 @@ async def notify_order(session: AsyncSession, user_id: int, order: SimulatedOrde
         message = f"{describe(order)} {verb} {order.quantity:g} {symbol} at {_price(order.filled_price)}."
         if order.oco_group:
             message += " The other order of its pair was cancelled."
+        if order.note and order.note.startswith("Filled, but"):
+            message += f" {order.note}."
     elif order.status == OrderStatus.REJECTED:
         kind = "order_rejected"
         title = f"{describe(order)} rejected · {symbol}"

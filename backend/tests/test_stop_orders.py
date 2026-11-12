@@ -198,3 +198,61 @@ async def test_trailing_stop_validation(auth_client, provider) -> None:  # type:
     paired = await protect(auth_client, trailing_stop_pct=8, take_profit=130)
     assert sorted(o["note"] for o in paired) == ["Take-profit", "Trailing stop"]
     assert paired[0]["oco_group"] == paired[1]["oco_group"]
+
+
+async def test_market_entry_with_stop_loss_and_take_profit(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    entry = await order(auth_client, stop_loss=95, take_profit=110)
+    assert entry["status"] == "filled" and entry["bracket_stop_loss"] == 95
+    protective = [o for o in (await orders(auth_client)).values() if o["status"] == "open"]
+    assert sorted((o["note"], o["stop_price"] or o["limit_price"]) for o in protective) == [
+        ("Stop-loss", 95),
+        ("Take-profit", 110),
+    ]
+    assert all(o["quantity"] == pytest.approx(10) and o["reduce_only"] for o in protective)
+
+
+async def test_entry_bracket_is_all_or_nothing(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    wrong_side = await order(auth_client, expect=422, stop_loss=105)
+    assert "below the entry price" in wrong_side["error"]["message"]
+    # Valid sides, but a stop-loss under the minimum order size: the entry is rolled back with it.
+    tiny = await order(auth_client, expect=422, quantity=0.5, stop_loss=0.1)
+    assert "Stop-loss rejected" in tiny["error"]["message"]
+    pf = (await auth_client.get(f"{API}/portfolio")).json()
+    assert pf["positions"] == [] and (await auth_client.get(f"{API}/orders")).json() == []
+
+
+async def test_resting_limit_entry_gets_its_protection_when_it_fills(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    entry = await order(auth_client, order_type="limit", limit_price=95, stop_loss=90, take_profit=105)
+    assert entry["status"] == "open"
+    assert [o for o in (await orders(auth_client)).values() if o["reduce_only"]] == []  # nothing until it fills
+    await provider.set_price("SOL-USD", 94.0)
+    now = await orders(auth_client)
+    assert now[entry["id"]]["status"] == "filled"
+    assert sorted(o["note"] for o in now.values() if o["reduce_only"] and o["status"] == "open") == ["Stop-loss", "Take-profit"]
+
+
+async def test_short_entry_bracket_and_bracket_rules(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    limits = {"max_position_pct": 25, "max_open_positions": 10, "daily_loss_limit_pct": 50, "allow_short": True}
+    await auth_client.put(f"{API}/portfolio/risk-limits", json=limits)
+    short = await order(auth_client, side="sell", stop_loss=106, take_profit=90)
+    assert short["status"] == "filled"
+    sl = next(o for o in (await orders(auth_client)).values() if o["note"] == "Stop-loss")
+    assert sl["side"] == "buy" and sl["stop_price"] == 106
+    # Covering reduces the position: it can't carry a bracket of its own.
+    cover = await order(auth_client, expect=422, side="buy", quantity=5, stop_loss=90)
+    assert "open or add to a position" in cover["error"]["message"]
+    await order(auth_client, expect=422, side="sell", order_type="stop", stop_price=90, stop_loss=110)  # market/limit only
+
+
+async def test_limit_entry_whose_stop_was_gapped_past_still_fills_and_says_so(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    entry = await order(auth_client, order_type="limit", limit_price=95, stop_loss=92)
+    await provider.set_price("SOL-USD", 91.0)  # fills the 95 limit, but 91 is already below the 92 stop
+    filled = (await orders(auth_client))[entry["id"]]
+    assert filled["status"] == "filled" and "was not attached" in filled["note"]
+    note = (await auth_client.get("/api/v1/notifications")).json()["notifications"][0]
+    assert "was not attached" in note["message"]

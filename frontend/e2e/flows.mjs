@@ -258,13 +258,27 @@ await step("paper market buy via ticket", async () => {
   await page.getByRole("button", { name: "Close", exact: true }).first().waitFor();
 });
 
+await step("paper entry with stop-loss, sized by risk", async () => {
+  await page.getByRole("switch", { name: "Stop-loss & take-profit" }).click();
+  await page.getByLabel("Stop-loss", { exact: true }).fill("100");
+  await page.getByLabel("Take-profit", { exact: true }).fill("100000000");
+  await page.getByRole("switch", { name: "Size by risk" }).click();
+  await page.getByLabel("Risk per trade (% of equity)").fill("1");
+  await page.getByText(/Risk if stopped out/).waitFor();
+  await page.getByText(/\(1\.00% of equity\)/).waitFor();
+  await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
+  await toast(/protected by stop-loss/);
+  await page.getByText(/^SL \$?100\.00/).first().waitFor();
+  await page.getByRole("switch", { name: "Stop-loss & take-profit" }).click(); // back to a plain ticket
+});
+
 await step("paper limit order + cancel", async () => {
   await page.getByRole("radio", { name: "Limit" }).click();
   await page.getByLabel(/Limit price/).fill("1");
   await page.getByPlaceholder("0.00").fill("50");
   await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
   await toast(/Limit order placed/);
-  await page.getByLabel("Cancel order").first().click();
+  await page.getByRole("row").filter({ has: page.getByRole("cell", { name: "1.00", exact: true }) }).getByLabel("Cancel order").click(); // its own row, not a protective order
   await toast(/Order cancelled/);
 });
 
@@ -276,13 +290,14 @@ await step("paper stop order + position protection", async () => {
   await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
   await toast(/Stop order placed/);
   await page.getByText(/^stop \$?100,000,000/).first().waitFor();
-  await page.getByLabel("Cancel order").first().click();
+  await page.getByRole("row").filter({ hasText: /stop \$?100,000,000/ }).getByLabel("Cancel order").click(); // its own row, not a protective order
   await toast(/Order cancelled/);
   // One-cancels-other stop-loss and take-profit on the open ETH position.
   await page.getByRole("button", { name: "Protect ETH-USD" }).click();
   await page.getByLabel(/Stop-loss price/).fill("100");
   await page.getByLabel(/Take-profit price/).fill("100000000");
-  await page.getByRole("button", { name: "Protect position" }).click();
+  // The entry's own bracket may already protect it, in which case this replaces that protection.
+  await page.getByRole("button", { name: /^(Protect position|Replace protection)$/ }).click();
   await toast(/ETH-USD protected/);
   await page.getByText(/^SL \$?100\.00/).first().waitFor();
   await page.getByText("Stop-loss", { exact: true }).first().waitFor();

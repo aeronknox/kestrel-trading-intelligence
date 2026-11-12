@@ -117,6 +117,8 @@ async def place_order(body: OrderCreate, user: CurrentUser, db: DbSession) -> ob
         body.limit_price,
         stop_price=body.stop_price,
         trail_pct=body.trail_pct,
+        bracket_stop_loss=body.stop_loss,
+        bracket_take_profit=body.take_profit,
         reduce_only=body.reduce_only,
     )
     await audit(db, "paper.order_placed", user_id=user.id, entity_type="order", entity_id=order.id,

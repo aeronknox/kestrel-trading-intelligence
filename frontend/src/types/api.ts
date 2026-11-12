@@ -405,6 +405,9 @@ export interface Order {
   /** Trailing stops: distance (%) from the best price since placement (trail_anchor); stop_price follows it. */
   trail_pct?: number | null;
   trail_anchor?: number | null;
+  /** Entry orders: protection attached once they fill. */
+  bracket_stop_loss?: number | null;
+  bracket_take_profit?: number | null;
   /** Only shrinks a position; cancelled automatically once the position is closed. */
   reduce_only?: boolean;
   /** One-cancels-other group, e.g. a position's stop-loss and take-profit. */

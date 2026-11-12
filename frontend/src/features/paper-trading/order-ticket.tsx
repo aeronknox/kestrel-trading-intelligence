@@ -8,13 +8,19 @@ import { Change } from "@/components/common/finance";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Segmented, SegmentedItem } from "@/components/ui/segmented";
-import { Badge, Field, Input } from "@/components/ui/primitives";
+import { Badge, Field, Input, Label, Switch } from "@/components/ui/primitives";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLiveTicker } from "@/hooks/use-market-stream";
-import { formatPrice, formatQty, formatUsd, isNum } from "@/lib/format";
+import { formatPct, formatPrice, formatQty, formatUsd, isNum } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import type { OrderSide, OrderType, Portfolio } from "@/types/api";
+
+/** Whether a `side` order on `symbol` would open or add to a position (rather than reduce one). */
+function opensRiskFor(side: OrderSide, portfolio: Portfolio, symbol: string): boolean {
+  const held = portfolio.positions.find((p) => p.asset.symbol === symbol)?.quantity ?? 0;
+  return side === "buy" ? held >= 0 : held <= 0 && Boolean(portfolio.risk_limits.allow_short || held < 0);
+}
 
 export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: Portfolio; symbol: string; onSymbolChange: (s: string) => void }) {
   const qc = useQueryClient();
@@ -35,8 +41,31 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
   const trailStart = ticker && level > 0 ? ticker.price * (1 + ((side === "buy" ? 1 : -1) * level) / 100) : undefined;
   const price = type === "trailing_stop" ? trailStart : type !== "market" && level > 0 ? level : ticker?.price;
   const num = Number(amount);
-  const qty = !isNum(num) || num <= 0 || !price ? 0 : mode === "qty" ? num : num / price;
+  const typedQty = !isNum(num) || num <= 0 || !price ? 0 : mode === "qty" ? num : num / price;
   const execPrice = price ? price * (1 + ((side === "buy" ? 1 : -1) * portfolio.slippage_bps) / 10_000) : 0;
+
+  // Optional stop-loss / take-profit riding on an entry, and sizing the entry by what the stop would cost.
+  const canBracket = (type === "market" || type === "limit") && opensRiskFor(side, portfolio, symbol);
+  const [bracketOn, setBracketOn] = useState(false);
+  const [sl, setSl] = useState("");
+  const [tp, setTp] = useState("");
+  const [riskOn, setRiskOn] = useState(false);
+  const [riskPct, setRiskPct] = useState("1");
+  const bracket = canBracket && bracketOn;
+  const long = side === "buy";
+  const slNum = Number(sl) > 0 ? Number(sl) : null;
+  const tpNum = Number(tp) > 0 ? Number(tp) : null;
+  const slError = bracket && slNum && price && (long ? slNum >= price : slNum <= price) ? `Must be ${long ? "below" : "above"} the entry price` : null;
+  const tpError = bracket && tpNum && price && (long ? tpNum <= price : tpNum >= price) ? `Must be ${long ? "above" : "below"} the entry price` : null;
+  // Loss per unit if the stop fills: the distance plus slippage on the exit and fees both ways.
+  const feeRate = portfolio.fee_bps / 10_000;
+  const slipRate = portfolio.slippage_bps / 10_000;
+  const stopFill = slNum ? slNum * (1 + (long ? -1 : 1) * slipRate) : null;
+  const lossPerUnit = bracket && stopFill && !slError && execPrice ? Math.abs(execPrice - stopFill) + (execPrice + stopFill) * feeRate : null;
+  const riskSized = bracket && riskOn && lossPerUnit && Number(riskPct) > 0 ? (portfolio.equity * Number(riskPct)) / 100 / lossPerUnit : null;
+  const qty = riskSized ?? typedQty;
+  const riskUsd = lossPerUnit ? qty * lossPerUnit : null;
+  const rewardRisk = lossPerUnit && tpNum && !tpError && execPrice ? (Math.abs(tpNum - execPrice) - (tpNum + execPrice) * feeRate) / lossPerUnit : null;
   const notional = qty * execPrice;
   const fee = (notional * portfolio.fee_bps) / 10_000;
   const position = portfolio.positions.find((p) => p.asset.symbol === symbol);
@@ -56,11 +85,14 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
         limit_price: type === "limit" ? Number(limit) : null,
         stop_price: type === "stop" ? Number(limit) : null,
         trail_pct: type === "trailing_stop" ? Number(limit) : null,
+        stop_loss: bracket ? slNum : null,
+        take_profit: bracket ? tpNum : null,
       }),
     onSuccess: (o) => {
       qc.invalidateQueries({ queryKey: ["paper"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
-      if (o.status === "filled") toast.success(`Filled: ${o.side} ${formatQty(o.quantity)} ${o.asset.base_currency} @ ${formatPrice(o.filled_price)}`);
+      const protectedBy = [o.bracket_stop_loss && `stop-loss ${formatPrice(o.bracket_stop_loss)}`, o.bracket_take_profit && `take-profit ${formatPrice(o.bracket_take_profit)}`].filter(Boolean).join(" and ");
+      if (o.status === "filled") toast.success(`Filled: ${o.side} ${formatQty(o.quantity)} ${o.asset.base_currency} @ ${formatPrice(o.filled_price)}${protectedBy ? `, protected by ${protectedBy}` : ""}`);
       else if (o.status === "open" && o.order_type === "trailing_stop")
         toast.info(`Trailing stop placed — ${o.trail_pct}% behind the price, stop now at ${formatPrice(o.stop_price)}`);
       else if (o.status === "open" && o.order_type === "stop") toast.info(`Stop order placed — becomes a market order at ${formatPrice(o.stop_price)}`);
@@ -71,7 +103,9 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const invalid = qty <= 0 || (type !== "market" && !(level > 0)) || (type === "trailing_stop" && level > 50) || !ticker;
+  const invalid =
+    qty <= 0 || (type !== "market" && !(level > 0)) || (type === "trailing_stop" && level > 50) || !ticker ||
+    (bracket && (!(slNum || tpNum) || Boolean(slError) || Boolean(tpError) || (riskOn && !riskSized)));
 
   return (
     <Card>
@@ -134,7 +168,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
         )}
         <Field label={mode === "usd" ? "Amount (USD)" : `Quantity (${symbol.split("-")[0]})`}>
           <div className="flex gap-2">
-            <Input type="number" min={0} step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+            <Input type="number" min={0} step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={riskSized ? "Sized by risk" : "0.00"} disabled={Boolean(bracket && riskOn)} />
             <Button variant="outline" size="sm" className="h-9 shrink-0" onClick={() => { setMode(mode === "usd" ? "qty" : "usd"); setAmount(""); }}>
               {mode === "usd" ? "USD" : symbol.split("-")[0]}
             </Button>
@@ -164,7 +198,62 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
             </Button>
           ))}
         </div>
+        {canBracket && (
+          <div className="space-y-3 rounded-lg border border-border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="ticket-bracket" className="text-sm">Stop-loss &amp; take-profit</Label>
+              <Switch id="ticket-bracket" checked={bracketOn} onCheckedChange={setBracketOn} />
+            </div>
+            {bracket && (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Stop-loss" error={slError}>
+                    <Input type="number" min={0} step="any" value={sl} onChange={(e) => setSl(e.target.value)} placeholder={long ? "Below entry" : "Above entry"} />
+                  </Field>
+                  <Field label="Take-profit" error={tpError}>
+                    <Input type="number" min={0} step="any" value={tp} onChange={(e) => setTp(e.target.value)} placeholder="Optional" />
+                  </Field>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="ticket-risk" className="text-sm">Size by risk</Label>
+                  <div className="flex items-center gap-2">
+                    {riskOn && (
+                      <div className="flex items-center gap-1">
+                        <Input aria-label="Risk per trade (% of equity)" type="number" min={0.1} max={10} step="0.1" className="h-8 w-16" value={riskPct} onChange={(e) => setRiskPct(e.target.value)} />
+                        <span className="text-xs text-muted-foreground">%</span>
+                      </div>
+                    )}
+                    <Switch id="ticket-risk" checked={riskOn} onCheckedChange={setRiskOn} />
+                  </div>
+                </div>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  {riskOn
+                    ? slNum ? "The quantity is set so that hitting the stop-loss loses this share of your equity, including slippage and fees." : "Set a stop-loss to size the position by risk."
+                    : "Placed together with the entry; one cancels the other, and they follow the position."}
+                </p>
+              </>
+            )}
+          </div>
+        )}
+        {riskSized !== null && (notional / portfolio.equity) * 100 > portfolio.risk_limits.max_position_pct && (
+          <p className="text-xs text-warn" role="status">
+            That is {formatPct((notional / portfolio.equity) * 100, 0, false)} of equity, above your {portfolio.risk_limits.max_position_pct}% position
+            limit: the stop is very close for this much risk. Lower the risk or widen the stop.
+          </p>
+        )}
         <dl className="space-y-1.5 text-xs">
+          {riskUsd !== null && (
+            <div className="flex justify-between font-medium">
+              <dt>Risk if stopped out</dt>
+              <dd className="tabular text-loss">{formatUsd(riskUsd)} ({formatPct((riskUsd / portfolio.equity) * 100, 2, false)} of equity)</dd>
+            </div>
+          )}
+          {rewardRisk !== null && (
+            <div className="flex justify-between">
+              <dt className="text-muted-foreground">Reward : risk</dt>
+              <dd className={cn("tabular", rewardRisk < 1 && "text-warn")}>{rewardRisk.toFixed(2)} : 1</dd>
+            </div>
+          )}
           <div className="flex justify-between"><dt className="text-muted-foreground">Quantity</dt><dd className="tabular">{formatQty(qty)}</dd></div>
           <div className="flex justify-between"><dt className="text-muted-foreground">Est. fill price (incl. {portfolio.slippage_bps} bps slippage)</dt><dd className="tabular">{formatPrice(execPrice || null)}</dd></div>
           <div className="flex justify-between"><dt className="text-muted-foreground">Est. fee ({portfolio.fee_bps} bps)</dt><dd className="tabular">{formatUsd(fee)}</dd></div>

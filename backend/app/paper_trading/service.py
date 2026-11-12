@@ -255,6 +255,8 @@ class PaperTradingService:
         *,
         stop_price: float | None = None,
         trail_pct: float | None = None,
+        bracket_stop_loss: float | None = None,
+        bracket_take_profit: float | None = None,
         reduce_only: bool = False,
         oco_group: str | None = None,
         note: str | None = None,
@@ -282,6 +284,8 @@ class PaperTradingService:
         if trail_pct is not None:  # starts trail_pct from the current price, so it can't fire at once
             trail_anchor = ticker.price
             stop_price = self._trail_stop(side, trail_anchor, trail_pct)
+        if bracket_stop_loss is not None or bracket_take_profit is not None:
+            await self._check_bracket(portfolio, asset, side, order_type, limit_price or ticker.price, bracket_stop_loss, bracket_take_profit)
         if order_type == OrderType.STOP and stop_price is not None and self._triggered(side, stop_price, ticker.price):
             direction = "at or above" if side == OrderSide.BUY else "at or below"
             raise ValidationFailedError(
@@ -298,6 +302,8 @@ class PaperTradingService:
             stop_price=stop_price,
             trail_pct=trail_pct,
             trail_anchor=trail_anchor,
+            bracket_stop_loss=bracket_stop_loss,
+            bracket_take_profit=bracket_take_profit,
             reduce_only=reduce_only,
             oco_group=oco_group,
             note=note,
@@ -322,8 +328,38 @@ class PaperTradingService:
 
         if self._is_marketable(order, ticker.price):
             await self._fill(portfolio, order, ticker.price)
+            if order.status == OrderStatus.FILLED and self._has_bracket(order):
+                # Same transaction: if the protection can't be placed, the entry is rolled back too.
+                await self.protect_position(portfolio, asset, order.bracket_stop_loss, order.bracket_take_profit)
         PAPER_ORDERS.labels(source, side.value, order.status.value).inc()
         return order
+
+    @staticmethod
+    def _has_bracket(order: SimulatedOrder) -> bool:
+        return order.bracket_stop_loss is not None or order.bracket_take_profit is not None
+
+    async def _check_bracket(
+        self,
+        portfolio: PaperPortfolio,
+        asset: Asset,
+        side: OrderSide,
+        order_type: OrderType,
+        entry: float,
+        stop_loss: float | None,
+        take_profit: float | None,
+    ) -> None:
+        """A stop-loss / take-profit can ride on an order that opens or adds to a position, on the right sides of its entry."""
+        if order_type not in (OrderType.MARKET, OrderType.LIMIT):
+            raise ValidationFailedError("A stop-loss or take-profit can be attached to market and limit orders")
+        position = await self._position(portfolio, asset.id)
+        held = position.quantity if position else 0.0
+        if (side == OrderSide.BUY and held < -QTY_EPSILON) or (side == OrderSide.SELL and held > QTY_EPSILON):
+            raise ValidationFailedError("A stop-loss or take-profit attaches to orders that open or add to a position, not ones that reduce it")
+        long = side == OrderSide.BUY
+        if stop_loss is not None and (stop_loss >= entry if long else stop_loss <= entry):
+            raise ValidationFailedError(f"The stop-loss must be {'below' if long else 'above'} the entry price ({entry:,.2f})")
+        if take_profit is not None and (take_profit <= entry if long else take_profit >= entry):
+            raise ValidationFailedError(f"The take-profit must be {'above' if long else 'below'} the entry price ({entry:,.2f})")
 
     @staticmethod
     def _triggered(side: OrderSide, stop_price: float, price: float) -> bool:
@@ -675,6 +711,11 @@ class PaperTradingService:
                     continue
             await self._fill(portfolio, order, t.price)
             fills += order.status == OrderStatus.FILLED
+            if order.status == OrderStatus.FILLED and self._has_bracket(order):
+                try:
+                    await self.protect_position(portfolio, order.asset, order.bracket_stop_loss, order.bracket_take_profit)
+                except ValidationFailedError as exc:  # e.g. the price gapped past the stop before the entry filled
+                    order.note = f"Filled, but the stop-loss/take-profit was not attached: {exc.message}"[:255]
             await notify_order(self.session, portfolio.user_id, order)  # filled, or rejected at fill time
         return fills
 

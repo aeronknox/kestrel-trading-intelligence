@@ -80,6 +80,9 @@ class SimulatedOrder(IdMixin, Base):
     # (trail_anchor: the highest price for a sell, the lowest for a buy) and only moves toward it.
     trail_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     trail_anchor: Mapped[float | None] = mapped_column(Money, nullable=True)
+    # Entry orders can carry a stop-loss / take-profit, attached as protection once they fill.
+    bracket_stop_loss: Mapped[float | None] = mapped_column(Money, nullable=True)
+    bracket_take_profit: Mapped[float | None] = mapped_column(Money, nullable=True)
     # Only ever shrinks a position; cancelled automatically once that position is closed.
     reduce_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # One-cancels-other: when an order in the group fills, the rest are cancelled.

@@ -17,6 +17,8 @@ class OrderCreate(BaseModel):
     stop_price: float | None = Field(None, gt=0, description="Trigger price for stop orders")
     trail_pct: float | None = Field(None, gt=0, le=50, description="Trailing stops: distance from the best price, in %")
     reduce_only: bool = Field(False, description="Only ever shrink a position; cancelled once it is closed")
+    stop_loss: float | None = Field(None, gt=0, description="Attach a stop-loss once this entry fills")
+    take_profit: float | None = Field(None, gt=0, description="Attach a take-profit once this entry fills")
 
 
 class ProtectPosition(BaseModel):
@@ -37,6 +39,8 @@ class OrderOut(ORMModel):
     stop_price: float | None = None
     trail_pct: float | None = None
     trail_anchor: float | None = None
+    bracket_stop_loss: float | None = None
+    bracket_take_profit: float | None = None
     reduce_only: bool = False
     oco_group: str | None = None
     status: OrderStatus
