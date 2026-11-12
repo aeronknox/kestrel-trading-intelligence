@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database.base import Base, IdMixin, UTCDateTime, utcnow
+from app.database.base import Base, IdMixin, Money, UTCDateTime, utcnow
 
 
 class JournalEntry(IdMixin, Base):
@@ -20,5 +20,7 @@ class JournalEntry(IdMixin, Base):
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1-5: how well the plan was followed
     notes: Mapped[str] = mapped_column(Text, default="")
     lesson: Mapped[str] = mapped_column(Text, default="")
+    # Where the trader planned to exit at a loss; overrides the stop found on the trip's orders.
+    planned_stop: Mapped[float | None] = mapped_column(Money, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)

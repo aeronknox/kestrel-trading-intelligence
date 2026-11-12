@@ -302,6 +302,7 @@ class PaperTradingService:
             stop_price=stop_price,
             trail_pct=trail_pct,
             trail_anchor=trail_anchor,
+            initial_stop=stop_price,
             bracket_stop_loss=bracket_stop_loss,
             bracket_take_profit=bracket_take_profit,
             reduce_only=reduce_only,

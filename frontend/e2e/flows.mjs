@@ -329,10 +329,15 @@ await step("journal review of a closed trade", async () => {
   await page.getByRole("radio", { name: "4" }).click();
   await page.getByLabel("Notes").fill("Bought the break of the range; stop under it.");
   await page.getByLabel("Lesson").fill("Wait for the candle to close.");
+  // A planned stop well below any ETH price: the result is measured in R against it.
+  await page.getByLabel("Planned stop").fill("1");
+  await page.getByText(/^Risked \$[\d,.]+, so this trade made [+−]\d+\.\d\dR\.$/).waitFor();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await toast(/Journal saved/);
   await page.getByRole("cell", { name: "Breakout", exact: true }).first().waitFor();
   await page.getByRole("cell", { name: "Calm", exact: true }).first().waitFor();
+  await page.getByRole("cell", { name: /^[+−]\d+\.\d\dR$/ }).first().waitFor();
+  await page.getByText("Avg R", { exact: true }).first().waitFor();
 });
 
 await step("paper trades CSV export", async () => {

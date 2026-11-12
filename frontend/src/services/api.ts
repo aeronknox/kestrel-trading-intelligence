@@ -227,7 +227,7 @@ export const api = {
   },
   journal: {
     get: () => get<JournalPage>("/paper/journal"),
-    save: (tradeId: number, body: { setup: string | null; emotion: string | null; rating: number | null; notes: string; lesson: string }) =>
+    save: (tradeId: number, body: { setup: string | null; emotion: string | null; rating: number | null; notes: string; lesson: string; planned_stop: number | null }) =>
       put<JournalEntry>(`/paper/journal/${tradeId}`, body),
     remove: (tradeId: number) => del<void>(`/paper/journal/${tradeId}`),
   },

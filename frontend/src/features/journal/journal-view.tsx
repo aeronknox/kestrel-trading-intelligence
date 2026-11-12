@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { NotebookPen } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 
 import { DownloadButton } from "@/components/common/download-button";
@@ -35,6 +35,34 @@ function held(seconds: number | null): string {
   if (m < 60) return `${Math.round(m)}m`;
   if (m < 60 * 48) return `${Math.round(m / 60)}h`;
   return `${Math.round(m / 1440)}d`;
+}
+
+function formatR(r: number | null | undefined): string {
+  return r === null || r === undefined ? "—" : `${r >= 0 ? "+" : "−"}${Math.abs(r).toFixed(2)}R`;
+}
+
+const R_HINT = "Result in units of the initial risk: what hitting the first stop would have lost.";
+
+function Summary({ overall }: { overall: JournalGroup }) {
+  const tiles: [string, ReactNode, string?][] = [
+    ["Closed trades", overall.trades],
+    ["Win rate", formatPct(overall.win_rate, 0, false)],
+    ["Expectancy", <span key="e" className={pnlClass(overall.avg_pnl)}>{formatUsd(overall.avg_pnl, { sign: true })}</span>, "Average P&L per trade"],
+    ["Avg R", <span key="r" className={pnlClass(overall.avg_r)}>{formatR(overall.avg_r)}</span>,
+      overall.r_trades < overall.trades ? `Over the ${overall.r_trades} of ${overall.trades} trades with a stop` : R_HINT],
+    ["Total P&L", <span key="t" className={pnlClass(overall.total_pnl)}>{formatUsd(overall.total_pnl, { sign: true })}</span>],
+  ];
+  return (
+    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      {tiles.map(([label, value, hint]) => (
+        <div key={label} className="rounded-lg border border-border bg-card px-4 py-3">
+          <dt className="text-xs text-muted-foreground">{label}</dt>
+          <dd className="tabular mt-1 text-lg font-semibold">{value}</dd>
+          {hint && <dd className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{hint}</dd>}
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 function Stars({ rating }: { rating: number | null | undefined }) {
@@ -72,6 +100,7 @@ function StatsTable({ title, description, groups, empty, label }: {
               <TR className="hover:bg-transparent">
                 <TH>{title.replace("By ", "")}</TH><TH className="text-right">Trades</TH><TH className="text-right">Win rate</TH>
                 <TH className="text-right" title="Average P&L per trade (expectancy)">Avg P&amp;L</TH><TH className="text-right">Total</TH>
+                <TH className="hidden text-right sm:table-cell" title={R_HINT}>Avg R</TH>
                 <TH className="hidden text-right sm:table-cell">Discipline</TH>
               </TR>
             </THead>
@@ -83,6 +112,10 @@ function StatsTable({ title, description, groups, empty, label }: {
                   <TD className="text-right">{formatPct(g.win_rate, 0, false)}</TD>
                   <TD className={cn("text-right", pnlClass(g.avg_pnl))}>{formatUsd(g.avg_pnl, { sign: true })}</TD>
                   <TD className={cn("text-right", pnlClass(g.total_pnl))}>{formatUsd(g.total_pnl, { sign: true })}</TD>
+                  <TD className={cn("hidden text-right sm:table-cell", pnlClass(g.avg_r))}
+                    title={g.avg_r !== null && g.r_trades < g.trades ? `${g.r_trades} of ${g.trades} trades had a stop` : undefined}>
+                    {formatR(g.avg_r)}
+                  </TD>
                   <TD className="hidden text-right sm:table-cell">{g.avg_rating ? g.avg_rating.toFixed(1) : "—"}</TD>
                 </TR>
               ))}
@@ -102,6 +135,14 @@ function EntryDialog({ trip, setups, emotions, onClose }: { trip: JournalTrip; s
   const [rating, setRating] = useState(e?.rating ? String(e.rating) : "");
   const [notes, setNotes] = useState(e?.notes ?? "");
   const [lesson, setLesson] = useState(e?.lesson ?? "");
+  const [stop, setStop] = useState(e?.planned_stop ? String(e.planned_stop) : "");
+  const long = trip.side === "long";
+  const stopNum = Number(stop) > 0 ? Number(stop) : null;
+  const stopError = stopNum && (long ? stopNum >= trip.entry_price : stopNum <= trip.entry_price)
+    ? `Must be ${long ? "below" : "above"} the entry price (${formatPrice(trip.entry_price)})` : null;
+  const previewRisk = stopNum && !stopError ? Math.abs(trip.entry_price - stopNum) * trip.quantity : null;
+  const previewR = previewRisk && trip.pnl !== null ? trip.pnl / previewRisk : null;
+  const found = trip.stop_source && trip.stop_source !== "journal" ? trip.initial_stop : null;
   const done = (message: string) => {
     qc.invalidateQueries({ queryKey: JOURNAL_KEY });
     toast.success(message);
@@ -115,6 +156,7 @@ function EntryDialog({ trip, setups, emotions, onClose }: { trip: JournalTrip; s
         rating: rating ? Number(rating) : null,
         notes,
         lesson,
+        planned_stop: stopNum,
       }),
     onSuccess: () => done("Journal saved"),
     onError: (err: Error) => toast.error(err.message),
@@ -171,6 +213,20 @@ function EntryDialog({ trip, setups, emotions, onClose }: { trip: JournalTrip; s
             </Segmented>
             <p className="text-[11px] text-muted-foreground">1: ignored it · 5: followed it exactly, whatever the result.</p>
           </div>
+          <Field
+            label="Planned stop"
+            error={stopError}
+            hint={
+              previewRisk
+                ? `Risked ${formatUsd(previewRisk)}${previewR !== null ? `, so this trade made ${formatR(previewR)}` : ""}.`
+                : found
+                  ? `Found on your orders: ${formatPrice(found)}. Enter a price to use another.`
+                  : "Where you planned to get out at a loss. Measures the result in R (multiples of what you risked)."
+            }
+          >
+            <Input type="number" min={0} step="any" value={stop} onChange={(ev) => setStop(ev.target.value)}
+              placeholder={found ? formatPrice(found) : long ? "Below entry" : "Above entry"} />
+          </Field>
           <Field label="Notes" hint="Entry reason, where the stop and target were, what happened">
             <Textarea rows={3} maxLength={4000} value={notes} onChange={(ev) => setNotes(ev.target.value)} />
           </Field>
@@ -185,7 +241,7 @@ function EntryDialog({ trip, setups, emotions, onClose }: { trip: JournalTrip; s
             ) : <span />}
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-              <Button type="submit" loading={save.isPending}>Save</Button>
+              <Button type="submit" loading={save.isPending} disabled={Boolean(stopError)}>Save</Button>
             </div>
           </DialogFooter>
         </form>
@@ -223,6 +279,7 @@ export function JournalView() {
         />
       ) : (
         <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
+          {data.overall && <Summary overall={data.overall} />}
           {data.needs_review > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
               <span>
@@ -265,7 +322,7 @@ export function JournalView() {
                     <TR className="hover:bg-transparent">
                       <TH>Opened</TH><TH>Trade</TH><TH className="hidden text-right lg:table-cell">Size</TH>
                       <TH className="hidden text-right md:table-cell">Entry → exit</TH><TH className="text-right">P&amp;L</TH>
-                      <TH className="hidden text-right sm:table-cell">Held</TH><TH>Setup</TH><TH className="hidden md:table-cell">Mind</TH>
+                      <TH className="hidden text-right sm:table-cell" title={R_HINT}>R</TH><TH className="hidden text-right lg:table-cell">Held</TH><TH>Setup</TH><TH className="hidden md:table-cell">Mind</TH>
                       <TH className="hidden lg:table-cell">Plan</TH><TH />
                     </TR>
                   </THead>
@@ -286,7 +343,11 @@ export function JournalView() {
                             <>{formatUsd(t.pnl, { sign: true })} <span className="text-xs">({formatPct(t.pnl_pct, 1)})</span></>
                           )}
                         </TD>
-                        <TD className="hidden text-right sm:table-cell">{held(t.holding_seconds)}</TD>
+                        <TD className={cn("hidden whitespace-nowrap text-right sm:table-cell", pnlClass(t.r_multiple))}
+                          title={t.initial_stop !== null ? `Initial stop ${formatPrice(t.initial_stop)} (${t.stop_source}), risking ${formatUsd(t.risk)}` : "No stop: record one when you review the trade"}>
+                          {t.pnl === null ? (t.initial_stop !== null ? <span className="text-muted-foreground">stop {formatPrice(t.initial_stop)}</span> : "—") : formatR(t.r_multiple)}
+                        </TD>
+                        <TD className="hidden text-right lg:table-cell">{held(t.holding_seconds)}</TD>
                         <TD>{t.entry?.setup ?? <span className="text-muted-foreground">—</span>}</TD>
                         <TD className="hidden md:table-cell">{t.entry?.emotion ? EMOTION_LABEL[t.entry.emotion] ?? t.entry.emotion : "—"}</TD>
                         <TD className="hidden lg:table-cell"><Stars rating={t.entry?.rating} /></TD>

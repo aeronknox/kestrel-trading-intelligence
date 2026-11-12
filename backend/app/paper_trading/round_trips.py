@@ -3,13 +3,16 @@
 A trip is identified by its opening fill. Its P&L is the sum of the closing fills' realized P&L,
 which already includes every fee (opening fees are part of the average entry price). Positions
 can't flip from long to short in one order, so each trip is entirely long or entirely short.
+
+Initial risk is what the trip stood to lose at its first stop: |entry - stop| x the largest size held.
+A trip's R-multiple is its P&L in units of that risk (+2R: made twice what was risked).
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from app.models.enums import OrderSide
-from app.models.paper import SimulatedTrade
+from app.models.enums import OrderSide, OrderType
+from app.models.paper import SimulatedOrder, SimulatedTrade
 
 QTY_EPSILON = 1e-12
 
@@ -17,6 +20,7 @@ QTY_EPSILON = 1e-12
 @dataclass
 class RoundTrip:
     trade_id: int  # the opening fill (journal entries attach here)
+    asset_id: int
     symbol: str
     side: str  # "long" | "short"
     opened_at: datetime
@@ -52,6 +56,39 @@ class RoundTrip:
     def holding_seconds(self) -> float | None:
         return (self.closed_at - self.opened_at).total_seconds() if self.closed_at else None
 
+    def risk(self, stop: float | None) -> float | None:
+        """What hitting `stop` would have lost; None unless the stop is on the losing side of the entry."""
+        if stop is None or not self.entry_qty:
+            return None
+        per_unit = self.entry_price - stop if self.side == "long" else stop - self.entry_price
+        return per_unit * self.quantity if per_unit > 0 else None
+
+    def r_multiple(self, stop: float | None) -> float | None:
+        risk = self.risk(stop)
+        return self.pnl / risk if risk and not self.is_open else None
+
+
+STOP_TYPES = (OrderType.STOP, OrderType.TRAILING_STOP)
+
+
+def initial_stop(trip: RoundTrip, orders: list[SimulatedOrder]) -> tuple[float, str] | None:
+    """The trip's first stop: the stop-loss riding on its opening order, else the first stop order
+    against the position placed while it was open. `orders` must be oldest first."""
+    opening = next((o for o in orders if trip.order_ids and o.id == trip.order_ids[0]), None)
+    if opening is not None and opening.bracket_stop_loss is not None:
+        return opening.bracket_stop_loss, "bracket"
+    exit_side = OrderSide.SELL if trip.side == "long" else OrderSide.BUY
+    for o in orders:
+        if o.asset_id != trip.asset_id or o.side != exit_side or o.order_type not in STOP_TYPES:
+            continue
+        if o.created_at < trip.opened_at or (trip.closed_at is not None and o.created_at > trip.closed_at):
+            continue
+        # Plain stops never move; a trailing stop placed before initial_stop existed can't be reconstructed.
+        stop = o.initial_stop if o.initial_stop is not None else o.stop_price if o.order_type == OrderType.STOP else None
+        if stop is not None:
+            return stop, "stop order"
+    return None
+
 
 def round_trips(trades: list[SimulatedTrade]) -> list[RoundTrip]:
     """Trips oldest first; `trades` must be in execution order. The last trip per asset may be open."""
@@ -63,7 +100,7 @@ def round_trips(trades: list[SimulatedTrade]) -> list[RoundTrip]:
         signed = t.quantity if t.side == OrderSide.BUY else -t.quantity
         trip = current.get(t.asset_id)
         if trip is None or abs(q) <= QTY_EPSILON:
-            trip = RoundTrip(trade_id=t.id, symbol=t.asset.symbol, side="long" if signed > 0 else "short", opened_at=t.executed_at)
+            trip = RoundTrip(trade_id=t.id, asset_id=t.asset_id, symbol=t.asset.symbol, side="long" if signed > 0 else "short", opened_at=t.executed_at)
             current[t.asset_id] = trip
             trips.append(trip)
         trip.fills += 1

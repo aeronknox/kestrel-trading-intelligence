@@ -784,6 +784,8 @@ export interface JournalEntry {
   rating: number | null;
   notes: string;
   lesson: string;
+  /** Where the plan was to exit at a loss; overrides the stop found on the orders. */
+  planned_stop: number | null;
   updated_at: string;
 }
 
@@ -804,6 +806,13 @@ export interface JournalTrip {
   fees: number;
   holding_seconds: number | null;
   fills: number;
+  /** The first stop: from the journal, the entry's stop-loss, or the first protective stop order. */
+  initial_stop: number | null;
+  stop_source: "journal" | "bracket" | "stop order" | null;
+  /** What hitting the initial stop would have lost. */
+  risk: number | null;
+  /** P&L in units of that risk; null while open or without a stop. */
+  r_multiple: number | null;
   entry: JournalEntry | null;
 }
 
@@ -818,6 +827,9 @@ export interface JournalGroup {
   avg_win: number | null;
   avg_loss: number | null;
   avg_rating: number | null;
+  /** Trades with a known initial risk, and their average R-multiple. */
+  r_trades: number;
+  avg_r: number | null;
 }
 
 export interface JournalPage {
@@ -827,6 +839,8 @@ export interface JournalPage {
   setups: string[];
   emotions: string[];
   needs_review: number;
+  /** Every closed trade; null before the first one closes. */
+  overall: JournalGroup | null;
   disclaimer: string;
 }
 

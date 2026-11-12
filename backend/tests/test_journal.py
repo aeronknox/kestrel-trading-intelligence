@@ -125,3 +125,79 @@ async def test_reset_clears_the_journal_and_csv_neutralizes_formulas(auth_client
     await auth_client.post(f"{API}/portfolio/reset")
     page = await journal(auth_client)
     assert page["trips"] == [] and page["setups"] == []
+
+
+async def test_r_multiples_from_the_initial_stop(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    async def close(price: float) -> dict:
+        await provider.set_price("SOL-USD", price)
+        await trade(auth_client, "sell", 10)
+        return (await journal(auth_client))["trips"][0]
+
+    # 1. A stop-loss riding on the entry.
+    await provider.set_price("SOL-USD", 100.0)
+    resp = await auth_client.post(
+        f"{API}/orders", json={"symbol": "SOL-USD", "side": "buy", "order_type": "market", "quantity": 10, "stop_loss": 95}
+    )
+    assert resp.status_code == 201, resp.text
+    open_trip = (await journal(auth_client))["trips"][0]
+    assert open_trip["initial_stop"] == 95 and open_trip["stop_source"] == "bracket" and open_trip["r_multiple"] is None
+    bracket = await close(110)
+    assert bracket["risk"] == pytest.approx((bracket["entry_price"] - 95) * 10)
+    assert bracket["r_multiple"] == pytest.approx(bracket["pnl"] / bracket["risk"]) and bracket["r_multiple"] > 1.5
+
+    # 2. Protection added afterwards: the first stop counts, not where it was moved to later.
+    await provider.set_price("SOL-USD", 100.0)
+    await trade(auth_client, "buy", 10)
+    assert (await auth_client.post(f"{API}/positions/SOL-USD/protect", json={"stop_loss": 90})).status_code == 201
+    assert (await auth_client.post(f"{API}/positions/SOL-USD/protect", json={"stop_loss": 99})).status_code == 201
+    protected = await close(95)
+    assert protected["initial_stop"] == 90 and protected["stop_source"] == "stop order"
+    assert -1 < protected["r_multiple"] < 0
+
+    # 3. A trailing stop: its starting level, even after it has trailed up.
+    await provider.set_price("SOL-USD", 100.0)
+    await trade(auth_client, "buy", 10)
+    assert (await auth_client.post(f"{API}/positions/SOL-USD/protect", json={"trailing_stop_pct": 10})).status_code == 201
+    await provider.set_price("SOL-USD", 130.0)
+    await auth_client.get(f"{API}/portfolio")  # the stop follows to 117
+    trailed = await close(125)
+    assert trailed["initial_stop"] == pytest.approx(90) and trailed["r_multiple"] > 2
+
+    # 4. No stop at all: no R, until the journal records where the plan was to get out.
+    await provider.set_price("SOL-USD", 100.0)
+    await trade(auth_client, "buy", 10)
+    plain = await close(104)
+    assert plain["initial_stop"] is None and plain["risk"] is None and plain["r_multiple"] is None
+    await write(auth_client, plain["trade_id"], 422, planned_stop=101)  # above a long's entry
+    saved = await write(auth_client, plain["trade_id"], setup="Breakout", planned_stop=98)
+    assert saved["planned_stop"] == 98
+    page = await journal(auth_client)
+    plain = page["trips"][0]
+    assert plain["stop_source"] == "journal" and plain["r_multiple"] == pytest.approx(plain["pnl"] / ((plain["entry_price"] - 98) * 10))
+
+    # The journal's stop overrides the one found on the orders.
+    await write(auth_client, bracket["trade_id"], planned_stop=90)
+    page = await journal(auth_client)
+    assert next(t for t in page["trips"] if t["trade_id"] == bracket["trade_id"])["stop_source"] == "journal"
+
+    overall = page["overall"]
+    rs = [t["r_multiple"] for t in page["trips"]]
+    assert overall["trades"] == 4 and overall["r_trades"] == 4 and overall["avg_r"] == pytest.approx(sum(rs) / 4)
+    assert {g["name"]: g for g in page["by_setup"]}["Breakout"]["r_trades"] == 1
+
+    csv = (await auth_client.get(f"{API}/journal.csv")).text
+    assert "initial_stop,risk,r_multiple" in csv.splitlines()[0]
+
+
+async def test_short_trip_risk_is_above_the_entry(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    limits = {"max_position_pct": 25, "max_open_positions": 10, "daily_loss_limit_pct": 50, "allow_short": True}
+    await auth_client.put(f"{API}/portfolio/risk-limits", json=limits)
+    await trade(auth_client, "sell", 10)
+    await provider.set_price("SOL-USD", 90.0)
+    await trade(auth_client, "buy", 10)
+    trip = (await journal(auth_client))["trips"][0]
+    await write(auth_client, trip["trade_id"], 422, planned_stop=95)
+    await write(auth_client, trip["trade_id"], planned_stop=105)
+    trip = (await journal(auth_client))["trips"][0]
+    assert trip["risk"] == pytest.approx((105 - trip["entry_price"]) * 10) and trip["r_multiple"] > 1
