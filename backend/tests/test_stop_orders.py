@@ -150,3 +150,51 @@ async def test_protection_is_all_or_nothing(auth_client, provider) -> None:  # t
     resp = await protect(auth_client, 422, stop_loss=0.1, take_profit=120)
     assert "Stop-loss rejected" in resp["error"]["message"]
     assert [o for o in (await orders(auth_client)).values() if o["status"] == "open"] == []
+
+
+async def test_trailing_stop_ratchets_up_never_down_then_fires(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    await order(auth_client)
+    trail = await order(auth_client, side="sell", order_type="trailing_stop", trail_pct=5)
+    assert trail["status"] == "open" and trail["stop_price"] == pytest.approx(95) and trail["trail_anchor"] == 100
+
+    await provider.set_price("SOL-USD", 110.0)  # new high: the stop follows to 5% below it
+    moved = (await orders(auth_client))[trail["id"]]
+    assert moved["trail_anchor"] == 110 and moved["stop_price"] == pytest.approx(104.5)
+
+    await provider.set_price("SOL-USD", 106.0)  # a dip above the stop leaves it where it is
+    held = (await orders(auth_client))[trail["id"]]
+    assert held["status"] == "open" and held["stop_price"] == pytest.approx(104.5)
+
+    await provider.set_price("SOL-USD", 104.0)
+    fired = (await orders(auth_client))[trail["id"]]
+    assert fired["status"] == "filled" and fired["filled_price"] == pytest.approx(104 * (1 - 0.0005))
+    assert (await auth_client.get(f"{API}/portfolio")).json()["realized_pnl"] > 0  # locked in part of the rise
+
+
+async def test_trailing_stop_on_a_short_follows_the_low(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    limits = {"max_position_pct": 25, "max_open_positions": 10, "daily_loss_limit_pct": 50, "allow_short": True}
+    await auth_client.put(f"{API}/portfolio/risk-limits", json=limits)
+    await order(auth_client, side="sell")  # short 10
+    (sl,) = await protect(auth_client, trailing_stop_pct=5)
+    assert (sl["side"], sl["order_type"], sl["note"]) == ("buy", "trailing_stop", "Trailing stop")
+    assert sl["stop_price"] == pytest.approx(105)
+
+    await provider.set_price("SOL-USD", 90.0)
+    assert (await orders(auth_client))[sl["id"]]["stop_price"] == pytest.approx(94.5)
+    await provider.set_price("SOL-USD", 95.0)
+    assert (await orders(auth_client))[sl["id"]]["status"] == "filled"
+    assert (await auth_client.get(f"{API}/portfolio")).json()["positions"] == []
+
+
+async def test_trailing_stop_validation(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    await order(auth_client)
+    await order(auth_client, expect=422, side="sell", order_type="trailing_stop")  # no trail
+    await order(auth_client, expect=422, side="sell", order_type="trailing_stop", trail_pct=60)
+    both = await protect(auth_client, 422, stop_loss=90, trailing_stop_pct=5)
+    assert "not both" in both["error"]["message"]
+    paired = await protect(auth_client, trailing_stop_pct=8, take_profit=130)
+    assert sorted(o["note"] for o in paired) == ["Take-profit", "Trailing stop"]
+    assert paired[0]["oco_group"] == paired[1]["oco_group"]

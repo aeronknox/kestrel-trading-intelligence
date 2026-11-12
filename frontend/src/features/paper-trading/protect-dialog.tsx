@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/overlays";
 import { Field, Input } from "@/components/ui/primitives";
+import { Segmented, SegmentedItem } from "@/components/ui/segmented";
 import { formatPct, formatPrice } from "@/lib/format";
 import { api } from "@/services/api";
 import type { Order, Position } from "@/types/api";
@@ -15,8 +16,10 @@ import type { Order, Position } from "@/types/api";
 /** The open stop-loss / take-profit orders protecting a position, if any. */
 export function protection(position: Position, openOrders: Order[]) {
   const mine = openOrders.filter((o) => o.reduce_only && o.oco_group && o.asset.symbol === position.asset.symbol);
+  const stop = mine.find((o) => o.order_type === "stop" || o.order_type === "trailing_stop");
   return {
-    stopLoss: mine.find((o) => o.order_type === "stop")?.stop_price ?? null,
+    stopLoss: stop?.stop_price ?? null,
+    trailPct: stop?.trail_pct ?? null,
     takeProfit: mine.find((o) => o.order_type === "limit")?.limit_price ?? null,
   };
 }
@@ -29,18 +32,24 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
   const current = protection(position, openOrders);
   const [open, setOpen] = useState(false);
   const [sl, setSl] = useState("");
+  const [mode, setMode] = useState<"fixed" | "trailing">("fixed");
+  const [trail, setTrail] = useState("");
   const [tp, setTp] = useState("");
   const long = position.quantity > 0;
-  const stopLoss = num(sl);
+  const stopLoss = mode === "fixed" ? num(sl) : null;
+  const trailPct = mode === "trailing" ? num(trail) : null;
+  const trailError = trailPct !== null && !(trailPct > 0 && trailPct <= 50) ? "Between 0.1 and 50%" : null;
+  const trailStart = trailPct && price && !trailError ? price * (1 + ((long ? -1 : 1) * trailPct) / 100) : null;
   const takeProfit = num(tp);
   const pct = (level: number | null) => (level && price ? formatPct((level / price - 1) * 100, 1) : null);
   // Mirrors the server's checks, so mistakes show before submitting.
   const slError = stopLoss !== null && price !== null && (long ? stopLoss >= price : stopLoss <= price) ? `Must be ${long ? "below" : "above"} the current price` : null;
   const tpError = takeProfit !== null && price !== null && (long ? takeProfit <= price : takeProfit >= price) ? `Must be ${long ? "above" : "below"} the current price` : null;
-  const valid = (stopLoss !== null || takeProfit !== null) && !slError && !tpError && [stopLoss, takeProfit].every((v) => v === null || v > 0);
+  const valid =
+    (stopLoss !== null || trailPct !== null || takeProfit !== null) && !slError && !tpError && !trailError && [stopLoss, takeProfit].every((v) => v === null || v > 0);
 
   const save = useMutation({
-    mutationFn: () => api.paper.protect(position.asset.symbol, { stop_loss: stopLoss, take_profit: takeProfit }),
+    mutationFn: () => api.paper.protect(position.asset.symbol, { stop_loss: stopLoss, trailing_stop_pct: trailPct, take_profit: takeProfit }),
     onSuccess: (orders) => {
       qc.invalidateQueries({ queryKey: ["paper"] });
       const rejected = orders.find((o) => o.status === "rejected");
@@ -57,7 +66,9 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
       onOpenChange={(o) => {
         setOpen(o);
         if (o) {
-          setSl(current.stopLoss ? String(current.stopLoss) : "");
+          setMode(current.trailPct ? "trailing" : "fixed");
+          setTrail(current.trailPct ? String(current.trailPct) : "");
+          setSl(current.stopLoss && !current.trailPct ? String(current.stopLoss) : "");
           setTp(current.takeProfit ? String(current.takeProfit) : "");
         }
       }}
@@ -77,10 +88,24 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
             shrinks them, closing it cancels them. Current price {formatPrice(price)}.
           </DialogDescription>
         </DialogHeader>
+        <Segmented value={mode} onValueChange={(v) => setMode(v as "fixed" | "trailing")} label="Stop-loss kind" className="w-full">
+          <SegmentedItem value="fixed" className="flex-1">Fixed stop-loss</SegmentedItem>
+          <SegmentedItem value="trailing" className="flex-1">Trailing stop</SegmentedItem>
+        </Segmented>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Stop-loss price (USD)" error={slError} hint={!slError && stopLoss ? `${pct(stopLoss)} from the current price` : long ? "Below the current price" : "Above the current price"}>
-            <Input type="number" min={0} step="any" value={sl} onChange={(e) => setSl(e.target.value)} placeholder="Optional" />
-          </Field>
+          {mode === "fixed" ? (
+            <Field label="Stop-loss price (USD)" error={slError} hint={!slError && stopLoss ? `${pct(stopLoss)} from the current price` : long ? "Below the current price" : "Above the current price"}>
+              <Input type="number" min={0} step="any" value={sl} onChange={(e) => setSl(e.target.value)} placeholder="Optional" />
+            </Field>
+          ) : (
+            <Field
+              label="Trail (%)"
+              error={trailError}
+              hint={trailStart ? `Starts at ${formatPrice(trailStart)} and follows the ${long ? "highest" : "lowest"} price, never moving back` : "Follows the best price by this much"}
+            >
+              <Input type="number" min={0.1} max={50} step="0.1" value={trail} onChange={(e) => setTrail(e.target.value)} placeholder="Optional" />
+            </Field>
+          )}
           <Field label="Take-profit price (USD)" error={tpError} hint={!tpError && takeProfit ? `${pct(takeProfit)} from the current price` : long ? "Above the current price" : "Below the current price"}>
             <Input type="number" min={0} step="any" value={tp} onChange={(e) => setTp(e.target.value)} placeholder="Optional" />
           </Field>

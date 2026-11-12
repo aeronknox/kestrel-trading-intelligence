@@ -71,7 +71,7 @@ function PositionsTable({ portfolio, openOrders }: { portfolio: Portfolio; openO
                 </Link>
                 {(guard.stopLoss || guard.takeProfit) && (
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    {guard.stopLoss && <>SL {formatPrice(guard.stopLoss)}</>}
+                    {guard.stopLoss && <>{guard.trailPct ? `Trail ${guard.trailPct}% · SL` : "SL"} {formatPrice(guard.stopLoss)}</>}
                     {guard.stopLoss && guard.takeProfit && " · "}
                     {guard.takeProfit && <>TP {formatPrice(guard.takeProfit)}</>}
                   </p>
@@ -137,7 +137,15 @@ function OrdersTable({ orders, cancellable }: { orders: Order[]; cancellable?: b
               )}
             </TD>
             <TD className="text-right">{formatQty(o.quantity)}</TD>
-            <TD className="text-right">{o.stop_price ? <span title="Stop: becomes a market order at this price">stop {formatPrice(o.stop_price)}</span> : formatPrice(o.limit_price)}</TD>
+            <TD className="text-right">
+              {o.trail_pct ? (
+                <span title={`Follows the best price by ${o.trail_pct}%; becomes a market order at the stop`}>trail {o.trail_pct}% · {formatPrice(o.stop_price)}</span>
+              ) : o.stop_price ? (
+                <span title="Stop: becomes a market order at this price">stop {formatPrice(o.stop_price)}</span>
+              ) : (
+                formatPrice(o.limit_price)
+              )}
+            </TD>
             <TD className="text-right">{formatPrice(o.filled_price)}</TD>
             <TD className="text-right text-muted-foreground">{o.fee ? formatUsd(o.fee) : "—"}</TD>
             <TD>

@@ -49,6 +49,7 @@ from app.models.paper import (
 logger = get_logger(__name__)
 
 QTY_EPSILON = 1e-12
+MAX_TRAIL_PCT = 50.0
 MIN_NOTIONAL = 1.0
 SNAPSHOT_MIN_INTERVAL = timedelta(minutes=5)
 
@@ -252,6 +253,7 @@ class PaperTradingService:
         limit_price: float | None = None,
         *,
         stop_price: float | None = None,
+        trail_pct: float | None = None,
         reduce_only: bool = False,
         oco_group: str | None = None,
         note: str | None = None,
@@ -265,13 +267,21 @@ class PaperTradingService:
             raise ValidationFailedError("Limit orders require a positive limit price")
         if order_type == OrderType.STOP and (stop_price is None or stop_price <= 0):
             raise ValidationFailedError("Stop orders require a positive stop price")
+        if order_type == OrderType.TRAILING_STOP and not (trail_pct is not None and 0 < trail_pct <= MAX_TRAIL_PCT):
+            raise ValidationFailedError(f"Trailing stops require a trail between 0 and {MAX_TRAIL_PCT:g}%")
         if order_type != OrderType.LIMIT:
             limit_price = None
         if order_type != OrderType.STOP:
             stop_price = None
+        if order_type != OrderType.TRAILING_STOP:
+            trail_pct = None
 
         ticker = await self.market.get_ticker(asset)
-        if stop_price is not None and self._triggered(side, stop_price, ticker.price):
+        trail_anchor = None
+        if trail_pct is not None:  # starts trail_pct from the current price, so it can't fire at once
+            trail_anchor = ticker.price
+            stop_price = self._trail_stop(side, trail_anchor, trail_pct)
+        if order_type == OrderType.STOP and stop_price is not None and self._triggered(side, stop_price, ticker.price):
             direction = "at or above" if side == OrderSide.BUY else "at or below"
             raise ValidationFailedError(
                 f"A {side.value} stop at {stop_price:,.2f} would trigger at once: the price ({ticker.price:,.2f}) is already "
@@ -285,6 +295,8 @@ class PaperTradingService:
             quantity=quantity,
             limit_price=limit_price,
             stop_price=stop_price,
+            trail_pct=trail_pct,
+            trail_anchor=trail_anchor,
             reduce_only=reduce_only,
             oco_group=oco_group,
             note=note,
@@ -317,11 +329,24 @@ class PaperTradingService:
         """A buy stop fires once the price rises to it; a sell stop once it falls to it."""
         return price >= stop_price if side == OrderSide.BUY else price <= stop_price
 
+    @staticmethod
+    def _trail_stop(side: OrderSide, anchor: float, trail_pct: float) -> float:
+        return anchor * (1 - trail_pct / 100) if side == OrderSide.SELL else anchor * (1 + trail_pct / 100)
+
+    @classmethod
+    def _follow(cls, order: SimulatedOrder, price: float) -> None:
+        """Move a trailing stop's anchor (and stop) to a new best price; it never moves back."""
+        assert order.trail_pct is not None and order.trail_anchor is not None
+        better = price > order.trail_anchor if order.side == OrderSide.SELL else price < order.trail_anchor
+        if better:
+            order.trail_anchor = price
+            order.stop_price = cls._trail_stop(order.side, price, order.trail_pct)
+
     @classmethod
     def _is_marketable(cls, order: SimulatedOrder, price: float) -> bool:
         if order.order_type == OrderType.MARKET:
             return True
-        if order.order_type == OrderType.STOP:
+        if order.order_type in (OrderType.STOP, OrderType.TRAILING_STOP):
             assert order.stop_price is not None
             return cls._triggered(order.side, order.stop_price, price)
         assert order.limit_price is not None
@@ -511,11 +536,18 @@ class PaperTradingService:
         return len(orders)
 
     async def protect_position(
-        self, portfolio: PaperPortfolio, asset: Asset, stop_loss: float | None, take_profit: float | None
+        self,
+        portfolio: PaperPortfolio,
+        asset: Asset,
+        stop_loss: float | None,
+        take_profit: float | None,
+        trailing_stop_pct: float | None = None,
     ) -> list[SimulatedOrder]:
-        """Attach a reduce-only stop-loss and/or take-profit to a position, as a one-cancels-other pair.
-        Replaces the position's previous protection."""
-        if stop_loss is None and take_profit is None:
+        """Attach a reduce-only stop-loss (fixed or trailing) and/or take-profit to a position, as a
+        one-cancels-other pair. Replaces the position's previous protection."""
+        if stop_loss is not None and trailing_stop_pct is not None:
+            raise ValidationFailedError("Choose a fixed stop-loss or a trailing stop, not both")
+        if stop_loss is None and trailing_stop_pct is None and take_profit is None:
             raise ValidationFailedError("Set a stop-loss, a take-profit, or both")
         position = await self._position(portfolio, asset.id)
         if position is None or abs(position.quantity) <= QTY_EPSILON:
@@ -539,6 +571,9 @@ class PaperTradingService:
         if stop_loss is not None:
             orders.append(await self.place_order(portfolio, asset, side, OrderType.STOP, qty, stop_price=stop_loss,
                                                  reduce_only=True, oco_group=group, note="Stop-loss"))  # fmt: skip
+        if trailing_stop_pct is not None:
+            orders.append(await self.place_order(portfolio, asset, side, OrderType.TRAILING_STOP, qty, trail_pct=trailing_stop_pct,
+                                                 reduce_only=True, oco_group=group, note="Trailing stop"))  # fmt: skip
         if take_profit is not None:
             orders.append(await self.place_order(portfolio, asset, side, OrderType.LIMIT, qty, take_profit,
                                                  reduce_only=True, oco_group=group, note="Take-profit"))  # fmt: skip
@@ -613,7 +648,11 @@ class PaperTradingService:
                     continue
                 order.quantity = min(order.quantity, abs(held))  # the position was partly closed meanwhile
             t = tickers.get(order.asset.symbol)
-            if t is None or not self._is_marketable(order, t.price):
+            if t is None:
+                continue
+            if order.order_type == OrderType.TRAILING_STOP:
+                self._follow(order, t.price)
+            if not self._is_marketable(order, t.price):
                 continue
             adds_risk = (order.side == OrderSide.BUY and held >= -QTY_EPSILON) or (order.side == OrderSide.SELL and held <= QTY_EPSILON)
             if adds_risk:

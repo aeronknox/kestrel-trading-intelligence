@@ -30,7 +30,10 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
   const limit = limitState.symbol === symbol ? limitState.value : "";
   const setLimit = (value: string) => setLimitState({ symbol, value });
 
-  const price = type !== "market" && Number(limit) > 0 ? Number(limit) : ticker?.price;
+  const level = Number(limit);
+  // For a trailing stop the field is a percentage; the stop starts that far from the current price.
+  const trailStart = ticker && level > 0 ? ticker.price * (1 + ((side === "buy" ? 1 : -1) * level) / 100) : undefined;
+  const price = type === "trailing_stop" ? trailStart : type !== "market" && level > 0 ? level : ticker?.price;
   const num = Number(amount);
   const qty = !isNum(num) || num <= 0 || !price ? 0 : mode === "qty" ? num : num / price;
   const execPrice = price ? price * (1 + ((side === "buy" ? 1 : -1) * portfolio.slippage_bps) / 10_000) : 0;
@@ -52,11 +55,14 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
         quantity: Number(qty.toPrecision(12)),
         limit_price: type === "limit" ? Number(limit) : null,
         stop_price: type === "stop" ? Number(limit) : null,
+        trail_pct: type === "trailing_stop" ? Number(limit) : null,
       }),
     onSuccess: (o) => {
       qc.invalidateQueries({ queryKey: ["paper"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       if (o.status === "filled") toast.success(`Filled: ${o.side} ${formatQty(o.quantity)} ${o.asset.base_currency} @ ${formatPrice(o.filled_price)}`);
+      else if (o.status === "open" && o.order_type === "trailing_stop")
+        toast.info(`Trailing stop placed — ${o.trail_pct}% behind the price, stop now at ${formatPrice(o.stop_price)}`);
       else if (o.status === "open" && o.order_type === "stop") toast.info(`Stop order placed — becomes a market order at ${formatPrice(o.stop_price)}`);
       else if (o.status === "open") toast.info(`Limit order placed — rests until price reaches ${formatPrice(o.limit_price)}`);
       else toast.error(`Order rejected: ${o.reject_reason}`);
@@ -65,7 +71,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const invalid = qty <= 0 || (type !== "market" && !(Number(limit) > 0)) || !ticker;
+  const invalid = qty <= 0 || (type !== "market" && !(level > 0)) || (type === "trailing_stop" && level > 50) || !ticker;
 
   return (
     <Card>
@@ -97,7 +103,20 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
             <SegmentedItem value="market" className="flex-1">Market</SegmentedItem>
             <SegmentedItem value="limit" className="flex-1">Limit</SegmentedItem>
             <SegmentedItem value="stop" className="flex-1">Stop</SegmentedItem>
+            <SegmentedItem value="trailing_stop" className="flex-1">Trailing</SegmentedItem>
           </Segmented>
+        {type === "trailing_stop" && (
+          <Field
+            label="Trail (%)"
+            hint={
+              trailStart
+                ? `Starts at ${formatPrice(trailStart)} and follows the ${side === "sell" ? "highest" : "lowest"} price since you place it, never moving back. Becomes a market order once reached.`
+                : "Distance from the best price since placement, 0.1 – 50%."
+            }
+          >
+            <Input type="number" min={0.1} max={50} step="0.1" value={limit} onChange={(e) => setLimit(e.target.value)} placeholder="5" />
+          </Field>
+        )}
         {type === "stop" && (
           <Field
             label="Stop price (USD)"

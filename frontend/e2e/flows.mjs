@@ -286,6 +286,14 @@ await step("paper stop order + position protection", async () => {
   await toast(/ETH-USD protected/);
   await page.getByText(/^SL \$?100\.00/).first().waitFor();
   await page.getByText("Stop-loss", { exact: true }).first().waitFor();
+  // Swap the fixed stop for a 5% trailing stop.
+  await page.getByRole("button", { name: "Protect ETH-USD" }).click();
+  await page.getByRole("radio", { name: "Trailing stop" }).click();
+  await page.getByLabel(/Trail \(%\)/).fill("5");
+  await page.getByRole("button", { name: "Replace protection" }).click();
+  await toast(/ETH-USD protected/);
+  await page.getByText(/^Trail 5% · SL/).first().waitFor();
+  await page.getByText(/^trail 5% · /).first().waitFor();
 });
 
 await step("paper close position", async () => {

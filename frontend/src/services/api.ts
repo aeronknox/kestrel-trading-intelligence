@@ -209,9 +209,9 @@ export const api = {
   },
   paper: {
     portfolio: () => get<Portfolio>("/paper/portfolio"),
-    placeOrder: (body: { symbol: string; side: OrderSide; order_type: OrderType; quantity: number; limit_price?: number | null; stop_price?: number | null }) =>
+    placeOrder: (body: { symbol: string; side: OrderSide; order_type: OrderType; quantity: number; limit_price?: number | null; stop_price?: number | null; trail_pct?: number | null }) =>
       post<Order>("/paper/orders", body),
-    protect: (symbol: string, body: { stop_loss: number | null; take_profit: number | null }) =>
+    protect: (symbol: string, body: { stop_loss: number | null; trailing_stop_pct?: number | null; take_profit: number | null }) =>
       post<Order[]>(`/paper/positions/${encodeURIComponent(symbol)}/protect`, body),
     orders: (status?: OrderStatus) => get<Order[]>("/paper/orders", { status }),
     cancelOrder: (id: number) => post<Order>(`/paper/orders/${id}/cancel`),

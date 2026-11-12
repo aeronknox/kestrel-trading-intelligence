@@ -391,7 +391,7 @@ export interface Backtest {
 // ----------------------------------------------------------- paper trading
 export type OrderSide = "buy" | "sell";
 /** "stop" is a stop-market order: it becomes a market order once the price reaches stop_price. */
-export type OrderType = "market" | "limit" | "stop";
+export type OrderType = "market" | "limit" | "stop" | "trailing_stop";
 export type OrderStatus = "open" | "filled" | "cancelled" | "rejected";
 
 export interface Order {
@@ -402,6 +402,9 @@ export interface Order {
   quantity: number;
   limit_price: number | null;
   stop_price?: number | null;
+  /** Trailing stops: distance (%) from the best price since placement (trail_anchor); stop_price follows it. */
+  trail_pct?: number | null;
+  trail_anchor?: number | null;
   /** Only shrinks a position; cancelled automatically once the position is closed. */
   reduce_only?: boolean;
   /** One-cancels-other group, e.g. a position's stop-loss and take-profit. */

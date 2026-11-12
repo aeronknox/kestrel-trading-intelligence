@@ -109,7 +109,15 @@ async def place_order(body: OrderCreate, user: CurrentUser, db: DbSession) -> ob
     svc, pf = await _service_and_portfolio(db, user.id, lock=True)
     asset = await MarketDataService(db).get_asset(body.symbol)
     order = await svc.place_order(
-        pf, asset, body.side, body.order_type, body.quantity, body.limit_price, stop_price=body.stop_price, reduce_only=body.reduce_only
+        pf,
+        asset,
+        body.side,
+        body.order_type,
+        body.quantity,
+        body.limit_price,
+        stop_price=body.stop_price,
+        trail_pct=body.trail_pct,
+        reduce_only=body.reduce_only,
     )
     await audit(db, "paper.order_placed", user_id=user.id, entity_type="order", entity_id=order.id,
                 details={"symbol": asset.symbol, "side": body.side.value, "type": body.order_type.value,
@@ -122,9 +130,10 @@ async def protect_position(symbol: str, body: ProtectPosition, user: CurrentUser
     """Attach a one-cancels-other stop-loss and take-profit to a position (simulated)."""
     svc, pf = await _service_and_portfolio(db, user.id, lock=True)
     asset = await MarketDataService(db).get_asset(symbol)
-    orders = await svc.protect_position(pf, asset, body.stop_loss, body.take_profit)
+    orders = await svc.protect_position(pf, asset, body.stop_loss, body.take_profit, body.trailing_stop_pct)
     await audit(db, "paper.position_protected", user_id=user.id, entity_type="portfolio", entity_id=pf.id,
-                details={"symbol": asset.symbol, "stop_loss": body.stop_loss, "take_profit": body.take_profit,
+                details={"symbol": asset.symbol, "stop_loss": body.stop_loss, "trailing_stop_pct": body.trailing_stop_pct,
+                         "take_profit": body.take_profit,
                          "statuses": [o.status.value for o in orders]})  # fmt: skip
     return orders
 
