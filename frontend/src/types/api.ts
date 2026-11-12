@@ -774,6 +774,59 @@ export interface ForwardTest {
   disclaimer: string;
 }
 
+export interface JournalEntry {
+  setup: string | null;
+  emotion: string | null;
+  /** How well the plan was followed, 1-5. */
+  rating: number | null;
+  notes: string;
+  lesson: string;
+  updated_at: string;
+}
+
+/** One simulated round trip: from flat, into a position, and back to flat. */
+export interface JournalTrip {
+  /** The opening fill; journal entries attach to it. */
+  trade_id: number;
+  symbol: string;
+  side: "long" | "short";
+  opened_at: string;
+  closed_at: string | null;
+  quantity: number;
+  entry_price: number;
+  exit_price: number | null;
+  /** Null while the trip is open. */
+  pnl: number | null;
+  pnl_pct: number | null;
+  fees: number;
+  holding_seconds: number | null;
+  fills: number;
+  entry: JournalEntry | null;
+}
+
+export interface JournalGroup {
+  /** Null: not reviewed / not recorded. */
+  name: string | null;
+  trades: number;
+  win_rate: number;
+  total_pnl: number;
+  /** Expectancy: the average result per trade. */
+  avg_pnl: number;
+  avg_win: number | null;
+  avg_loss: number | null;
+  avg_rating: number | null;
+}
+
+export interface JournalPage {
+  trips: JournalTrip[];
+  by_setup: JournalGroup[];
+  by_emotion: JournalGroup[];
+  setups: string[];
+  emotions: string[];
+  needs_review: number;
+  disclaimer: string;
+}
+
 /** A simulated paper order that filled or failed in the background (not a strategy alert). */
 export interface AppNotification {
   id: number;

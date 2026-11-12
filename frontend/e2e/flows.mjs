@@ -304,6 +304,22 @@ await step("paper close position", async () => {
   await page.getByText("No open orders").waitFor();
 });
 
+await step("journal review of a closed trade", async () => {
+  await page.goto(`${BASE}/journal`);
+  await page.getByText(/closed trades? needs? a review/).waitFor();
+  await page.getByRole("button", { name: /^Review ETH-USD trade/ }).first().click();
+  await page.getByLabel("Setup").fill("Breakout");
+  await page.getByLabel("State of mind when you entered").click();
+  await page.getByRole("option", { name: "Calm" }).click();
+  await page.getByRole("radio", { name: "4" }).click();
+  await page.getByLabel("Notes").fill("Bought the break of the range; stop under it.");
+  await page.getByLabel("Lesson").fill("Wait for the candle to close.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await toast(/Journal saved/);
+  await page.getByRole("cell", { name: "Breakout", exact: true }).first().waitFor();
+  await page.getByRole("cell", { name: "Calm", exact: true }).first().waitFor();
+});
+
 await step("paper trades CSV export", async () => {
   await page.goto(`${BASE}/paper-trading`);
   const csv = await download(page.getByRole("link", { name: "Download Trades CSV" }));

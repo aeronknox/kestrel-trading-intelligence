@@ -7,6 +7,7 @@ import {
   SlidersHorizontal,
   LayoutDashboard,
   type LucideIcon,
+  NotebookPen,
   PieChart,
   Settings,
   ShieldCheck,
@@ -50,6 +51,7 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/paper-trading", label: "Paper Trading", icon: Wallet },
       { href: "/portfolio", label: "Portfolio", icon: PieChart },
+      { href: "/journal", label: "Journal", icon: NotebookPen },
     ],
   },
   {

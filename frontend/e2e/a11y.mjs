@@ -69,7 +69,7 @@ const sweep = await (await page.request.post(`${BASE}/api/v1/research/sweeps`, {
 
 const pages = ["/dashboard", "/markets", "/markets/BTC-USD", "/analysis", "/assistant", "/strategies", `/strategies/${sid}`,
   "/strategies/new", "/backtests", `/backtests/${backtests[0].id}`, "/research", "/research/new", `/research/${sweep.id}`,
-  "/alerts", "/paper-trading", "/portfolio", "/settings"];
+  "/alerts", "/paper-trading", "/portfolio", "/journal", "/settings"];
 
 for (const theme of ["dark", "light"]) {
   await page.evaluate((t) => localStorage.setItem("ti-theme", t), theme);

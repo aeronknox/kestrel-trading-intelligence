@@ -4,6 +4,7 @@ from app.models.ai import AIAnalysisResult, AIConversation, AIMessage, TradingSi
 from app.models.alert import AlertEvent, StrategyAlert
 from app.models.audit import AuditLog
 from app.models.backtest import BacktestResult, BacktestSession, ResearchRun
+from app.models.journal import JournalEntry
 from app.models.market import Asset, MarketData, Watchlist, WatchlistItem
 from app.models.notification import Notification
 from app.models.paper import (
@@ -26,6 +27,7 @@ __all__ = [
     "AuthToken",
     "BacktestResult",
     "BacktestSession",
+    "JournalEntry",
     "MarketData",
     "Notification",
     "PaperPortfolio",

@@ -40,6 +40,8 @@ import type {
   TunableParameter,
   Webhook,
   NotificationsPage,
+  JournalEntry,
+  JournalPage,
   StrategyInput,
   StrategyTemplate,
   Ticker,
@@ -222,6 +224,12 @@ export const api = {
     analytics: () => get<PortfolioAnalytics>("/paper/analytics"),
     updateRiskLimits: (body: RiskLimits) => put<Portfolio>("/paper/portfolio/risk-limits", body),
     reset: () => post<Portfolio>("/paper/portfolio/reset"),
+  },
+  journal: {
+    get: () => get<JournalPage>("/paper/journal"),
+    save: (tradeId: number, body: { setup: string | null; emotion: string | null; rating: number | null; notes: string; lesson: string }) =>
+      put<JournalEntry>(`/paper/journal/${tradeId}`, body),
+    remove: (tradeId: number) => del<void>(`/paper/journal/${tradeId}`),
   },
   notifications: {
     list: (limit = 50) => get<NotificationsPage>("/notifications", { limit }),
