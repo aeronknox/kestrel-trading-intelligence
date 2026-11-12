@@ -73,7 +73,7 @@ await step("unverified email banner resends link", async () => {
 });
 
 await step("unauthenticated redirect after logout+login cycle", async () => {
-  await page.getByLabel("Account menu").click();
+  await page.getByRole("button", { name: "Account menu" }).click();
   await page.getByText("Sign out").click();
   await page.waitForURL("**/login");
   await page.goto(`${BASE}/dashboard`);
@@ -195,9 +195,9 @@ await step("backtest CSV export", async () => {
   await page.goto(`${BASE}/backtests`);
   await page.locator('a[href^="/backtests/"]').filter({ hasNotText: /compare/i }).first().click();
   await page.waitForURL(/\/backtests\/\d+$/);
-  const csv = await download(page.getByRole("link", { name: "Download trades as CSV" }));
+  const csv = await download(page.getByRole("link", { name: "Download Trades CSV" }));
   if (!csv.startsWith("entry_time,entry_price,quantity")) throw new Error(`bad header: ${csv.slice(0, 60)}`);
-  const equity = await download(page.getByRole("link", { name: "Download equity curve as CSV" }));
+  const equity = await download(page.getByRole("link", { name: "Download Equity CSV" }));
   if (equity.trim().split("\n").length < 50) throw new Error("equity CSV too short");
 });
 
@@ -275,7 +275,7 @@ await step("paper close position", async () => {
 
 await step("paper trades CSV export", async () => {
   await page.goto(`${BASE}/paper-trading`);
-  const csv = await download(page.getByRole("link", { name: "Download trade history as CSV" }));
+  const csv = await download(page.getByRole("link", { name: "Download Trades CSV" }));
   const lines = csv.trim().split("\n");
   if (!lines[0].startsWith("executed_at,symbol,side") || lines.length < 3) throw new Error(`unexpected CSV: ${lines.length} lines`);
 });

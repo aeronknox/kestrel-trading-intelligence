@@ -226,8 +226,10 @@ export function AppShell({ user, children }: { user: User; children: React.React
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex size-8 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Account menu">
-                  {initials || <UserIcon className="size-4" />}
+                <button className="flex size-8 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  {/* Initials are decoration; the name comes from the hidden text (no label/content mismatch). */}
+                  <span aria-hidden>{initials || <UserIcon className="size-4" />}</span>
+                  <span className="sr-only">Account menu</span>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
