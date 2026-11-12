@@ -42,6 +42,8 @@ def portfolio_out(summary: dict) -> PortfolioOut:
             max_open_positions=pf.max_open_positions,
             daily_loss_limit_pct=pf.daily_loss_limit_pct,
             allow_short=pf.allow_short,
+            require_stop_loss=pf.require_stop_loss,
+            max_risk_per_trade_pct=pf.max_risk_per_trade_pct,
         ),
         positions=[
             PositionOut(
@@ -92,6 +94,8 @@ async def update_risk_limits(body: RiskLimits, user: CurrentUser, db: DbSession)
     if not body.allow_short and any(p.quantity < 0 for p in pf.positions):
         raise ValidationFailedError("Cover your open shorts before turning short selling off")
     pf.allow_short = body.allow_short
+    pf.require_stop_loss = body.require_stop_loss
+    pf.max_risk_per_trade_pct = body.max_risk_per_trade_pct
     await audit(db, "paper.risk_limits_updated", user_id=user.id, entity_type="portfolio", entity_id=pf.id, details=body.model_dump())
     return portfolio_out(await svc.summary(pf))
 
@@ -120,6 +124,7 @@ async def place_order(body: OrderCreate, user: CurrentUser, db: DbSession) -> ob
         bracket_stop_loss=body.stop_loss,
         bracket_take_profit=body.take_profit,
         reduce_only=body.reduce_only,
+        enforce_trade_plan=True,
     )
     await audit(db, "paper.order_placed", user_id=user.id, entity_type="order", entity_id=order.id,
                 details={"symbol": asset.symbol, "side": body.side.value, "type": body.order_type.value,

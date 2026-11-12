@@ -39,6 +39,10 @@ class PaperPortfolio(IdMixin, TimestampMixin, Base):
     daily_loss_limit_pct: Mapped[float] = mapped_column(Float, default=5.0)
     # Short selling (negative positions); off unless the user enables it.
     allow_short: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Trade-plan rules for the trader's own entries (not strategies or margin calls): every new position
+    # needs a stop-loss, and/or what that stop would lose is capped at a share of equity (implies the stop).
+    require_stop_loss: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    max_risk_per_trade_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     positions: Mapped[list["PortfolioPosition"]] = relationship(

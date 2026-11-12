@@ -246,7 +246,7 @@ export function PaperTradingView() {
             <Card>
               <CardHeader>
                 <CardTitle>Positions</CardTitle>
-                <span className="text-xs text-muted-foreground">Max {p.risk_limits.max_position_pct}% per position · {p.risk_limits.max_open_positions} positions · {p.risk_limits.daily_loss_limit_pct}% daily loss limit</span>
+                <span className="text-xs text-muted-foreground">Max {p.risk_limits.max_position_pct}% per position · {p.risk_limits.max_open_positions} positions · {p.risk_limits.daily_loss_limit_pct}% daily loss limit{p.risk_limits.max_risk_per_trade_pct ? ` · ${p.risk_limits.max_risk_per_trade_pct}% risk per trade` : p.risk_limits.require_stop_loss ? " · stop-loss required" : ""}</span>
               </CardHeader>
               <CardContent className="px-2">
                 <PositionsTable portfolio={p} openOrders={openOrders} />

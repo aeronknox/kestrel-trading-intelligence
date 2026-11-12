@@ -85,6 +85,10 @@ class RiskLimits(BaseModel):
     max_open_positions: int = Field(ge=1, le=100)
     daily_loss_limit_pct: float = Field(ge=0.5, le=100)
     allow_short: bool = False  # simulated short selling (sell while flat; buy to cover)
+    require_stop_loss: bool = False  # your new positions must carry a stop-loss
+    max_risk_per_trade_pct: float | None = Field(
+        None, ge=0.1, le=10, description="Cap on what a new position's stop-loss would lose, as % of equity (needs a stop)"
+    )
 
 
 class PortfolioOut(BaseModel):

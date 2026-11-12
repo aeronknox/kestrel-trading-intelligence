@@ -256,3 +256,60 @@ async def test_limit_entry_whose_stop_was_gapped_past_still_fills_and_says_so(au
     assert filled["status"] == "filled" and "was not attached" in filled["note"]
     note = (await auth_client.get("/api/v1/notifications")).json()["notifications"][0]
     assert "was not attached" in note["message"]
+
+
+async def limits(client, **body) -> dict:  # type: ignore[no-untyped-def]
+    payload = {"max_position_pct": 25, "max_open_positions": 10, "daily_loss_limit_pct": 50, "allow_short": True} | body
+    resp = await client.put(f"{API}/portfolio/risk-limits", json=payload)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def test_trade_plan_requires_a_stop_loss_on_new_positions(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    assert (await limits(auth_client, require_stop_loss=True))["risk_limits"]["require_stop_loss"] is True
+
+    rejected = await order(auth_client)
+    assert rejected["status"] == "rejected" and "need a stop-loss" in rejected["reject_reason"]
+    stop_entry = await order(auth_client, order_type="stop", stop_price=120)
+    assert stop_entry["status"] == "rejected" and "market or limit order" in stop_entry["reject_reason"]
+    short = await order(auth_client, side="sell")
+    assert short["status"] == "rejected"
+
+    assert (await order(auth_client, stop_loss=90))["status"] == "filled"
+    # Reducing never needs a stop: partial sells, protective orders and closing all work.
+    assert (await order(auth_client, side="sell", quantity=2))["status"] == "filled"
+    assert all(o["status"] == "open" for o in await protect(auth_client, stop_loss=85, take_profit=130))
+    assert (await order(auth_client, side="sell", quantity=8))["status"] == "filled"
+
+
+async def test_trade_plan_caps_the_risk_of_each_trade(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    portfolio = await limits(auth_client, max_risk_per_trade_pct=1)
+    assert portfolio["risk_limits"]["max_risk_per_trade_pct"] == 1
+    no_stop = await order(auth_client)
+    assert no_stop["status"] == "rejected" and "1% risk-per-trade limit" in no_stop["reject_reason"]
+
+    # The loss if the stop fills, as the order ticket estimates it: slippage on both fills, fees both ways.
+    slip, fee = 0.0005, 0.001
+    entry, stop_fill = 100 * (1 + slip), 90 * (1 - slip)
+    per_unit = entry - stop_fill + (entry + stop_fill) * fee
+    allowed = portfolio["equity"] * 0.01
+    too_big = await order(auth_client, quantity=allowed / per_unit * 1.01, stop_loss=90)
+    assert too_big["status"] == "rejected" and "your limit is 1%" in too_big["reject_reason"]
+    sized = await order(auth_client, quantity=allowed / per_unit, stop_loss=90)  # exactly at the limit: allowed
+    assert sized["status"] == "filled", sized["reject_reason"]
+
+    # A short is capped the same way, with its stop above the entry.
+    short = await order(auth_client, symbol="ETH-USD", side="sell", quantity=1000, stop_loss=1e9)
+    assert short["status"] == "rejected" and "Hitting the stop-loss would lose" in short["reject_reason"]
+
+    # Turning the limit off lifts it.
+    await limits(auth_client)
+    assert (await order(auth_client, quantity=1))["status"] == "filled"
+
+
+async def test_trade_plan_validation(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    resp = await auth_client.put(f"{API}/portfolio/risk-limits", json={
+        "max_position_pct": 25, "max_open_positions": 10, "daily_loss_limit_pct": 5, "max_risk_per_trade_pct": 20})  # fmt: skip
+    assert resp.status_code == 422

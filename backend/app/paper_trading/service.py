@@ -262,6 +262,7 @@ class PaperTradingService:
         note: str | None = None,
         strategy_id: int | None = None,
         source: str | None = None,
+        enforce_trade_plan: bool = False,
     ) -> SimulatedOrder:
         source = source or ("strategy" if strategy_id is not None else "user")
         if quantity <= 0:
@@ -317,6 +318,9 @@ class PaperTradingService:
 
         reference_price = limit_price if limit_price is not None else stop_price if stop_price is not None else ticker.price
         try:
+            if enforce_trade_plan:
+                await self._check_trade_plan(portfolio, asset, side, order_type, quantity, limit_price, ticker.price,
+                                             bracket_stop_loss, reduce_only)  # fmt: skip
             await self._check_risk(
                 portfolio, asset, side, quantity, reference_price, order_id=order.id, reduce_only=reduce_only, oco_group=oco_group
             )
@@ -361,6 +365,45 @@ class PaperTradingService:
             raise ValidationFailedError(f"The stop-loss must be {'below' if long else 'above'} the entry price ({entry:,.2f})")
         if take_profit is not None and (take_profit <= entry if long else take_profit >= entry):
             raise ValidationFailedError(f"The take-profit must be {'above' if long else 'below'} the entry price ({entry:,.2f})")
+
+    async def _check_trade_plan(
+        self,
+        portfolio: PaperPortfolio,
+        asset: Asset,
+        side: OrderSide,
+        order_type: OrderType,
+        quantity: float,
+        limit_price: float | None,
+        market_price: float,
+        stop_loss: float | None,
+        reduce_only: bool,
+    ) -> None:
+        """The portfolio's trade-plan rules for an order that opens or adds to a position."""
+        cap = portfolio.max_risk_per_trade_pct
+        if not (portfolio.require_stop_loss or cap):
+            return
+        position = await self._position(portfolio, asset.id)
+        held = position.quantity if position else 0.0
+        if reduce_only or (side == OrderSide.BUY and held < -QTY_EPSILON) or (side == OrderSide.SELL and held > QTY_EPSILON):
+            return  # reduces a position: never blocked
+        if stop_loss is None:
+            why = f"to measure it against your {cap:g}% risk-per-trade limit" if cap else "by your risk limits"
+            how = "add one to this order" if order_type in (OrderType.MARKET, OrderType.LIMIT) else "use a market or limit order with one"
+            raise RiskLimitError(f"New positions need a stop-loss {why}: {how}")
+        if not cap:
+            return
+        long = side == OrderSide.BUY
+        # Worst case: a limit entry fills at its limit, a market one with slippage; the stop fills with slippage; fees both ways.
+        entry = limit_price if limit_price is not None else market_price * (1 + (1 if long else -1) * self.slip_rate)
+        stop_fill = stop_loss * (1 - self.slip_rate if long else 1 + self.slip_rate)
+        risk = quantity * (abs(entry - stop_fill) + (entry + stop_fill) * self.fee_rate)
+        equity = (await self.summary(portfolio))["equity"]
+        allowed = equity * cap / 100
+        if risk > allowed * (1 + 1e-6) + 1e-9:
+            raise RiskLimitError(
+                f"Hitting the stop-loss would lose ${risk:,.2f} ({risk / equity * 100:.2f}% of equity); your limit is {cap:g}% "
+                f"(${allowed:,.2f}). Trade a smaller size or move the stop closer"
+            )
 
     @staticmethod
     def _triggered(side: OrderSide, stop_price: float, price: float) -> bool:

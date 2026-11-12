@@ -370,6 +370,34 @@ await step("risk limits dialog saves", async () => {
   await toast(/Risk limits updated/);
 });
 
+await step("trade plan: 1% risk per trade needs a stop-loss", async () => {
+  await page.getByRole("button", { name: /Risk limits/ }).click();
+  await page.getByLabel(/Max risk per trade/).fill("1");
+  await page.getByRole("button", { name: /Save limits/ }).click();
+  await toast(/Risk limits updated/);
+  await page.getByText(/1% risk per trade/).waitFor();
+  // A new position without a stop-loss can't be placed; with one, sized by risk, it fills protected.
+  await page.getByRole("button", { name: "Buy", exact: true }).click();
+  await page.getByPlaceholder("0.00").fill("500");
+  await page.getByText(/Your risk limits require a stop-loss on new positions/).waitFor();
+  if (await page.getByRole("button", { name: /Buy SOL \(paper\)/ }).isEnabled()) throw new Error("order without a stop-loss was allowed");
+  // A stop 10% under the estimated fill (protective orders must be worth at least $1, so not a token price).
+  const fillText = await page.locator("dt", { hasText: "Est. fill price" }).locator("xpath=following-sibling::dd").innerText();
+  const fill = Number(fillText.replace(/[^0-9.]/g, ""));
+  if (!(fill > 0)) throw new Error(`no fill estimate: ${fillText}`);
+  await page.getByLabel("Stop-loss", { exact: true }).fill((fill * 0.9).toFixed(2));
+  await page.getByRole("switch", { name: "Size by risk" }).click();
+  await page.getByRole("button", { name: /Buy SOL \(paper\)/ }).click();
+  await toast(/Filled: buy .*protected by stop-loss/);
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Close", exact: true }).first().click();
+  await toast(/Closed SOL/);
+  await page.getByRole("button", { name: /Risk limits/ }).click();
+  await page.getByLabel(/Max risk per trade/).fill("");
+  await page.getByRole("button", { name: /Save limits/ }).click();
+  await toast(/Risk limits updated/);
+});
+
 await step("portfolio page renders analytics", async () => {
   await page.goto(`${BASE}/portfolio`);
   await page.getByText("Equity history").waitFor();

@@ -24,7 +24,10 @@ export function RiskLimitsDialog({ limits }: { limits: RiskLimits }) {
     },
     onError: (e: Error) => toast.error(e.message),
   });
-  const valid = v.max_position_pct >= 1 && v.max_position_pct <= 100 && v.max_open_positions >= 1 && v.max_open_positions <= 100 && v.daily_loss_limit_pct >= 0.5 && v.daily_loss_limit_pct <= 100;
+  const cap = v.max_risk_per_trade_pct ?? null;
+  const valid =
+    v.max_position_pct >= 1 && v.max_position_pct <= 100 && v.max_open_positions >= 1 && v.max_open_positions <= 100 &&
+    v.daily_loss_limit_pct >= 0.5 && v.daily_loss_limit_pct <= 100 && (cap === null || (cap >= 0.1 && cap <= 10));
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (o) setV(limits); }}>
       <DialogTrigger asChild>
@@ -45,6 +48,22 @@ export function RiskLimitsDialog({ limits }: { limits: RiskLimits }) {
           <Field label="Daily loss limit (%)" hint="New positions are blocked once 24h equity falls by this much.">
             <Input type="number" step="0.5" value={v.daily_loss_limit_pct} onChange={(e) => setV({ ...v, daily_loss_limit_pct: Number(e.target.value) })} />
           </Field>
+          <Field label="Max risk per trade (% of equity)" hint="0.1 – 10, or empty for no limit. What a new position's stop-loss would lose, including slippage and fees. Many traders risk 1% or less.">
+            <Input type="number" step="0.1" placeholder="No limit" value={cap ?? ""}
+              onChange={(e) => setV({ ...v, max_risk_per_trade_pct: e.target.value === "" ? null : Number(e.target.value) })} />
+          </Field>
+          <div className="flex items-start justify-between gap-4 rounded-md border border-border p-3">
+            <div>
+              <Label htmlFor="require-stop">Require a stop-loss on new positions</Label>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {cap !== null
+                  ? "Always on while risk per trade is limited: the stop is what the risk is measured against."
+                  : "Plan the exit before you enter. Applies to your own orders, not to strategy forward tests."}
+              </p>
+            </div>
+            <Switch id="require-stop" checked={cap !== null || Boolean(v.require_stop_loss)} disabled={cap !== null}
+              onCheckedChange={(on) => setV({ ...v, require_stop_loss: on })} />
+          </div>
           <div className="flex items-start justify-between gap-4 rounded-md border border-border p-3 sm:col-span-2">
             <div>
               <Label htmlFor="allow-short">Allow short selling</Label>

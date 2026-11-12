@@ -45,13 +45,16 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
   const execPrice = price ? price * (1 + ((side === "buy" ? 1 : -1) * portfolio.slippage_bps) / 10_000) : 0;
 
   // Optional stop-loss / take-profit riding on an entry, and sizing the entry by what the stop would cost.
+  const riskCap = portfolio.risk_limits.max_risk_per_trade_pct ?? null;
+  // The trade plan in the risk limits: new positions need a stop-loss (always, when risk per trade is capped).
+  const stopRequired = Boolean(portfolio.risk_limits.require_stop_loss || riskCap) && opensRiskFor(side, portfolio, symbol);
   const canBracket = (type === "market" || type === "limit") && opensRiskFor(side, portfolio, symbol);
   const [bracketOn, setBracketOn] = useState(false);
   const [sl, setSl] = useState("");
   const [tp, setTp] = useState("");
   const [riskOn, setRiskOn] = useState(false);
-  const [riskPct, setRiskPct] = useState("1");
-  const bracket = canBracket && bracketOn;
+  const [riskPct, setRiskPct] = useState(String(Math.min(1, riskCap ?? 1)));
+  const bracket = canBracket && (bracketOn || stopRequired);
   const long = side === "buy";
   const slNum = Number(sl) > 0 ? Number(sl) : null;
   const tpNum = Number(tp) > 0 ? Number(tp) : null;
@@ -65,6 +68,8 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
   const riskSized = bracket && riskOn && lossPerUnit && Number(riskPct) > 0 ? (portfolio.equity * Number(riskPct)) / 100 / lossPerUnit : null;
   const qty = riskSized ?? typedQty;
   const riskUsd = lossPerUnit ? qty * lossPerUnit : null;
+  const overRiskCap = riskCap !== null && riskUsd !== null && riskUsd > (portfolio.equity * riskCap) / 100 * (1 + 1e-6);
+  const missingStop = stopRequired && !(bracket && slNum);
   const rewardRisk = lossPerUnit && tpNum && !tpError && execPrice ? (Math.abs(tpNum - execPrice) - (tpNum + execPrice) * feeRate) / lossPerUnit : null;
   const notional = qty * execPrice;
   const fee = (notional * portfolio.fee_bps) / 10_000;
@@ -105,7 +110,8 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
 
   const invalid =
     qty <= 0 || (type !== "market" && !(level > 0)) || (type === "trailing_stop" && level > 50) || !ticker ||
-    (bracket && (!(slNum || tpNum) || Boolean(slError) || Boolean(tpError) || (riskOn && !riskSized)));
+    (bracket && (!(slNum || tpNum) || Boolean(slError) || Boolean(tpError) || (riskOn && !riskSized))) ||
+    missingStop || overRiskCap;
 
   return (
     <Card>
@@ -202,7 +208,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
           <div className="space-y-3 rounded-lg border border-border p-3">
             <div className="flex items-center justify-between gap-3">
               <Label htmlFor="ticket-bracket" className="text-sm">Stop-loss &amp; take-profit</Label>
-              <Switch id="ticket-bracket" checked={bracketOn} onCheckedChange={setBracketOn} />
+              <Switch id="ticket-bracket" checked={bracket} disabled={stopRequired} onCheckedChange={setBracketOn} />
             </div>
             {bracket && (
               <>
@@ -219,7 +225,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
                   <div className="flex items-center gap-2">
                     {riskOn && (
                       <div className="flex items-center gap-1">
-                        <Input aria-label="Risk per trade (% of equity)" type="number" min={0.1} max={10} step="0.1" className="h-8 w-16" value={riskPct} onChange={(e) => setRiskPct(e.target.value)} />
+                        <Input aria-label="Risk per trade (% of equity)" type="number" min={0.1} max={riskCap ?? 10} step="0.1" className="h-8 w-16" value={riskPct} onChange={(e) => setRiskPct(e.target.value)} />
                         <span className="text-xs text-muted-foreground">%</span>
                       </div>
                     )}
@@ -234,6 +240,17 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
               </>
             )}
           </div>
+        )}
+        {missingStop && (
+          <p className="text-xs text-warn" role="status">
+            Your risk limits require a stop-loss on new positions{canBracket ? ": set one above." : ". Use a market or limit order to attach one."}
+          </p>
+        )}
+        {overRiskCap && riskUsd !== null && (
+          <p className="text-xs text-loss" role="status">
+            Hitting the stop-loss would lose {formatPct((riskUsd / portfolio.equity) * 100, 2, false)} of equity, above your {riskCap}% risk-per-trade
+            limit. Trade a smaller size or move the stop closer.
+          </p>
         )}
         {riskSized !== null && (notional / portfolio.equity) * 100 > portfolio.risk_limits.max_position_pct && (
           <p className="text-xs text-warn" role="status">
