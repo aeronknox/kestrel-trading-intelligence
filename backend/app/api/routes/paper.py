@@ -10,7 +10,8 @@ from app.core.exceptions import ValidationFailedError
 from app.database.base import utcnow
 from app.market_data.service import MarketDataService
 from app.models.enums import OrderStatus
-from app.paper_trading.service import PaperTradingService
+from app.models.paper import PaperPortfolio, SimulatedOrder
+from app.paper_trading.service import QTY_EPSILON, PaperTradingService
 from app.schemas.market import AssetOut
 from app.schemas.paper import OrderCreate, OrderOut, PortfolioOut, PositionOut, ProtectPosition, RiskLimits, SnapshotOut, TradeOut
 from app.services.audit import audit
@@ -19,10 +20,12 @@ from app.services.export import csv_response, safe_filename
 router = APIRouter(prefix="/paper", tags=["paper-trading"])
 
 
-def portfolio_out(summary: dict) -> PortfolioOut:
+def portfolio_out(summary: dict, svc: PaperTradingService, stops: list[SimulatedOrder]) -> PortfolioOut:
     pf = summary["portfolio"]
     settings = get_settings()
     equity = summary["equity"] or 1.0
+    risks = {v.position.id: svc.stop_risk(v, stops) for v in summary["positions"]}
+    open_risk = sum(r.risk or 0.0 for r in risks.values())
     return PortfolioOut(
         id=pf.id,
         name=pf.name,
@@ -64,13 +67,23 @@ def portfolio_out(summary: dict) -> PortfolioOut:
                 realized_pnl=v.position.realized_pnl,
                 allocation_pct=abs(v.market_value) / equity * 100,
                 opened_at=v.position.opened_at,
+                stop_price=risks[v.position.id].stop_price,
+                risk_to_stop=risks[v.position.id].risk,
+                unprotected_qty=risks[v.position.id].unprotected_qty,
             )
             for v in summary["positions"]
         ],
         prices_complete=summary["prices_complete"],
+        open_risk=open_risk,
+        open_risk_pct=open_risk / equity * 100,
+        unprotected_positions=sum(1 for r in risks.values() if r.unprotected_qty > QTY_EPSILON),
         fee_bps=settings.paper_fee_bps,
         slippage_bps=settings.paper_slippage_bps,
     )
+
+
+async def _portfolio_response(svc: PaperTradingService, pf: PaperPortfolio) -> PortfolioOut:
+    return portfolio_out(await svc.summary(pf), svc, await svc.open_stops(pf))
 
 
 async def _service_and_portfolio(db, user_id: int, lock: bool = False):  # type: ignore[no-untyped-def]
@@ -85,7 +98,7 @@ async def get_portfolio(user: CurrentUser, db: DbSession) -> PortfolioOut:
     svc, pf = await _service_and_portfolio(db, user.id, lock=True)
     await svc.process_open_orders(pf)
     await svc.record_snapshot(pf)
-    return portfolio_out(await svc.summary(pf))
+    return await _portfolio_response(svc, pf)
 
 
 @router.put("/portfolio/risk-limits", response_model=PortfolioOut)
@@ -100,7 +113,7 @@ async def update_risk_limits(body: RiskLimits, user: CurrentUser, db: DbSession)
     pf.require_stop_loss = body.require_stop_loss
     pf.max_risk_per_trade_pct = body.max_risk_per_trade_pct
     await audit(db, "paper.risk_limits_updated", user_id=user.id, entity_type="portfolio", entity_id=pf.id, details=body.model_dump())
-    return portfolio_out(await svc.summary(pf))
+    return await _portfolio_response(svc, pf)
 
 
 @router.post("/portfolio/reset", response_model=PortfolioOut)
@@ -108,7 +121,7 @@ async def reset_portfolio(user: CurrentUser, db: DbSession) -> PortfolioOut:
     svc, pf = await _service_and_portfolio(db, user.id, lock=True)
     await svc.reset(pf)
     await audit(db, "paper.portfolio_reset", user_id=user.id, entity_type="portfolio", entity_id=pf.id)
-    return portfolio_out(await svc.summary(pf))
+    return await _portfolio_response(svc, pf)
 
 
 @router.post("/orders", response_model=OrderOut, status_code=201, dependencies=[rate_limit("orders")])

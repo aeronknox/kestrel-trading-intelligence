@@ -313,3 +313,51 @@ async def test_trade_plan_validation(auth_client, provider) -> None:  # type: ig
     resp = await auth_client.put(f"{API}/portfolio/risk-limits", json={
         "max_position_pct": 25, "max_open_positions": 10, "daily_loss_limit_pct": 5, "max_risk_per_trade_pct": 20})  # fmt: skip
     assert resp.status_code == 422
+
+
+async def portfolio(client) -> dict:  # type: ignore[no-untyped-def]
+    resp = await client.get(f"{API}/portfolio")
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def test_open_risk_is_measured_to_the_resting_stops(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    slip, fee = 0.0005, 0.001
+    await provider.set_price("SOL-USD", 100.0)
+    await order(auth_client)
+    pf = await portfolio(auth_client)
+    (pos,) = pf["positions"]
+    assert (pos["stop_price"], pos["risk_to_stop"], pos["unprotected_qty"]) == (None, None, 10)
+    assert pf["open_risk"] == 0 and pf["unprotected_positions"] == 1
+
+    await protect(auth_client, stop_loss=90, take_profit=130)
+    fill = 90 * (1 - slip)
+    pf = await portfolio(auth_client)
+    (pos,) = pf["positions"]
+    assert pos["stop_price"] == 90 and pos["unprotected_qty"] == 0 and pf["unprotected_positions"] == 0
+    assert pos["risk_to_stop"] == pytest.approx(10 * (100 - fill + fill * fee))
+    assert pf["open_risk"] == pytest.approx(pos["risk_to_stop"])
+    assert pf["open_risk_pct"] == pytest.approx(pf["open_risk"] / pf["equity"] * 100)
+
+    # Measured from the current price: a rally puts more of the open profit at risk.
+    await provider.set_price("SOL-USD", 110.0)
+    assert (await portfolio(auth_client))["open_risk"] == pytest.approx(10 * (110 - fill + fill * fee))
+
+    # A second, farther stop on part of the position: the worst case counts it first.
+    await order(auth_client, side="sell", order_type="stop", stop_price=80, quantity=4)
+    (pos,) = (await portfolio(auth_client))["positions"]
+    far = 80 * (1 - slip)
+    assert pos["stop_price"] == 80
+    assert pos["risk_to_stop"] == pytest.approx(4 * (110 - far + far * fee) + 6 * (110 - fill + fill * fee))
+
+
+async def test_open_risk_of_a_short_and_on_the_dashboard(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await limits(auth_client)
+    await provider.set_price("SOL-USD", 100.0)
+    await order(auth_client, side="sell")
+    await protect(auth_client, stop_loss=110)
+    fill = 110 * 1.0005
+    expected = 10 * (fill - 100 + fill * 0.001)
+    assert (await portfolio(auth_client))["open_risk"] == pytest.approx(expected)
+    dashboard = (await auth_client.get("/api/v1/dashboard")).json()
+    assert dashboard["portfolio"]["open_risk"] == pytest.approx(expected)

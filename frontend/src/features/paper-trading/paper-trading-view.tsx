@@ -74,6 +74,12 @@ function PositionsTable({ portfolio, openOrders }: { portfolio: Portfolio; openO
                     {guard.stopLoss && <>{guard.trailPct ? `Trail ${guard.trailPct}% · SL` : "SL"} {formatPrice(guard.stopLoss)}</>}
                     {guard.stopLoss && guard.takeProfit && " · "}
                     {guard.takeProfit && <>TP {formatPrice(guard.takeProfit)}</>}
+                    {p.risk_to_stop != null && <span title="What the stops would lose from the current price if they filled, slippage and fee included"> · risk {formatUsd(p.risk_to_stop)}</span>}
+                  </p>
+                )}
+                {(p.unprotected_qty ?? 0) > 0 && (
+                  <p className="mt-0.5 text-[11px] text-warn" title="No resting stop covers this quantity: its loss has no limit">
+                    {p.stop_price != null ? `${formatQty(p.unprotected_qty)} without a stop` : "No stop"}
                   </p>
                 )}
               </TD>
@@ -250,6 +256,18 @@ export function PaperTradingView() {
                 <span className="text-xs text-muted-foreground">Max {p.risk_limits.max_position_pct}% per position · {p.risk_limits.max_open_positions} positions · {p.risk_limits.daily_loss_limit_pct}% daily loss limit{p.risk_limits.max_risk_per_trade_pct ? ` · ${p.risk_limits.max_risk_per_trade_pct}% risk per trade` : p.risk_limits.require_stop_loss ? " · stop-loss required" : ""}</span>
               </CardHeader>
               <CardContent className="px-2">
+                {p.positions.length > 0 && p.open_risk !== undefined && (
+                  <p className="px-3 pb-2 text-xs text-muted-foreground" role="status">
+                    Open risk{" "}
+                    <span className="font-medium text-foreground tabular">{formatUsd(p.open_risk)}</span>{" "}
+                    ({formatPct(p.open_risk_pct, 2, false)} of equity) if every stop fills
+                    {p.unprotected_positions ? (
+                      <span className="text-warn">
+                        {" "}· {p.unprotected_positions} {p.unprotected_positions === 1 ? "position has" : "positions have"} no stop, so no limit on {p.unprotected_positions === 1 ? "its" : "their"} loss
+                      </span>
+                    ) : null}
+                  </p>
+                )}
                 <PositionsTable portfolio={p} openOrders={openOrders} />
               </CardContent>
             </Card>

@@ -84,6 +84,10 @@ class PositionOut(BaseModel):
     realized_pnl: float
     allocation_pct: float
     opened_at: datetime
+    # Open risk: what resting stops would lose from the current price if they filled.
+    stop_price: float | None = None
+    risk_to_stop: float | None = None
+    unprotected_qty: float = 0.0
 
 
 class RiskLimits(BaseModel):
@@ -117,6 +121,9 @@ class PortfolioOut(BaseModel):
     risk_limits: RiskLimits
     positions: list[PositionOut]
     prices_complete: bool
+    open_risk: float = 0.0  # summed over positions with a stop; unprotected quantity is not included
+    open_risk_pct: float = 0.0
+    unprotected_positions: int = 0  # positions with quantity no stop covers
     fee_bps: float
     slippage_bps: float
     simulated: bool = True

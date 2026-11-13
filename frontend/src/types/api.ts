@@ -452,6 +452,12 @@ export interface Position {
   realized_pnl: number;
   allocation_pct: number;
   opened_at: string;
+  /** The farthest resting stop on this position (the worst case). */
+  stop_price?: number | null;
+  /** What its stops would lose from the current price if they filled; null without a stop. */
+  risk_to_stop?: number | null;
+  /** Quantity no stop covers. */
+  unprotected_qty?: number;
 }
 
 export interface RiskLimits {
@@ -486,6 +492,10 @@ export interface Portfolio {
   daily_pnl_pct: number;
   total_fees: number;
   risk_limits: RiskLimits;
+  /** Summed risk to the resting stops (unprotected quantity is not included), and positions with none. */
+  open_risk?: number;
+  open_risk_pct?: number;
+  unprotected_positions?: number;
   positions: Position[];
   prices_complete: boolean;
   fee_bps: number;

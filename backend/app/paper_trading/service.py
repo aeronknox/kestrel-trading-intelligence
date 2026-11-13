@@ -56,6 +56,13 @@ SNAPSHOT_MIN_INTERVAL = timedelta(minutes=5)
 
 
 @dataclass
+class StopRisk:
+    stop_price: float | None  # the farthest stop (the worst case)
+    risk: float | None  # None without a stop or a current price
+    unprotected_qty: float
+
+
+@dataclass
 class PositionView:
     position: PortfolioPosition
     price: float | None
@@ -110,6 +117,45 @@ class PaperTradingService:
             await self.session.flush()
             await self.session.refresh(portfolio, attribute_names=["positions"])
         return portfolio
+
+    async def open_stops(self, portfolio: PaperPortfolio) -> list[SimulatedOrder]:
+        """Resting stop and trailing-stop orders: the exits a position's open risk is measured to."""
+        return list(
+            (
+                await self.session.scalars(
+                    select(SimulatedOrder).where(
+                        SimulatedOrder.portfolio_id == portfolio.id,
+                        SimulatedOrder.status == OrderStatus.OPEN,
+                        SimulatedOrder.order_type.in_((OrderType.STOP, OrderType.TRAILING_STOP)),
+                    )
+                )
+            ).all()
+        )
+
+    def stop_risk(self, view: PositionView, stops: list[SimulatedOrder]) -> StopRisk:
+        """What the position would lose from the current price if its stops filled (slippage and the exit fee
+        included), the farthest stop, and how much of it no stop covers. Farthest stops are counted first, so
+        overlapping stops give the worst case."""
+        qty = abs(view.position.quantity)
+        long = view.position.quantity > 0
+        exit_side = OrderSide.SELL if long else OrderSide.BUY
+        mine = [o for o in stops if o.asset_id == view.position.asset_id and o.side == exit_side and o.stop_price is not None]
+        mine.sort(key=lambda o: (o.stop_price or 0.0) * (1 if long else -1))  # farthest from the price first
+        covered, risk = 0.0, 0.0
+        for o in mine:
+            take = min(o.quantity, qty - covered)
+            if take <= QTY_EPSILON:
+                break
+            assert o.stop_price is not None
+            fill = o.stop_price * (1 - self.slip_rate if long else 1 + self.slip_rate)
+            if view.price is not None:
+                risk += take * ((view.price - fill if long else fill - view.price) + fill * self.fee_rate)
+            covered += take
+        return StopRisk(
+            stop_price=mine[0].stop_price if mine else None,
+            risk=risk if mine and view.price is not None else None,
+            unprotected_qty=max(qty - covered, 0.0),
+        )
 
     async def position_views(self, portfolio: PaperPortfolio) -> list[PositionView]:
         positions = [p for p in portfolio.positions if abs(p.quantity) > QTY_EPSILON]

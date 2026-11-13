@@ -60,7 +60,7 @@ async def dashboard(user: CurrentUser, db: DbSession) -> dict:
         return TickerOut(**t.to_dict()).model_dump(mode="json") if t else None
 
     return {
-        "portfolio": portfolio_out(summary).model_dump(mode="json"),
+        "portfolio": portfolio_out(summary, paper, await paper.open_stops(pf)).model_dump(mode="json"),
         "equity_history": [SnapshotOut.model_validate(s).model_dump(mode="json") for s in history],
         "market": [
             {"asset": AssetOut.model_validate(a).model_dump(mode="json"), "ticker": tick(a.symbol)} for a in assets

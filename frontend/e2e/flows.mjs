@@ -283,6 +283,9 @@ await step("paper market buy via ticket", async () => {
   await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
   await toast(/Filled: buy/);
   await page.getByRole("row").filter({ hasText: "ETH-USD" }).getByRole("button", { name: "Close", exact: true }).waitFor();
+  // Bought without a stop: flagged, and not counted in open risk.
+  await page.getByText("No stop", { exact: true }).waitFor();
+  await page.getByText(/1 position has no stop, so no limit on its loss/).waitFor();
 });
 
 await step("paper entry with stop-loss, sized by risk", async () => {
@@ -296,6 +299,9 @@ await step("paper entry with stop-loss, sized by risk", async () => {
   await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
   await toast(/protected by stop-loss/);
   await page.getByText(/^SL \$?100\.00/).first().waitFor();
+  // The protection covers the whole position now: its risk to the stop is counted, nothing is unprotected.
+  await page.getByText(/· risk \$[\d,.]+/).first().waitFor();
+  await page.getByText(/^Open risk \$[\d,.]+ \([\d.]+% of equity\) if every stop fills$/).waitFor();
   await page.getByRole("switch", { name: "Stop-loss & take-profit" }).click(); // back to a plain ticket
 });
 
