@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, FlaskConical, MailWarning, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/primitives";
 import { ME_KEY } from "@/hooks/use-auth";
+import { looksLikeEmail } from "@/lib/validation-message";
 import { api } from "@/services/api";
 
 /** Read the one-time token from the URL once, then drop it from the address bar and history. */
@@ -31,6 +32,26 @@ function Heading({ title, body }: { title: string; body: React.ReactNode }) {
   );
 }
 
+/** Whether this server only logs emails (EMAIL_BACKEND=console) instead of sending them. */
+export function useEmailIsLogged(): boolean {
+  const config = useQuery({ queryKey: ["auth-config"], queryFn: api.auth.config, staleTime: 300_000 });
+  return config.data?.email_delivery === "console";
+}
+
+/** Where the link went when the server doesn't send email, and how to turn sending on. */
+function LoggedEmailNote({ what }: { what: string }) {
+  return (
+    <div className="mt-6 rounded-md border border-warn/40 bg-warn-soft px-3 py-2.5 text-xs leading-relaxed" role="note">
+      <p className="font-medium">This server doesn&apos;t send email yet.</p>
+      <p className="mt-1 text-muted-foreground">
+        It is in development mode (<code>EMAIL_BACKEND=console</code>), so the {what} link was written to the backend&apos;s log instead of
+        an inbox: look for the line <code>email_console</code> and open its <code>link</code>. To send real emails, set{" "}
+        <code>EMAIL_BACKEND=smtp</code> and the <code>SMTP_*</code> settings (see <code>.env.example</code>).
+      </p>
+    </div>
+  );
+}
+
 function ErrorNote({ message }: { message: string }) {
   return <p className="rounded-md bg-loss-soft px-3 py-2 text-xs text-loss" role="alert">{message}</p>;
 }
@@ -38,15 +59,23 @@ function ErrorNote({ message }: { message: string }) {
 // ------------------------------------------------------------ forgot password
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
-  const send = useMutation({ mutationFn: () => api.auth.forgotPassword(email) });
+  const logged = useEmailIsLogged();
+  const send = useMutation({ mutationFn: () => api.auth.forgotPassword(email.trim()) });
   if (send.isSuccess) {
     return (
       <div>
-        <Heading title="Check your email" body={send.data.message} />
-        <p className="mt-6 text-sm text-muted-foreground">
-          The link expires soon and works once. Didn&apos;t get it? Check spam, or{" "}
-          <button type="button" className="font-medium text-primary hover:underline" onClick={() => send.reset()}>try again</button>.
-        </p>
+        <Heading
+          title={logged ? "Reset link created" : "Check your email"}
+          body={logged ? "If an account exists for that email, a link to reset its password was created." : send.data.message}
+        />
+        {logged ? (
+          <LoggedEmailNote what="password reset" />
+        ) : (
+          <p className="mt-6 text-sm text-muted-foreground">
+            The link expires soon and works once. Didn&apos;t get it? Check spam, or{" "}
+            <button type="button" className="font-medium text-primary hover:underline" onClick={() => send.reset()}>try again</button>.
+          </p>
+        )}
         <Button asChild variant="outline" className="mt-6 w-full"><Link href="/login">Back to sign in</Link></Button>
       </div>
     );
@@ -59,7 +88,7 @@ export function ForgotPasswordForm() {
           <Input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
         {send.error && <ErrorNote message={send.error.message} />}
-        <Button type="submit" loading={send.isPending} disabled={!/^\S+@\S+\.\S+$/.test(email)}>Send reset link</Button>
+        <Button type="submit" loading={send.isPending} disabled={!looksLikeEmail(email)}>Send reset link</Button>
       </form>
       <p className="mt-6 text-center text-sm text-muted-foreground">
         Remembered it? <Link href="/login" className="font-medium text-primary hover:underline">Sign in</Link>
@@ -155,6 +184,7 @@ export function VerifyEmailView() {
 
 // ---------------------------------------------------------- in-app reminder
 export function VerifyEmailBanner({ email }: { email: string }) {
+  const logged = useEmailIsLogged();
   const resend = useMutation({
     mutationFn: api.auth.resendVerification,
     onSuccess: (r) => toast.success(r.message),
@@ -165,6 +195,12 @@ export function VerifyEmailBanner({ email }: { email: string }) {
       <MailWarning className="size-4 shrink-0 text-warn" />
       <p className="min-w-0 flex-1">
         Confirm your email address <span className="font-medium">{email}</span> so you can reset your password if you forget it.
+        {logged && (
+          <span className="block text-xs text-muted-foreground">
+            This server doesn&apos;t send email yet (<code>EMAIL_BACKEND=console</code>): the confirmation link is in the backend&apos;s log, on the{" "}
+            <code>email_console</code> line.
+          </span>
+        )}
       </p>
       <Button size="sm" variant="outline" loading={resend.isPending} disabled={resend.isSuccess} onClick={() => resend.mutate()}>
         {resend.isSuccess ? "Email sent" : "Resend email"}

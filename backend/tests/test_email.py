@@ -155,6 +155,7 @@ async def test_smtp_backend_sends_and_failures_do_not_break_signup(client, monke
     monkeypatch.setattr(s, "smtp_username", "apikey")
     monkeypatch.setattr(s, "smtp_password", "not-a-real-secret")
     monkeypatch.setattr(email_service.smtplib, "SMTP", FakeSMTP)
+    assert (await client.get(f"{API}/config")).json()["email_delivery"] == "smtp"  # the pages then say "check your inbox"
     await register(client, email="mail@example.com")
     assert sent[0] == "starttls" and sent[1] == ("login", "apikey")
     assert sent[2]["To"] == "mail@example.com" and sent[2]["Subject"] == "Confirm your email address"

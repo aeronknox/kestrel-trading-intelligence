@@ -76,6 +76,13 @@ await step("register", async () => {
   await page.getByText("Virtual portfolio value").waitFor();
 });
 
+await step("signed in: the sign-in and sign-up pages go to the dashboard", async () => {
+  for (const path of ["/login", "/register"]) {
+    await page.goto(`${BASE}${path}`);
+    await page.waitForURL("**/dashboard", { timeout: 15000 });
+  }
+});
+
 await step("unverified email banner resends link", async () => {
   await page.getByText("Confirm your email address").waitFor();
   await page.getByRole("button", { name: "Resend email" }).click();
@@ -498,8 +505,27 @@ await step("forgot password request", async () => {
   await page.waitForURL("**/forgot-password");
   await page.fill("#email", email);
   await page.getByRole("button", { name: "Send reset link" }).click();
-  await page.getByText("Check your email").waitFor();
   await page.getByText(/If an account exists/).waitFor();
+  // A server that only logs emails says so, instead of sending people to an inbox that stays empty.
+  const { email_delivery } = await (await page.request.get(`${BASE}/api/v1/auth/config`)).json();
+  if (email_delivery === "console") {
+    await page.getByRole("heading", { name: "Reset link created" }).waitFor();
+    await page.getByText("This server doesn't send email yet.").waitFor();
+  } else {
+    await page.getByRole("heading", { name: "Check your email" }).waitFor();
+  }
+});
+
+await step("sign-in form explains a mistyped email", async () => {
+  await page.goto(`${BASE}/login`);
+  await page.fill("#email", "name@");
+  await page.fill("#password", "whatever-123");
+  await page.locator("#password").focus(); // leaving the email field checks it
+  await page.getByText("Enter a valid email address, like name@example.com.").waitFor();
+  if (await page.getByRole("button", { name: "Sign in" }).isEnabled()) throw new Error("submitted a malformed email");
+  await page.fill("#email", "name@example.com");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("alert").filter({ hasText: "Invalid email or password" }).waitFor();
 });
 
 await step("invalid reset and verification links are explained", async () => {

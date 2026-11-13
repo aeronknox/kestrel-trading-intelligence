@@ -3,6 +3,7 @@
  * `src/app/api/v1/[...path]/route.ts`), so the httpOnly session cookie is sent
  * automatically and never exposed to JavaScript.
  */
+import { validationMessage } from "@/lib/validation-message";
 import type {
   PriceAlert,
   AlertEventsPage,
@@ -106,8 +107,7 @@ async function request<T>(method: string, path: string, body?: unknown, query?: 
     // Surface the first field error for validation failures.
     if (err?.code === "validation_failed" && Array.isArray(err.details) && err.details[0]?.msg) {
       const d = err.details[0] as { loc?: (string | number)[]; msg: string };
-      const field = d.loc?.filter((x) => x !== "body").join(".");
-      message = field ? `${field}: ${d.msg}` : d.msg;
+      message = validationMessage(d.loc, d.msg);
     }
     throw new ApiError(res.status, err?.code ?? "http_error", message, err?.details);
   }
@@ -134,7 +134,8 @@ export const api = {
       post<{ message: string }>("/auth/reset-password", { token, new_password }),
     verifyEmail: (token: string) => post<{ message: string }>("/auth/verify-email", { token }),
     resendVerification: () => post<{ message: string }>("/auth/verify-email/resend"),
-    config: () => get<{ demo_enabled: boolean }>("/auth/config"),
+    /** email_delivery "console": reset and verification links go to the server log, not an inbox. */
+    config: () => get<{ demo_enabled: boolean; email_delivery?: "console" | "smtp" }>("/auth/config"),
     demo: () => post<User>("/auth/demo"),
   },
   users: {

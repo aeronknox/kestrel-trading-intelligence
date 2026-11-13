@@ -20,13 +20,13 @@ def demo_on(monkeypatch):  # type: ignore[no-untyped-def]
 
 
 async def test_demo_is_off_by_default(client) -> None:  # type: ignore[no-untyped-def]
-    assert (await client.get("/api/v1/auth/config")).json() == {"demo_enabled": False}
+    assert (await client.get("/api/v1/auth/config")).json() == {"demo_enabled": False, "email_delivery": "console"}
     assert (await client.post("/api/v1/auth/demo")).status_code == 404
 
 
 async def test_demo_creates_a_seeded_signed_in_sandbox(client, provider, demo_on) -> None:  # type: ignore[no-untyped-def]
     await provider.set_price("BTC-USD", 60_000.0)
-    assert (await client.get("/api/v1/auth/config")).json() == {"demo_enabled": True}
+    assert (await client.get("/api/v1/auth/config")).json()["demo_enabled"] is True
     resp = await client.post("/api/v1/auth/demo")
     assert resp.status_code == 201
     user = resp.json()

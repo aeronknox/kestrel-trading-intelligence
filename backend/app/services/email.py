@@ -11,6 +11,7 @@ never raised, so a mail outage cannot break sign-up or leak whether an account e
 """
 
 import asyncio
+import re
 import smtplib
 import ssl
 from collections import deque
@@ -68,7 +69,8 @@ async def send_email(msg: OutgoingEmail) -> bool:
     if backend == "console":
         outbox.append(msg)
         EMAILS.labels("console").inc()
-        logger.info("email_console", to=msg.to, subject=msg.subject, body=msg.text)
+        link = re.search(r"https?://\S+", msg.text)
+        logger.info("email_console", to=msg.to, subject=msg.subject, link=link.group(0) if link else None, body=msg.text)
         return True
     try:
         await asyncio.to_thread(_send_smtp, msg)

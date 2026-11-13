@@ -3,11 +3,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/primitives";
 import { ME_KEY } from "@/hooks/use-auth";
+import { looksLikeEmail } from "@/lib/validation-message";
 import { api } from "@/services/api";
 
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
@@ -21,6 +22,17 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const isRegister = mode === "register";
   const config = useQuery({ queryKey: ["auth-config"], queryFn: api.auth.config, staleTime: 300_000 });
   const [demoPending, setDemoPending] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
+  // Already signed in (e.g. opened /login from a bookmark): go to the app instead of showing the form.
+  // Asked fresh, not from the cache, so a just-expired session isn't sent straight back here.
+  const session = useQuery({ queryKey: ["auth", "me", "fresh"], queryFn: () => api.auth.me().catch(() => null), staleTime: 0, gcTime: 0, retry: false });
+  useEffect(() => {
+    if (session.data) {
+      qc.setQueryData(ME_KEY, session.data);
+      router.replace("/dashboard");
+    }
+  }, [session.data, qc, router]);
+  const emailError = emailTouched && email && !looksLikeEmail(email) ? "Enter a valid email address, like name@example.com." : null;
 
   async function startDemo() {
     setError(null);
@@ -45,7 +57,8 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     setError(null);
     setPending(true);
     try {
-      const user = isRegister ? await api.auth.register(email, password, name) : await api.auth.login(email, password);
+      const address = email.trim();
+      const user = isRegister ? await api.auth.register(address, password, name.trim()) : await api.auth.login(address, password);
       qc.setQueryData(ME_KEY, user);
       router.replace("/dashboard");
     } catch (err) {
@@ -67,8 +80,8 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             <Input id="name" autoComplete="name" required value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
         )}
-        <Field label="Email" htmlFor="email">
-          <Input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        <Field label="Email" htmlFor="email" error={emailError}>
+          <Input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} onBlur={() => setEmailTouched(true)} />
         </Field>
         <Field label="Password" htmlFor="password" hint={isRegister ? "At least 10 characters, with letters and numbers." : undefined} error={passwordHint}>
           <Input
@@ -86,7 +99,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           </Link>
         )}
         {error && <p className="rounded-md bg-loss-soft px-3 py-2 text-xs text-loss" role="alert">{error}</p>}
-        <Button type="submit" loading={pending} disabled={!email || !password || (isRegister && (!name || !!passwordHint))}>
+        <Button type="submit" loading={pending} disabled={!looksLikeEmail(email) || !password || (isRegister && (!name.trim() || !!passwordHint))}>
           {isRegister ? "Create account" : "Sign in"}
         </Button>
       </form>

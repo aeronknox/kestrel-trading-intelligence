@@ -62,8 +62,11 @@ async def register(body: RegisterRequest, request: Request, response: Response, 
 
 @router.get("/config")
 async def auth_config() -> dict:
-    """Public sign-in options for the login page."""
-    return {"demo_enabled": get_settings().demo_mode}
+    """Public sign-in options for the auth pages. `email_delivery` is "console" when emails (reset and
+    verification links) are only written to the server log, so the pages can say so instead of
+    telling people to check an inbox that will stay empty."""
+    settings = get_settings()
+    return {"demo_enabled": settings.demo_mode, "email_delivery": settings.email_backend}
 
 
 @router.post("/demo", response_model=UserOut, status_code=status.HTTP_201_CREATED, dependencies=[auth_rate_limit()])
