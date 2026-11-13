@@ -29,6 +29,9 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: process.env.IGNORE_HTTPS_ERRORS === "1" });
 const page = await ctx.newPage();
 page.on("pageerror", (e) => errors.push(`[pageerror] ${page.url()} ${e.message}`));
+// The only native dialogs are "close this position?" confirms: accept every one. (A per-step page.once
+// left registered by a step whose confirm never appeared would double-accept the next one and crash.)
+page.on("dialog", (d) => d.accept().catch(() => {}));
 // Statuses a step deliberately provokes (e.g. a bad link -> 422); 401 is the normal signed-out probe.
 let expectedStatuses = [];
 page.on("console", (m) => {
@@ -36,6 +39,13 @@ page.on("console", (m) => {
   if (m.type() !== "error" || text.includes("401") || expectedStatuses.some((s) => text.includes(`status of ${s}`))) return;
   errors.push(`[console] ${page.url()} ${text}`);
 });
+
+/** Close (or cover) the open position in `symbol` from its own row, once no modal dialog is in the way:
+ * a closing dialog's X is also a button named "Close". */
+async function closePosition(symbol, label = "Close") {
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page.getByRole("row").filter({ hasText: symbol }).getByRole("button", { name: label, exact: true }).click();
+}
 
 /** Click a download link and return the downloaded file's text (BOM stripped). */
 async function download(locator) {
@@ -272,7 +282,7 @@ await step("paper market buy via ticket", async () => {
   await page.getByPlaceholder("0.00").fill("1000");
   await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
   await toast(/Filled: buy/);
-  await page.getByRole("button", { name: "Close", exact: true }).first().waitFor();
+  await page.getByRole("row").filter({ hasText: "ETH-USD" }).getByRole("button", { name: "Close", exact: true }).waitFor();
 });
 
 await step("paper entry with stop-loss, sized by risk", async () => {
@@ -337,8 +347,7 @@ await step("paper stop order + position protection", async () => {
 
 await step("paper close position", async () => {
   // Protection never blocks closing; closing cancels it.
-  page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Close", exact: true }).first().click();
+  await closePosition("ETH-USD");
   await toast(/Closed ETH-USD/);
   await page.getByText("No open orders").waitFor();
 });
@@ -386,8 +395,7 @@ await step("paper short sale and cover", async () => {
   await page.getByRole("button", { name: /Sell short SOL \(paper\)/ }).click();
   await toast(/Filled: sell/);
   await page.getByText("Short", { exact: true }).first().waitFor();
-  page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Cover", exact: true }).first().click();
+  await closePosition("SOL-USD", "Cover");
   await toast(/Closed SOL/);
 });
 
@@ -417,8 +425,7 @@ await step("trade plan: 1% risk per trade needs a stop-loss", async () => {
   await page.getByRole("switch", { name: "Size by risk" }).click();
   await page.getByRole("button", { name: /Buy SOL \(paper\)/ }).click();
   await toast(/Filled: buy .*protected by stop-loss/);
-  page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Close", exact: true }).first().click();
+  await closePosition("SOL-USD");
   await toast(/Closed SOL/);
   await page.getByRole("button", { name: /Risk limits/ }).click();
   await page.getByLabel(/Max risk per trade/).fill("");
