@@ -16,10 +16,11 @@ import { Badge, Field, Input, Textarea } from "@/components/ui/primitives";
 import { Segmented, SegmentedItem } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
+import { RCurveChart } from "@/features/charts/recharts";
 import { formatDateTime, formatPct, formatPrice, formatQty, formatUsd, pnlClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
-import type { JournalGroup, JournalTrip } from "@/types/api";
+import type { JournalGroup, JournalTrip, RCurve } from "@/types/api";
 
 const JOURNAL_KEY = ["paper", "journal"] as const;
 const EMOTION_LABEL: Record<string, string> = {
@@ -62,6 +63,41 @@ function Summary({ overall }: { overall: JournalGroup }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+function RCurveCard({ curve, closed }: { curve: RCurve | null; closed: number }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>R curve</CardTitle>
+          <CardDescription>
+            Each closed trade&apos;s result in R (bars) and the running total (line), in the order they closed. A curve that climbs over many
+            trades suggests an edge; a few trades prove little.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {!curve ? (
+          <p className="text-sm text-muted-foreground">
+            {closed
+              ? "None of your closed trades has a stop yet. Add a stop-loss to new entries, or record a planned stop when you review a trade."
+              : "Close a trade that has a stop-loss to start the curve."}
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+              <div><dt className="inline text-muted-foreground">Total </dt><dd className={cn("inline font-semibold tabular", pnlClass(curve.total_r))}>{formatR(curve.total_r)}</dd></div>
+              <div><dt className="inline text-muted-foreground">Worst drawdown </dt><dd className="inline font-semibold tabular">{curve.max_drawdown_r ? formatR(-curve.max_drawdown_r) : "none"}</dd></div>
+              <div><dt className="inline text-muted-foreground">Longest losing streak </dt><dd className="inline font-semibold tabular">{curve.longest_losing_streak} {curve.longest_losing_streak === 1 ? "trade" : "trades"}</dd></div>
+              <div><dt className="inline text-muted-foreground">Trades </dt><dd className="inline font-semibold tabular">{curve.points.length}{curve.points.length < closed ? ` of ${closed}` : ""}</dd></div>
+            </dl>
+            <RCurveChart points={curve.points} />
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -280,6 +316,7 @@ export function JournalView() {
       ) : (
         <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
           {data.overall && <Summary overall={data.overall} />}
+          {data.overall && <RCurveCard curve={data.r_curve} closed={data.overall.trades} />}
           {data.needs_review > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
               <span>

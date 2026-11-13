@@ -362,6 +362,10 @@ await step("journal review of a closed trade", async () => {
   await page.getByRole("cell", { name: "Calm", exact: true }).first().waitFor();
   await page.getByRole("cell", { name: /^[+−]\d+\.\d\dR$/ }).first().waitFor();
   await page.getByText("Avg R", { exact: true }).first().waitFor();
+  // The R curve adds up the trades that have a stop.
+  await page.getByText("R curve", { exact: true }).waitFor();
+  await page.getByText("Longest losing streak").waitFor();
+  await page.locator(".recharts-surface").first().waitFor();
 });
 
 await step("paper trades CSV export", async () => {

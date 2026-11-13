@@ -245,3 +245,44 @@ export function YoungHistoryNote({ since, height }: { since: number | undefined;
   );
 }
 
+
+/** Each trade's result in R (bars) and the running total (line), by trade number. */
+export function RCurveChart({
+  points,
+  height = 220,
+}: {
+  points: { trade_id: number; symbol: string; closed_at: string; r: number; cumulative_r: number }[];
+  height?: number;
+}) {
+  const data = points.map((p, i) => ({ ...p, n: i + 1 }));
+  const fmt = (v: number) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}R`;
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+        <XAxis dataKey="n" {...axisProps} minTickGap={16} />
+        <YAxis {...axisProps} width={48} tickFormatter={(v: number) => `${v.toFixed(v % 1 ? 1 : 0)}R`} />
+        <ReferenceLine y={0} stroke="var(--muted-foreground)" strokeOpacity={0.5} />
+        <Tooltip
+          cursor={{ fill: "var(--muted)", fillOpacity: 0.4 }}
+          content={({ active, payload }) => {
+            const p = payload?.[0]?.payload as (typeof data)[number] | undefined;
+            return active && p ? (
+              <TooltipBox>
+                <div className="text-muted-foreground">Trade {p.n} · {p.symbol} · closed {formatDate(p.closed_at)}</div>
+                <div className={p.r >= 0 ? "font-medium text-gain" : "font-medium text-loss"}>{fmt(p.r)}</div>
+                <div>Total {fmt(p.cumulative_r)}</div>
+              </TooltipBox>
+            ) : null;
+          }}
+        />
+        <Bar dataKey="r" isAnimationActive={false} maxBarSize={18}>
+          {data.map((d) => (
+            <Cell key={d.trade_id} fill={d.r >= 0 ? "var(--gain)" : "var(--loss)"} fillOpacity={0.55} />
+          ))}
+        </Bar>
+        <Line type="linear" dataKey="cumulative_r" stroke="var(--chart-1)" strokeWidth={2} dot={data.length <= 40} isAnimationActive={false} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}

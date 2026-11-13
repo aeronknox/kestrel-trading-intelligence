@@ -86,6 +86,23 @@ class GroupStats(BaseModel):
     avg_r: float | None  # expectancy in R over those
 
 
+class RPoint(BaseModel):
+    trade_id: int
+    symbol: str
+    closed_at: datetime
+    r: float
+    cumulative_r: float
+
+
+class RCurve(BaseModel):
+    """Closed trips with a known risk, in the order they closed, and what their R adds up to."""
+
+    points: list[RPoint]
+    total_r: float
+    max_drawdown_r: float  # largest fall from a peak of cumulative R (0 at the start), as a positive number
+    longest_losing_streak: int  # consecutive trades below 0R
+
+
 class JournalPage(BaseModel):
     trips: list[TripOut]
     by_setup: list[GroupStats]
@@ -94,6 +111,7 @@ class JournalPage(BaseModel):
     emotions: list[str] = list(EMOTIONS)
     needs_review: int
     overall: GroupStats | None  # every closed trip
+    r_curve: RCurve | None  # None until a closed trip has an initial stop
     disclaimer: str = DISCLAIMER
 
 
@@ -165,6 +183,23 @@ def _trip_out(t: Trip) -> TripOut:
     )  # fmt: skip
 
 
+def _r_curve(closed: list[Trip]) -> RCurve | None:
+    with_r = sorted((t for t in closed if t.r_multiple is not None), key=lambda t: (t.trip.closed_at, t.trip.trade_id))
+    if not with_r:
+        return None
+    points, total, peak, drawdown, streak, longest = [], 0.0, 0.0, 0.0, 0, 0
+    for t in with_r:
+        r = t.r_multiple
+        assert r is not None and t.trip.closed_at is not None
+        total += r
+        peak = max(peak, total)
+        drawdown = max(drawdown, peak - total)
+        streak = streak + 1 if r < 0 else 0
+        longest = max(longest, streak)
+        points.append(RPoint(trade_id=t.trip.trade_id, symbol=t.trip.symbol, closed_at=t.trip.closed_at, r=r, cumulative_r=total))
+    return RCurve(points=points, total_r=total, max_drawdown_r=drawdown, longest_losing_streak=longest)
+
+
 @router.get("", response_model=JournalPage)
 async def get_journal(user: CurrentUser, db: DbSession) -> JournalPage:
     _, pf = await _service_and_portfolio(db, user.id)
@@ -178,6 +213,7 @@ async def get_journal(user: CurrentUser, db: DbSession) -> JournalPage:
         setups=setups,
         needs_review=sum(1 for t in closed if t.entry is None),
         overall=_group("All trades", closed) if closed else None,
+        r_curve=_r_curve(closed),
     )
 
 

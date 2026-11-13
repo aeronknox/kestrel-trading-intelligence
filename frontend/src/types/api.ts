@@ -838,6 +838,14 @@ export interface JournalGroup {
   avg_r: number | null;
 }
 
+export interface RCurve {
+  points: { trade_id: number; symbol: string; closed_at: string; r: number; cumulative_r: number }[];
+  total_r: number;
+  /** Largest fall from a peak of cumulative R, as a positive number. */
+  max_drawdown_r: number;
+  longest_losing_streak: number;
+}
+
 export interface JournalPage {
   trips: JournalTrip[];
   by_setup: JournalGroup[];
@@ -847,6 +855,8 @@ export interface JournalPage {
   needs_review: number;
   /** Every closed trade; null before the first one closes. */
   overall: JournalGroup | null;
+  /** Closed trades with a known risk, in the order they closed; null until one has a stop. */
+  r_curve: RCurve | null;
   disclaimer: string;
 }
 

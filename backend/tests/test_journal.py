@@ -201,3 +201,34 @@ async def test_short_trip_risk_is_above_the_entry(auth_client, provider) -> None
     await write(auth_client, trip["trade_id"], planned_stop=105)
     trip = (await journal(auth_client))["trips"][0]
     assert trip["risk"] == pytest.approx((105 - trip["entry_price"]) * 10) and trip["r_multiple"] > 1
+
+
+async def test_r_curve_adds_up_closed_trades_in_the_order_they_closed(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    assert (await journal(auth_client))["r_curve"] is None
+
+    async def trip(exit_: float, stop: float | None = 90) -> None:
+        await provider.set_price("SOL-USD", 100.0)
+        body = {"symbol": "SOL-USD", "side": "buy", "order_type": "market", "quantity": 10}
+        resp = await auth_client.post(f"{API}/orders", json=body | ({"stop_loss": stop} if stop else {}))
+        assert resp.json()["status"] == "filled", resp.text
+        await provider.set_price("SOL-USD", exit_)
+        await trade(auth_client, "sell", 10)
+
+    await trip(120)  # about +2R
+    await trip(95)  # about -0.5R
+    await trip(93)  # about -0.7R
+    await trip(105, stop=None)  # no stop: not on the curve
+    await trip(110)  # about +1R
+
+    page = await journal(auth_client)
+    curve = page["r_curve"]
+    by_id = {t["trade_id"]: t for t in page["trips"]}
+    rs = [p["r"] for p in curve["points"]]
+    assert len(rs) == 4 and [p["r"] for p in curve["points"]] == [by_id[p["trade_id"]]["r_multiple"] for p in curve["points"]]
+    assert rs[0] > 1.5 and rs[1] < 0 and rs[2] < 0 and rs[3] > 0.5
+    cumulative = [sum(rs[: i + 1]) for i in range(4)]
+    assert [p["cumulative_r"] for p in curve["points"]] == pytest.approx(cumulative)
+    assert curve["total_r"] == pytest.approx(sum(rs))
+    assert curve["max_drawdown_r"] == pytest.approx(-(rs[1] + rs[2]))  # the two losses in a row, from the first peak
+    assert curve["longest_losing_streak"] == 2
+    assert curve["points"][0]["closed_at"] <= curve["points"][-1]["closed_at"]
