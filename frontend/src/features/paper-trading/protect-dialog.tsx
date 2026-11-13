@@ -9,18 +9,23 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/overlays";
 import { Field, Input } from "@/components/ui/primitives";
 import { Segmented, SegmentedItem } from "@/components/ui/segmented";
-import { formatPct, formatPrice } from "@/lib/format";
+import { formatPct, formatPrice, formatQty } from "@/lib/format";
 import { api } from "@/services/api";
 import type { Order, Position } from "@/types/api";
+
+const PARTIAL = "Partial take-profit";
 
 /** The open stop-loss / take-profit orders protecting a position, if any. */
 export function protection(position: Position, openOrders: Order[]) {
   const mine = openOrders.filter((o) => o.reduce_only && o.oco_group && o.asset.symbol === position.asset.symbol);
   const stop = mine.find((o) => o.order_type === "stop" || o.order_type === "trailing_stop");
+  const partial = mine.find((o) => o.order_type === "limit" && o.note === PARTIAL);
   return {
     stopLoss: stop?.stop_price ?? null,
     trailPct: stop?.trail_pct ?? null,
-    takeProfit: mine.find((o) => o.order_type === "limit")?.limit_price ?? null,
+    takeProfit: mine.find((o) => o.order_type === "limit" && o.note !== PARTIAL)?.limit_price ?? null,
+    partialTakeProfit: partial?.limit_price ?? null,
+    partialQty: partial?.quantity ?? null,
   };
 }
 
@@ -35,6 +40,8 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
   const [mode, setMode] = useState<"fixed" | "trailing">("fixed");
   const [trail, setTrail] = useState("");
   const [tp, setTp] = useState("");
+  const [ptp, setPtp] = useState("");
+  const [ptpPct, setPtpPct] = useState("50");
   const long = position.quantity > 0;
   const stopLoss = mode === "fixed" ? num(sl) : null;
   const trailPct = mode === "trailing" ? num(trail) : null;
@@ -45,11 +52,30 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
   // Mirrors the server's checks, so mistakes show before submitting.
   const slError = stopLoss !== null && price !== null && (long ? stopLoss >= price : stopLoss <= price) ? `Must be ${long ? "below" : "above"} the current price` : null;
   const tpError = takeProfit !== null && price !== null && (long ? takeProfit <= price : takeProfit >= price) ? `Must be ${long ? "above" : "below"} the current price` : null;
+  // Scaling out: a first target for part of the position, before the final take-profit.
+  const partialTp = num(ptp);
+  const partialPct = Number(ptpPct);
+  const ptpError =
+    partialTp !== null && price !== null && (long ? partialTp <= price : partialTp >= price)
+      ? `Must be ${long ? "above" : "below"} the current price`
+      : partialTp !== null && takeProfit !== null && (long ? partialTp >= takeProfit : partialTp <= takeProfit)
+        ? "Must come before the final take-profit"
+        : null;
+  const pctError = partialTp !== null && !(partialPct >= 1 && partialPct <= 99) ? "1 – 99%" : null;
+  const partialQty = Math.abs(position.quantity) * (partialPct / 100);
   const valid =
-    (stopLoss !== null || trailPct !== null || takeProfit !== null) && !slError && !tpError && !trailError && [stopLoss, takeProfit].every((v) => v === null || v > 0);
+    (stopLoss !== null || trailPct !== null || takeProfit !== null || partialTp !== null) && !slError && !tpError && !trailError &&
+    !ptpError && !pctError && [stopLoss, takeProfit, partialTp].every((v) => v === null || v > 0);
 
   const save = useMutation({
-    mutationFn: () => api.paper.protect(position.asset.symbol, { stop_loss: stopLoss, trailing_stop_pct: trailPct, take_profit: takeProfit }),
+    mutationFn: () =>
+      api.paper.protect(position.asset.symbol, {
+        stop_loss: stopLoss,
+        trailing_stop_pct: trailPct,
+        take_profit: takeProfit,
+        partial_take_profit: partialTp,
+        ...(partialTp !== null ? { partial_pct: partialPct } : {}),
+      }),
     onSuccess: (orders) => {
       qc.invalidateQueries({ queryKey: ["paper"] });
       const rejected = orders.find((o) => o.status === "rejected");
@@ -70,6 +96,8 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
           setTrail(current.trailPct ? String(current.trailPct) : "");
           setSl(current.stopLoss && !current.trailPct ? String(current.stopLoss) : "");
           setTp(current.takeProfit ? String(current.takeProfit) : "");
+          setPtp(current.partialTakeProfit ? String(current.partialTakeProfit) : "");
+          setPtpPct(current.partialQty ? String(Math.round((current.partialQty / Math.abs(position.quantity)) * 100)) : "50");
         }
       }}
     >
@@ -85,7 +113,8 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
           <DialogDescription>
             Simulated orders that close the whole position: a stop-loss (a stop order, filled at the market price once reached, so a gap can
             fill worse) and a take-profit (a limit order). When one fills, the other is cancelled. They follow the position: selling part of it
-            shrinks them, closing it cancels them. Current price {formatPrice(price)}.
+            shrinks them, closing it cancels them. To scale out, add a first target that takes profit on part of the position and leaves the
+            rest protected. Current price {formatPrice(price)}.
           </DialogDescription>
         </DialogHeader>
         <Segmented value={mode} onValueChange={(v) => setMode(v as "fixed" | "trailing")} label="Stop-loss kind" className="w-full">
@@ -110,10 +139,31 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
             <Input type="number" min={0} step="any" value={tp} onChange={(e) => setTp(e.target.value)} placeholder="Optional" />
           </Field>
         </div>
+        <fieldset className="grid gap-3 rounded-md border border-border p-3">
+          <legend className="px-1 text-sm font-medium">First target (optional)</legend>
+          <div className="grid gap-4 sm:grid-cols-[1fr_7rem]">
+            <Field
+              label="Partial take-profit (USD)"
+              error={ptpError}
+              hint={!ptpError && partialTp ? `${pct(partialTp)} from the current price` : "Take profit on part of the position first"}
+            >
+              <Input type="number" min={0} step="any" value={ptp} onChange={(e) => setPtp(e.target.value)} placeholder="Optional" />
+            </Field>
+            <Field label="Close (%)" error={pctError}>
+              <Input type="number" min={1} max={99} step="1" value={ptpPct} onChange={(e) => setPtpPct(e.target.value)} />
+            </Field>
+          </div>
+          {partialTp !== null && !ptpError && !pctError && (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Closes {formatQty(partialQty)} {position.asset.base_currency} at {formatPrice(partialTp)}. The stop-loss and final take-profit stay on
+              the {formatQty(Math.abs(position.quantity) - partialQty)} left.
+            </p>
+          )}
+        </fieldset>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
           <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!valid}>
-            {current.stopLoss || current.takeProfit ? "Replace protection" : "Protect position"}
+            {current.stopLoss || current.takeProfit || current.partialTakeProfit ? "Replace protection" : "Protect position"}
           </Button>
         </DialogFooter>
       </DialogContent>

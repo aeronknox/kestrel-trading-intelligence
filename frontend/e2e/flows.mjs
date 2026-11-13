@@ -343,11 +343,15 @@ await step("paper stop order + position protection", async () => {
   await page.getByRole("button", { name: "Protect ETH-USD" }).click();
   await page.getByLabel(/Stop-loss price/).fill("100");
   await page.getByLabel(/Take-profit price/).fill("100000000");
+  // Scale out: half the position at a first target, the rest stays protected.
+  await page.getByLabel(/Partial take-profit/).fill("50000000");
+  await page.getByText(/^Closes [\d.,]+ ETH at \$?50,000,000\.00\. The stop-loss and final take-profit stay on the [\d.,]+ left\.$/).waitFor();
   // The entry's own bracket may already protect it, in which case this replaces that protection.
   await page.getByRole("button", { name: /^(Protect position|Replace protection)$/ }).click();
   await toast(/ETH-USD protected/);
   await page.getByText(/^SL \$?100\.00/).first().waitFor();
   await page.getByText("Stop-loss", { exact: true }).first().waitFor();
+  await page.getByText(/TP1 \$?50,000,000\.00/).first().waitFor(); // the first target shows on the position
   // Swap the fixed stop for a 5% trailing stop.
   await page.getByRole("button", { name: "Protect ETH-USD" }).click();
   await page.getByRole("radio", { name: "Trailing stop" }).click();

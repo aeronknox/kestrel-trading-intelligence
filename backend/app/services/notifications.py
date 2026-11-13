@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 
 DISCLAIMER = "Simulated paper trading: no real money or brokerage is involved."
 DELIVERY_BATCH = 100
-NAMED = ("Stop-loss", "Take-profit", "Trailing stop")  # notes set by position protection
+NAMED = ("Stop-loss", "Take-profit", "Trailing stop", "Partial take-profit")  # notes set by position protection
 
 
 def _price(v: float | None) -> str:

@@ -361,3 +361,58 @@ async def test_open_risk_of_a_short_and_on_the_dashboard(auth_client, provider) 
     assert (await portfolio(auth_client))["open_risk"] == pytest.approx(expected)
     dashboard = (await auth_client.get("/api/v1/dashboard")).json()
     assert dashboard["portfolio"]["open_risk"] == pytest.approx(expected)
+
+
+async def test_partial_take_profit_scales_out_and_keeps_the_rest_protected(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    await order(auth_client)  # 10 SOL
+    placed = await protect(auth_client, stop_loss=90, take_profit=130, partial_take_profit=110, partial_pct=40)
+    by_note = {o["note"]: o for o in placed}
+    assert set(by_note) == {"Stop-loss", "Take-profit", "Partial take-profit"}
+    partial = by_note["Partial take-profit"]
+    assert partial["quantity"] == pytest.approx(4) and partial["limit_price"] == 110 and partial["reduce_only"]
+    assert partial["oco_group"] != by_note["Stop-loss"]["oco_group"] == by_note["Take-profit"]["oco_group"]
+
+    # First target: 4 sold; the stop and the final target stay, shrunk to the 6 left.
+    await provider.set_price("SOL-USD", 111.0)
+    after = await orders(auth_client)
+    assert after[partial["id"]]["status"] == "filled"
+    for note in ("Stop-loss", "Take-profit"):
+        o = after[by_note[note]["id"]]
+        assert o["status"] == "open" and o["quantity"] == pytest.approx(6), note
+    (pos,) = (await portfolio(auth_client))["positions"]
+    assert pos["quantity"] == pytest.approx(6) and pos["unprotected_qty"] == 0
+
+    # The stop closes the rest and cancels the final target.
+    await provider.set_price("SOL-USD", 89.0)
+    after = await orders(auth_client)
+    assert after[by_note["Stop-loss"]["id"]]["status"] == "filled"
+    assert after[by_note["Take-profit"]["id"]]["status"] == "cancelled"
+    assert (await portfolio(auth_client))["positions"] == []
+
+
+async def test_stop_before_the_first_target_cancels_it_and_replacing_drops_it(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    await order(auth_client)
+    first = {o["note"]: o for o in await protect(auth_client, stop_loss=90, partial_take_profit=110)}
+    assert first["Partial take-profit"]["quantity"] == pytest.approx(5)  # half by default
+    second = {o["note"]: o for o in await protect(auth_client, stop_loss=92)}  # replaced: no partial now
+    after = {o["id"]: o for o in (await auth_client.get(f"{API}/orders")).json()}
+    assert after[first["Partial take-profit"]["id"]]["status"] == "cancelled" and set(second) == {"Stop-loss"}
+
+    third = {o["note"]: o for o in await protect(auth_client, stop_loss=90, partial_take_profit=110)}
+    await provider.set_price("SOL-USD", 89.0)  # stopped out before the first target
+    after = await orders(auth_client)
+    assert after[third["Stop-loss"]["id"]]["status"] == "filled"
+    assert after[third["Partial take-profit"]["id"]]["status"] == "cancelled"  # reduce-only: cancelled once flat
+    assert (await portfolio(auth_client))["positions"] == []
+
+
+async def test_partial_take_profit_validation(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    await order(auth_client)
+    await protect(auth_client, 422, partial_take_profit=95)  # below a long's price
+    await protect(auth_client, 422, take_profit=110, partial_take_profit=120)  # after the final target
+    await protect(auth_client, 422, partial_take_profit=110, partial_pct=100)
+    await protect(auth_client, 422, partial_take_profit=110, partial_pct=0)
+    assert len(await protect(auth_client, partial_take_profit=110, partial_pct=25)) == 1  # on its own is fine

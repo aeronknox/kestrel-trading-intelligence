@@ -50,6 +50,7 @@ from app.services.notifications import notify_order
 logger = get_logger(__name__)
 
 QTY_EPSILON = 1e-12
+PARTIAL_TAKE_PROFIT = "Partial take-profit"
 MAX_TRAIL_PCT = 50.0
 MIN_NOTIONAL = 1.0
 SNAPSHOT_MIN_INTERVAL = timedelta(minutes=5)
@@ -651,7 +652,21 @@ class PaperTradingService:
         if flat:
             await self._cancel_open(portfolio, "Cancelled: the position it protected is closed",
                                     SimulatedOrder.asset_id == order.asset_id, SimulatedOrder.reduce_only.is_(True))  # fmt: skip
+        elif closing and position is not None:
+            await self._shrink_reduce_only(portfolio, order.asset_id, abs(position.quantity))
         await self.record_snapshot(portfolio, force=True)
+
+    async def _shrink_reduce_only(self, portfolio: PaperPortfolio, asset_id: int, held: float) -> None:
+        """After part of a position closes, protective orders cover what is left (not more) straight away."""
+        for o in (
+            await self.session.scalars(
+                select(SimulatedOrder).where(
+                    SimulatedOrder.portfolio_id == portfolio.id, SimulatedOrder.status == OrderStatus.OPEN,
+                    SimulatedOrder.asset_id == asset_id, SimulatedOrder.reduce_only.is_(True), SimulatedOrder.quantity > held,
+                )
+            )
+        ).all():
+            o.quantity = held
 
     async def _cancel_open(self, portfolio: PaperPortfolio, note: str, *conditions: ColumnElement[bool]) -> int:
         orders = (
@@ -673,13 +688,21 @@ class PaperTradingService:
         stop_loss: float | None,
         take_profit: float | None,
         trailing_stop_pct: float | None = None,
+        partial_take_profit: float | None = None,
+        partial_pct: float = 50.0,
     ) -> list[SimulatedOrder]:
         """Attach a reduce-only stop-loss (fixed or trailing) and/or take-profit to a position, as a
-        one-cancels-other pair. Replaces the position's previous protection."""
+        one-cancels-other pair. Replaces the position's previous protection.
+
+        A partial take-profit scales out: it closes `partial_pct`% of the position at a first target and
+        sits outside the pair, so filling it leaves the stop and the final target in place; being
+        reduce-only, they shrink to what is left."""
         if stop_loss is not None and trailing_stop_pct is not None:
             raise ValidationFailedError("Choose a fixed stop-loss or a trailing stop, not both")
-        if stop_loss is None and trailing_stop_pct is None and take_profit is None:
+        if stop_loss is None and trailing_stop_pct is None and take_profit is None and partial_take_profit is None:
             raise ValidationFailedError("Set a stop-loss, a take-profit, or both")
+        if not 0 < partial_pct < 100:
+            raise ValidationFailedError("The partial take-profit closes between 1% and 99% of the position")
         position = await self._position(portfolio, asset.id)
         if position is None or abs(position.quantity) <= QTY_EPSILON:
             raise ValidationFailedError(f"No open {asset.symbol} position to protect")
@@ -693,6 +716,14 @@ class PaperTradingService:
             raise ValidationFailedError(
                 f"The take-profit must be {'above' if long else 'below'} the current price ({price:,.2f}) for a {'long' if long else 'short'}"
             )
+        if partial_take_profit is not None:
+            if partial_take_profit <= price if long else partial_take_profit >= price:
+                raise ValidationFailedError(
+                    f"The partial take-profit must be {'above' if long else 'below'} the current price ({price:,.2f}) "
+                    f"for a {'long' if long else 'short'}"
+                )
+            if take_profit is not None and (partial_take_profit >= take_profit if long else partial_take_profit <= take_profit):
+                raise ValidationFailedError("The partial take-profit is the first target: it must come before the final take-profit")
         await self._cancel_open(portfolio, "Replaced by new protection",
                                 SimulatedOrder.asset_id == asset.id, SimulatedOrder.reduce_only.is_(True),
                                 SimulatedOrder.oco_group.is_not(None))  # fmt: skip
@@ -708,6 +739,11 @@ class PaperTradingService:
         if take_profit is not None:
             orders.append(await self.place_order(portfolio, asset, side, OrderType.LIMIT, qty, take_profit,
                                                  reduce_only=True, oco_group=group, note="Take-profit"))  # fmt: skip
+        if partial_take_profit is not None:
+            # Its own one-order group: replaced with the rest of the protection, but filling it cancels nothing.
+            orders.append(await self.place_order(portfolio, asset, side, OrderType.LIMIT, qty * partial_pct / 100,
+                                                 partial_take_profit, reduce_only=True, oco_group=uuid.uuid4().hex,
+                                                 note=PARTIAL_TAKE_PROFIT))  # fmt: skip
         # All or nothing: half a bracket would look protected but isn't. Raising rolls back both orders.
         for o in orders:
             if o.status == OrderStatus.REJECTED:

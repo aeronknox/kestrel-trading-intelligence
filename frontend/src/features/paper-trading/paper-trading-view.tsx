@@ -69,10 +69,12 @@ function PositionsTable({ portfolio, openOrders }: { portfolio: Portfolio; openO
                   <span className="font-medium">{p.asset.symbol}</span>
                   {short && <Badge variant="loss">Short</Badge>}
                 </Link>
-                {(guard.stopLoss || guard.takeProfit) && (
+                {(guard.stopLoss || guard.takeProfit || guard.partialTakeProfit) && (
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
                     {guard.stopLoss && <>{guard.trailPct ? `Trail ${guard.trailPct}% · SL` : "SL"} {formatPrice(guard.stopLoss)}</>}
-                    {guard.stopLoss && guard.takeProfit && " · "}
+                    {guard.stopLoss && (guard.partialTakeProfit || guard.takeProfit) && " · "}
+                    {guard.partialTakeProfit && <span title="First target: takes profit on part of the position">TP1 {formatPrice(guard.partialTakeProfit)}</span>}
+                    {guard.partialTakeProfit && guard.takeProfit && " · "}
                     {guard.takeProfit && <>TP {formatPrice(guard.takeProfit)}</>}
                     {p.risk_to_stop != null && <span title="What the stops would lose from the current price if they filled, slippage and fee included"> · risk {formatUsd(p.risk_to_stop)}</span>}
                   </p>

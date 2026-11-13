@@ -32,6 +32,8 @@ class ProtectPosition(BaseModel):
     stop_loss: float | None = Field(None, gt=0)
     trailing_stop_pct: float | None = Field(None, gt=0, le=50, description="Instead of a fixed stop-loss")
     take_profit: float | None = Field(None, gt=0)
+    partial_take_profit: float | None = Field(None, gt=0, description="Scale out: a first target that closes part of the position")
+    partial_pct: float = Field(50, ge=1, le=99, description="% of the position the partial take-profit closes")
 
 
 class OrderOut(ORMModel):
