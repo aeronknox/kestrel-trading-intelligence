@@ -19,6 +19,8 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { TIMEFRAMES, type Timeframe } from "@/types/api";
 
+import { PriceAlertButton } from "@/features/alerts/price-alerts";
+
 import { IndicatorPanel } from "./indicator-panel";
 import { useWatchlist } from "./use-watchlist";
 
@@ -98,10 +100,11 @@ export function AssetDetailView({ symbol }: { symbol: string }) {
             <p className="text-muted-foreground">24h volume</p>
             <p className="font-medium tabular">{formatCompact(live?.volume_24h)}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => toggle(symbol, isWatched)}>
               <Star className={cn(isWatched && "fill-warn text-warn")} /> {isWatched ? "Watching" : "Watch"}
             </Button>
+            <PriceAlertButton symbol={symbol} price={live?.price} />
             <Button variant="outline" size="sm" asChild>
               <Link href={`/paper-trading?symbol=${symbol}`}>
                 <Wallet /> Paper trade

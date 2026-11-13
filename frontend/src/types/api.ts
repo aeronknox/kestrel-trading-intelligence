@@ -851,9 +851,24 @@ export interface JournalPage {
 }
 
 /** A simulated paper order that filled or failed in the background (not a strategy alert). */
+/** Notify once an asset's market price reaches a level. Never places an order. */
+export interface PriceAlert {
+  id: number;
+  asset: Asset;
+  /** Fixed at creation from where the price was: fires at or above / at or below the target. */
+  condition: "above" | "below";
+  target: number;
+  created_price: number;
+  note: string;
+  notify_webhook: boolean;
+  created_at: string;
+  triggered_at: string | null;
+  triggered_price: number | null;
+}
+
 export interface AppNotification {
   id: number;
-  kind: "order_filled" | "order_rejected" | "order_expired" | "margin_call";
+  kind: "order_filled" | "order_rejected" | "order_expired" | "margin_call" | "price_alert";
   title: string;
   message: string;
   symbol: string | null;

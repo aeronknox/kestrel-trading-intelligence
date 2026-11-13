@@ -4,6 +4,7 @@
  * automatically and never exposed to JavaScript.
  */
 import type {
+  PriceAlert,
   AlertEventsPage,
   AlertSettings,
   ForwardTest,
@@ -230,6 +231,11 @@ export const api = {
     save: (tradeId: number, body: { setup: string | null; emotion: string | null; rating: number | null; notes: string; lesson: string; planned_stop: number | null }) =>
       put<JournalEntry>(`/paper/journal/${tradeId}`, body),
     remove: (tradeId: number) => del<void>(`/paper/journal/${tradeId}`),
+  },
+  priceAlerts: {
+    list: (symbol?: string) => get<PriceAlert[]>("/price-alerts", symbol ? { symbol } : undefined),
+    create: (body: { symbol: string; target: number; note: string; notify_webhook: boolean }) => post<PriceAlert>("/price-alerts", body),
+    remove: (id: number) => del<void>(`/price-alerts/${id}`),
   },
   notifications: {
     list: (limit = 50) => get<NotificationsPage>("/notifications", { limit }),

@@ -22,6 +22,7 @@ from app.api.routes import (
     market,
     notifications,
     paper,
+    price_alerts,
     research,
     strategies,
     users,
@@ -147,7 +148,7 @@ def create_app(*, background: bool = True) -> FastAPI:
     register_exception_handlers(app)
 
     api = APIRouter(prefix=settings.api_prefix)
-    for module in (auth, users, market, watchlists, analysis, strategies, backtests, research, alerts, notifications, journal, paper, dashboard, assistant, ws):
+    for module in (auth, users, market, watchlists, analysis, strategies, backtests, research, alerts, price_alerts, notifications, journal, paper, dashboard, assistant, ws):
         api.include_router(module.router)
     app.include_router(api)
 

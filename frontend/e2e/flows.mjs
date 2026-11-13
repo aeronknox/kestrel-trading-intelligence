@@ -113,6 +113,23 @@ await step("asset detail timeframe + overlay toggles", async () => {
   if ((await page.locator("canvas").count()) < 2) throw new Error("chart canvas missing");
 });
 
+await step("price alert set, listed and deleted", async () => {
+  await page.goto(`${BASE}/markets/ETH-USD`);
+  await page.getByRole("button", { name: "Price alert" }).click();
+  await page.getByLabel("Alert me when the price reaches").fill("100000000"); // far above any price: never fires here
+  await page.getByText(/^Rises [\d,.]+% from /).waitFor();
+  await page.getByLabel("Note (optional)").fill("Moon level");
+  await page.getByRole("button", { name: "Set alert" }).click();
+  await toast(/Price alert set: ETH-USD rises to/);
+  await page.getByText("Active alerts on ETH-USD").waitFor();
+  await page.keyboard.press("Escape");
+  await page.goto(`${BASE}/alerts`);
+  await page.getByText("Moon level").waitFor();
+  await page.getByRole("button", { name: /^Delete price alert ETH-USD above / }).click();
+  await toast(/Price alert deleted/);
+  await page.getByText(/None yet\. Open an asset in/).waitFor();
+});
+
 await step("header asset search navigates", async () => {
   await page.getByLabel("Search assets").fill("sol");
   await page.getByRole("button", { name: /SOL-USD/ }).first().click();

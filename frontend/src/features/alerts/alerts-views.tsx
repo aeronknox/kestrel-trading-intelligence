@@ -18,6 +18,8 @@ import { formatDateTime, formatPct, formatPrice, formatQty, formatUsd, pnlClass,
 import { cn } from "@/lib/utils";
 import { WEBHOOK_KEY } from "@/features/settings/webhook-card";
 import { api } from "@/services/api";
+
+import { PriceAlertsCard } from "./price-alerts";
 import type { AlertEvent, AlertSettings, BacktestSummary, StrategyAlert } from "@/types/api";
 
 const EVENTS_KEY = ["alert-events"] as const;
@@ -46,6 +48,7 @@ const ORDER_BADGE = {
   order_rejected: { label: "Rejected", variant: "warn" },
   order_expired: { label: "Expired", variant: "secondary" },
   margin_call: { label: "Margin call", variant: "loss" },
+  price_alert: { label: "Price", variant: "info" },
 } as const;
 
 /** Strategy alert events and paper-order notifications, newest first. */
@@ -59,7 +62,7 @@ function useFeed(limit: number) {
     })),
     ...(orders.data?.notifications ?? []).map((n) => ({
       key: `n${n.id}`, at: n.created_at, read: Boolean(n.read_at), badge: <Badge variant={ORDER_BADGE[n.kind].variant}>{ORDER_BADGE[n.kind].label}</Badge>,
-      symbol: n.symbol ?? "", detail: "paper", text: n.message,
+      symbol: n.symbol ?? "", detail: n.kind === "price_alert" ? "price" : "paper", text: n.message,
     })),
   ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
   return { items, unread: (events.data?.unread ?? 0) + (orders.data?.unread ?? 0), alertsUnread: events.data?.unread ?? 0, ordersUnread: orders.data?.unread ?? 0 };
@@ -248,7 +251,7 @@ export function AlertsView() {
     <>
       <PageHeader
         title="Alerts"
-        description="Notifications when your strategies' rules fire on live, closed candles."
+        description="Notifications when your strategies' rules fire on live, closed candles, and when prices reach your levels."
         actions={
           <Button size="sm" variant="outline" disabled={!events.data?.unread} loading={markRead.isPending} onClick={() => markRead.mutate(undefined)}>
             Mark all read
@@ -289,38 +292,41 @@ export function AlertsView() {
             )}
           </CardContent>
         </Card>
-        <Card className="h-fit">
-          <CardHeader><CardTitle>Watched strategies</CardTitle></CardHeader>
-          <CardContent className="px-2">
-            {!alerts.data?.length ? (
-              <p className="px-3 py-4 text-sm text-muted-foreground">None yet. Open a strategy and switch on alerts.</p>
-            ) : (
-              <Table>
-                <TBody>
-                  {alerts.data.map((a: StrategyAlert) => (
-                    <TR key={a.id}>
-                      <TD>
-                        <Link href={`/strategies/${a.strategy_id}`} className="font-medium hover:text-primary">{a.strategy_name}</Link>
-                        <p className="text-xs text-muted-foreground">
-                          {a.symbol} {a.timeframe} · {[a.on_entry && "entry", a.on_exit && "exit"].filter(Boolean).join(" + ") || "no signals"}
-                          {a.notify_email ? " · email" : ""}
-                          {a.notify_webhook ? " · webhook" : ""}
-                        </p>
-                        {a.last_error && <p className="text-xs text-warn">{a.last_error}</p>}
-                      </TD>
-                      <TD>{a.enabled ? <Badge variant="gain">On</Badge> : <Badge variant="outline">Paused</Badge>}</TD>
-                      <TD className="text-right">
-                        <Button size="icon-sm" variant="ghost" aria-label={`Delete alert for ${a.strategy_name}`} onClick={() => remove.mutate(a.strategy_id)}>
-                          <Trash2 />
-                        </Button>
-                      </TD>
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        <div className="grid h-fit gap-4">
+          <PriceAlertsCard />
+          <Card className="h-fit">
+            <CardHeader><CardTitle>Watched strategies</CardTitle></CardHeader>
+            <CardContent className="px-2">
+              {!alerts.data?.length ? (
+                <p className="px-3 py-4 text-sm text-muted-foreground">None yet. Open a strategy and switch on alerts.</p>
+              ) : (
+                <Table>
+                  <TBody>
+                    {alerts.data.map((a: StrategyAlert) => (
+                      <TR key={a.id}>
+                        <TD>
+                          <Link href={`/strategies/${a.strategy_id}`} className="font-medium hover:text-primary">{a.strategy_name}</Link>
+                          <p className="text-xs text-muted-foreground">
+                            {a.symbol} {a.timeframe} · {[a.on_entry && "entry", a.on_exit && "exit"].filter(Boolean).join(" + ") || "no signals"}
+                            {a.notify_email ? " · email" : ""}
+                            {a.notify_webhook ? " · webhook" : ""}
+                          </p>
+                          {a.last_error && <p className="text-xs text-warn">{a.last_error}</p>}
+                        </TD>
+                        <TD>{a.enabled ? <Badge variant="gain">On</Badge> : <Badge variant="outline">Paused</Badge>}</TD>
+                        <TD className="text-right">
+                          <Button size="icon-sm" variant="ghost" aria-label={`Delete alert for ${a.strategy_name}`} onClick={() => remove.mutate(a.strategy_id)}>
+                            <Trash2 />
+                          </Button>
+                        </TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </>
   );

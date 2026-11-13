@@ -72,7 +72,7 @@ async def notify_order(session: AsyncSession, user_id: int, order: SimulatedOrde
 
 
 async def deliver_pending_webhooks() -> int:
-    """Background job: post pending order notifications to their owners' webhooks. Returns attempts."""
+    """Background job: post pending notifications (orders, price alerts) to their owners' webhooks. Returns attempts."""
     attempts = 0
     async with get_sessionmaker()() as session:
         pending = (
@@ -83,10 +83,13 @@ async def deliver_pending_webhooks() -> int:
         for note in pending:
             note.webhook_pending = False  # one attempt each: a dead endpoint must not be retried forever
             settings = await session.scalar(select(UserSettings).where(UserSettings.user_id == note.user_id))
-            if settings is None or not settings.webhook_url or not settings.webhook_secret or not settings.webhook_orders:
+            if settings is None or not settings.webhook_url or not settings.webhook_secret:
+                continue
+            price_alert = note.kind == "price_alert"  # opted in per alert, not by the order-events switch
+            if not price_alert and not settings.webhook_orders:
                 continue
             fmt = webhooks.webhook_format(settings.webhook_url)
-            event = {"type": "paper_order", "kind": note.kind, "symbol": note.symbol, "order_id": note.order_id,
+            event = {"type": "price_alert" if price_alert else "paper_order", "kind": note.kind, "symbol": note.symbol, "order_id": note.order_id,
                      "message": note.message, "created_at": note.created_at.isoformat(), "disclaimer": DISCLAIMER}  # fmt: skip
             payload = webhooks.build_payload(fmt, note.title, [note.message], event)
             attempts += 1

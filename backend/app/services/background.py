@@ -22,6 +22,7 @@ from app.paper_trading.service import PaperTradingService
 from app.services.alerts import evaluate_alerts
 from app.services.demo import purge_expired_demo_users
 from app.services.notifications import deliver_pending_webhooks
+from app.services.price_alerts import check_price_alerts
 
 logger = get_logger(__name__)
 
@@ -118,6 +119,7 @@ class BackgroundJobs:
             asyncio.create_task(self._loop(process_all_open_orders, ORDER_INTERVAL_SECONDS), name="paper-orders"),
             asyncio.create_task(self._loop(snapshot_all_portfolios, SNAPSHOT_INTERVAL_SECONDS), name="paper-snapshots"),
             asyncio.create_task(self._loop(evaluate_alerts, ALERT_INTERVAL_SECONDS), name="strategy-alerts"),
+            asyncio.create_task(self._loop(check_price_alerts, ORDER_INTERVAL_SECONDS), name="price-alerts"),
             asyncio.create_task(self._loop(deliver_pending_webhooks, ORDER_INTERVAL_SECONDS), name="order-webhooks"),
         ]
         if get_settings().demo_mode:
