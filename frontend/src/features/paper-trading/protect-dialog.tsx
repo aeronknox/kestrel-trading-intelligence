@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/overlays";
-import { Field, Input } from "@/components/ui/primitives";
+import { Field, Input, Label, Switch } from "@/components/ui/primitives";
 import { Segmented, SegmentedItem } from "@/components/ui/segmented";
 import { formatPct, formatPrice, formatQty } from "@/lib/format";
 import { api } from "@/services/api";
@@ -26,6 +26,7 @@ export function protection(position: Position, openOrders: Order[]) {
     takeProfit: mine.find((o) => o.order_type === "limit" && o.note !== PARTIAL)?.limit_price ?? null,
     partialTakeProfit: partial?.limit_price ?? null,
     partialQty: partial?.quantity ?? null,
+    breakevenAt: partial?.move_stop_to ?? null,
   };
 }
 
@@ -42,6 +43,7 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
   const [tp, setTp] = useState("");
   const [ptp, setPtp] = useState("");
   const [ptpPct, setPtpPct] = useState("50");
+  const [breakeven, setBreakeven] = useState(false);
   const long = position.quantity > 0;
   const stopLoss = mode === "fixed" ? num(sl) : null;
   const trailPct = mode === "trailing" ? num(trail) : null;
@@ -63,6 +65,8 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
         : null;
   const pctError = partialTp !== null && !(partialPct >= 1 && partialPct <= 99) ? "1 – 99%" : null;
   const partialQty = Math.abs(position.quantity) * (partialPct / 100);
+  // Moving the stop needs a fixed stop to move and a first target to trigger it.
+  const canBreakeven = partialTp !== null && stopLoss !== null;
   const valid =
     (stopLoss !== null || trailPct !== null || takeProfit !== null || partialTp !== null) && !slError && !tpError && !trailError &&
     !ptpError && !pctError && [stopLoss, takeProfit, partialTp].every((v) => v === null || v > 0);
@@ -74,7 +78,7 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
         trailing_stop_pct: trailPct,
         take_profit: takeProfit,
         partial_take_profit: partialTp,
-        ...(partialTp !== null ? { partial_pct: partialPct } : {}),
+        ...(partialTp !== null ? { partial_pct: partialPct, breakeven_after_partial: canBreakeven && breakeven } : {}),
       }),
     onSuccess: (orders) => {
       qc.invalidateQueries({ queryKey: ["paper"] });
@@ -98,6 +102,7 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
           setTp(current.takeProfit ? String(current.takeProfit) : "");
           setPtp(current.partialTakeProfit ? String(current.partialTakeProfit) : "");
           setPtpPct(current.partialQty ? String(Math.round((current.partialQty / Math.abs(position.quantity)) * 100)) : "50");
+          setBreakeven(current.breakevenAt !== null);
         }
       }}
     >
@@ -159,6 +164,17 @@ export function ProtectDialog({ position, price, openOrders }: { position: Posit
               the {formatQty(Math.abs(position.quantity) - partialQty)} left.
             </p>
           )}
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <Label htmlFor="protect-breakeven" className="text-sm">Then move the stop-loss to breakeven</Label>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                {canBreakeven
+                  ? `When the first target fills, the stop moves to about ${formatPrice(position.avg_entry_price)} (your entry, plus the exit's fee and slippage), so the rest can't lose money unless the price gaps past it.`
+                  : "Needs a fixed stop-loss and a first target."}
+              </p>
+            </div>
+            <Switch id="protect-breakeven" checked={canBreakeven && breakeven} disabled={!canBreakeven} onCheckedChange={setBreakeven} />
+          </div>
         </fieldset>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

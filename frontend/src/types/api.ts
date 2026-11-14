@@ -408,6 +408,8 @@ export interface Order {
   /** Entry orders: protection attached once they fill. */
   bracket_stop_loss?: number | null;
   bracket_take_profit?: number | null;
+  /** Partial take-profit: where it moves the stop-loss when it fills (breakeven); after the fill, where it did. */
+  move_stop_to?: number | null;
   /** Only shrinks a position; cancelled automatically once the position is closed. */
   reduce_only?: boolean;
   /** One-cancels-other group, e.g. a position's stop-loss and take-profit. */

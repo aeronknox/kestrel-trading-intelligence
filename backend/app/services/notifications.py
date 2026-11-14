@@ -49,7 +49,11 @@ async def notify_order(session: AsyncSession, user_id: int, order: SimulatedOrde
         kind = "order_filled"
         title = f"{describe(order)} filled · {symbol}"
         message = f"{describe(order)} {verb} {order.quantity:g} {symbol} at {_price(order.filled_price)}."
-        if order.oco_group:
+        if order.note == "Partial take-profit":
+            message += " The rest of the position stays protected."
+            if order.move_stop_to is not None:
+                message += f" Its stop-loss moved to breakeven ({_price(order.move_stop_to)})."
+        elif order.oco_group:
             message += " The other order of its pair was cancelled."
         if order.note and order.note.startswith("Filled, but"):
             message += f" {order.note}."

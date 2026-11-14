@@ -86,6 +86,9 @@ class SimulatedOrder(IdMixin, Base):
     trail_anchor: Mapped[float | None] = mapped_column(Money, nullable=True)
     # Where a stop or trailing stop started (a trailing stop's stop_price moves): the journal's initial risk.
     initial_stop: Mapped[float | None] = mapped_column(Money, nullable=True)
+    # A partial take-profit can move the position's stop-loss here when it fills (breakeven). After the
+    # fill it holds where the stop was moved to, or None if it couldn't be (e.g. the price was already below).
+    move_stop_to: Mapped[float | None] = mapped_column(Money, nullable=True)
     # Entry orders can carry a stop-loss / take-profit, attached as protection once they fill.
     bracket_stop_loss: Mapped[float | None] = mapped_column(Money, nullable=True)
     bracket_take_profit: Mapped[float | None] = mapped_column(Money, nullable=True)

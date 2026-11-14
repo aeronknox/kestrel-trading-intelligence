@@ -34,6 +34,7 @@ class ProtectPosition(BaseModel):
     take_profit: float | None = Field(None, gt=0)
     partial_take_profit: float | None = Field(None, gt=0, description="Scale out: a first target that closes part of the position")
     partial_pct: float = Field(50, ge=1, le=99, description="% of the position the partial take-profit closes")
+    breakeven_after_partial: bool = Field(False, description="When the partial take-profit fills, move the stop-loss to breakeven")
 
 
 class OrderOut(ORMModel):
@@ -48,6 +49,7 @@ class OrderOut(ORMModel):
     trail_anchor: float | None = None
     bracket_stop_loss: float | None = None
     bracket_take_profit: float | None = None
+    move_stop_to: float | None = None
     reduce_only: bool = False
     oco_group: str | None = None
     status: OrderStatus

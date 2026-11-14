@@ -155,7 +155,7 @@ async def protect_position(symbol: str, body: ProtectPosition, user: CurrentUser
     svc, pf = await _service_and_portfolio(db, user.id, lock=True)
     asset = await MarketDataService(db).get_asset(symbol)
     orders = await svc.protect_position(pf, asset, body.stop_loss, body.take_profit, body.trailing_stop_pct,
-                                        body.partial_take_profit, body.partial_pct)  # fmt: skip
+                                        body.partial_take_profit, body.partial_pct, body.breakeven_after_partial)  # fmt: skip
     await audit(db, "paper.position_protected", user_id=user.id, entity_type="portfolio", entity_id=pf.id,
                 details={"symbol": asset.symbol, "stop_loss": body.stop_loss, "trailing_stop_pct": body.trailing_stop_pct,
                          "take_profit": body.take_profit, "partial_take_profit": body.partial_take_profit,

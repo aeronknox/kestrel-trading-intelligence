@@ -654,7 +654,40 @@ class PaperTradingService:
                                     SimulatedOrder.asset_id == order.asset_id, SimulatedOrder.reduce_only.is_(True))  # fmt: skip
         elif closing and position is not None:
             await self._shrink_reduce_only(portfolio, order.asset_id, abs(position.quantity))
+            if order.move_stop_to is not None:
+                order.move_stop_to = await self._move_stop(portfolio, order, position.quantity > 0, market_price)
         await self.record_snapshot(portfolio, force=True)
+
+    def breakeven_stop(self, position: PortfolioPosition) -> float:
+        """The stop at which the rest of the position closes with no loss: the average entry (which includes
+        the opening fees) grossed up for the exit's slippage and fee."""
+        entry = position.avg_entry_price
+        if position.quantity > 0:
+            return entry / ((1 - self.slip_rate) * (1 - self.fee_rate))
+        return entry / ((1 + self.slip_rate) * (1 + self.fee_rate))
+
+    async def _move_stop(self, portfolio: PaperPortfolio, order: SimulatedOrder, long: bool, price: float) -> float | None:
+        """Move the position's protective stop to `order.move_stop_to` (only ever tighter, and only while the
+        price is still on the right side of it, or the stop would fire at once). Returns the new stop, or None."""
+        target = order.move_stop_to
+        assert target is not None
+        if target >= price if long else target <= price:
+            return None
+        stops = (
+            await self.session.scalars(
+                select(SimulatedOrder).where(
+                    SimulatedOrder.portfolio_id == portfolio.id, SimulatedOrder.status == OrderStatus.OPEN,
+                    SimulatedOrder.asset_id == order.asset_id, SimulatedOrder.reduce_only.is_(True),
+                    SimulatedOrder.order_type == OrderType.STOP,
+                )
+            )
+        ).all()
+        moved = False
+        for stop in stops:
+            assert stop.stop_price is not None
+            if stop.stop_price < target if long else stop.stop_price > target:
+                stop.stop_price, moved = target, True
+        return target if moved else None
 
     async def _shrink_reduce_only(self, portfolio: PaperPortfolio, asset_id: int, held: float) -> None:
         """After part of a position closes, protective orders cover what is left (not more) straight away."""
@@ -690,6 +723,7 @@ class PaperTradingService:
         trailing_stop_pct: float | None = None,
         partial_take_profit: float | None = None,
         partial_pct: float = 50.0,
+        breakeven_after_partial: bool = False,
     ) -> list[SimulatedOrder]:
         """Attach a reduce-only stop-loss (fixed or trailing) and/or take-profit to a position, as a
         one-cancels-other pair. Replaces the position's previous protection.
@@ -703,6 +737,8 @@ class PaperTradingService:
             raise ValidationFailedError("Set a stop-loss, a take-profit, or both")
         if not 0 < partial_pct < 100:
             raise ValidationFailedError("The partial take-profit closes between 1% and 99% of the position")
+        if breakeven_after_partial and (partial_take_profit is None or stop_loss is None):
+            raise ValidationFailedError("Moving the stop to breakeven needs a fixed stop-loss and a partial take-profit")
         position = await self._position(portfolio, asset.id)
         if position is None or abs(position.quantity) <= QTY_EPSILON:
             raise ValidationFailedError(f"No open {asset.symbol} position to protect")
@@ -744,6 +780,8 @@ class PaperTradingService:
             orders.append(await self.place_order(portfolio, asset, side, OrderType.LIMIT, qty * partial_pct / 100,
                                                  partial_take_profit, reduce_only=True, oco_group=uuid.uuid4().hex,
                                                  note=PARTIAL_TAKE_PROFIT))  # fmt: skip
+            if breakeven_after_partial:
+                orders[-1].move_stop_to = self.breakeven_stop(position)
         # All or nothing: half a bracket would look protected but isn't. Raising rolls back both orders.
         for o in orders:
             if o.status == OrderStatus.REJECTED:

@@ -416,3 +416,46 @@ async def test_partial_take_profit_validation(auth_client, provider) -> None:  #
     await protect(auth_client, 422, partial_take_profit=110, partial_pct=100)
     await protect(auth_client, 422, partial_take_profit=110, partial_pct=0)
     assert len(await protect(auth_client, partial_take_profit=110, partial_pct=25)) == 1  # on its own is fine
+
+
+async def test_breakeven_after_the_first_target(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    from tests.test_notifications import feed
+
+    await provider.set_price("SOL-USD", 100.0)
+    await order(auth_client)
+    entry = (await portfolio(auth_client))["positions"][0]["avg_entry_price"]
+    placed = {o["note"]: o for o in await protect(auth_client, stop_loss=90, take_profit=130, partial_take_profit=110,
+                                                  breakeven_after_partial=True)}  # fmt: skip
+    # Breakeven: the stop at which the rest closes flat after the exit's slippage and fee.
+    breakeven = entry / ((1 - 0.0005) * (1 - 0.001))
+    assert placed["Partial take-profit"]["move_stop_to"] == pytest.approx(breakeven)
+    assert placed["Stop-loss"]["stop_price"] == 90
+
+    await provider.set_price("SOL-USD", 111.0)
+    after = await orders(auth_client)
+    stop = after[placed["Stop-loss"]["id"]]
+    assert stop["status"] == "open" and stop["stop_price"] == pytest.approx(breakeven) and stop["quantity"] == pytest.approx(5)
+    note = (await feed(auth_client))["notifications"][0]
+    assert "Partial take-profit filled" in note["title"]
+    assert "stays protected" in note["message"] and "moved to breakeven" in note["message"]
+    assert "other order of its pair" not in note["message"]
+
+    # Falling back to breakeven closes the rest at no loss, fees and slippage included.
+    await provider.set_price("SOL-USD", breakeven)
+    after = await orders(auth_client)
+    assert after[placed["Stop-loss"]["id"]]["status"] == "filled"
+    trades = {t["order_id"]: t for t in (await auth_client.get(f"{API}/trades")).json()}
+    assert trades[placed["Stop-loss"]["id"]]["realized_pnl"] == pytest.approx(0, abs=1e-6)
+    assert trades[placed["Partial take-profit"]["id"]]["realized_pnl"] > 0  # the first target's profit is kept
+
+
+async def test_breakeven_needs_a_fixed_stop_and_a_first_target(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    await order(auth_client)
+    await protect(auth_client, 422, stop_loss=90, breakeven_after_partial=True)
+    await protect(auth_client, 422, trailing_stop_pct=5, partial_take_profit=110, breakeven_after_partial=True)
+    plain = {o["note"]: o for o in await protect(auth_client, stop_loss=90, partial_take_profit=110)}
+    assert plain["Partial take-profit"]["move_stop_to"] is None
+    await provider.set_price("SOL-USD", 111.0)
+    after = await orders(auth_client)
+    assert after[plain["Stop-loss"]["id"]]["stop_price"] == 90  # not asked: the stop stays where it was
