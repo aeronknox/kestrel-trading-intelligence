@@ -137,6 +137,8 @@ export const api = {
     /** email_delivery "console": reset and verification links go to the server log, not an inbox. */
     config: () => get<{ demo_enabled: boolean; email_delivery?: "console" | "smtp" }>("/auth/config"),
     demo: () => post<User>("/auth/demo"),
+    /** Permanently deletes the signed-in account and all of its data (password not needed for a demo). */
+    deleteAccount: (password: string | null, confirm: string) => post<{ message: string }>("/auth/delete-account", { password, confirm }),
   },
   users: {
     updateProfile: (full_name: string) => patch<User>("/users/me", { full_name }),

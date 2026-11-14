@@ -48,9 +48,9 @@ async function closePosition(symbol, label = "Close") {
 }
 
 /** Click a download link and return the downloaded file's text (BOM stripped). */
-async function download(locator) {
+async function download(locator, ext = ".csv") {
   const [file] = await Promise.all([page.waitForEvent("download"), locator.click()]);
-  if (!file.suggestedFilename().endsWith(".csv")) throw new Error(`unexpected file ${file.suggestedFilename()}`);
+  if (!file.suggestedFilename().endsWith(ext)) throw new Error(`unexpected file ${file.suggestedFilename()}`);
   return (await readFile(await file.path(), "utf8")).replace(/^\ufeff/, "");
 }
 
@@ -578,6 +578,38 @@ await step("demo sandbox (when DEMO_MODE is on)", async () => {
   if (await page.getByText("Change password").count()) throw new Error("password form shown in the demo");
   await page.getByRole("button", { name: "Create a free account" }).click();
   await page.waitForURL("**/register");
+});
+
+await step("download my data, then delete the account", async () => {
+  // A throwaway account, so no other step depends on what this one deletes.
+  await ctx.clearCookies();
+  const leaving = `leaving${Date.now()}@example.com`;
+  await page.goto(`${BASE}/register`);
+  await page.fill("#name", "Leaving User");
+  await page.fill("#email", leaving);
+  await page.fill("#password", "leaving-passw0rd1");
+  await page.click("button[type=submit]");
+  await page.waitForURL("**/dashboard", { timeout: 15000 });
+  await page.goto(`${BASE}/settings`);
+  const exported = JSON.parse(await download(page.getByRole("link", { name: "Download My data (JSON)" }), ".json"));
+  if (exported.profile?.email !== leaving || "hashed_password" in exported.profile) throw new Error("unexpected export");
+
+  await page.getByRole("button", { name: "Delete account" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Your password").fill("not-my-password-1");
+  await dialog.getByLabel("Type DELETE to confirm").fill("DELETE");
+  expectedStatuses = [422];
+  await dialog.getByRole("button", { name: "Delete everything" }).click();
+  await dialog.getByRole("alert").filter({ hasText: "That password isn't right" }).waitFor();
+  expectedStatuses = [];
+  await dialog.getByLabel("Your password").fill("leaving-passw0rd1");
+  await dialog.getByRole("button", { name: "Delete everything" }).click();
+  await page.waitForURL("**/login", { timeout: 15000 });
+  // Gone: signing in with it fails.
+  await page.fill("#email", leaving);
+  await page.fill("#password", "leaving-passw0rd1");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("alert").filter({ hasText: "Invalid email or password" }).waitFor();
 });
 
 console.log(results.join("\n"));

@@ -51,6 +51,11 @@ class ResetPasswordRequest(TokenRequest):
     _pw = field_validator("new_password")(_validate_password)
 
 
+class DeleteAccountRequest(BaseModel):
+    password: str | None = Field(None, max_length=128, description="Required except for demo sandboxes")
+    confirm: str = Field(description='Type "DELETE" to confirm')
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(max_length=128)

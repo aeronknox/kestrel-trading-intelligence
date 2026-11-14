@@ -1,17 +1,19 @@
 from datetime import timedelta
 
 from fastapi import APIRouter, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import CurrentSession, CurrentUser, DbSession, auth_rate_limit, client_ip
 from app.core.cache import get_cache
 from app.core.config import get_settings
 from app.core.exceptions import AuthenticationError, NotFoundError, PermissionDeniedError, RateLimitedError, ValidationFailedError
 from app.core.security import hash_password, verify_password
+from app.models.enums import UserRole
 from app.models.user import User
 from app.schemas.common import Message
 from app.schemas.user import (
     ChangePasswordRequest,
+    DeleteAccountRequest,
     EmailRequest,
     LoginRequest,
     RegisterRequest,
@@ -19,6 +21,7 @@ from app.schemas.user import (
     TokenRequest,
     UserOut,
 )
+from app.services import account as account_service
 from app.services import auth as auth_service
 from app.services.audit import audit
 from app.services.demo import DemoCapacityError, create_demo_user, ensure_capacity
@@ -183,6 +186,28 @@ async def logout(ctx: CurrentSession, request: Request, response: Response, db: 
 @router.get("/me", response_model=UserOut)
 async def me(user: CurrentUser) -> object:
     return user
+
+
+@router.post("/delete-account", response_model=Message, dependencies=[auth_rate_limit()])
+async def delete_account(body: DeleteAccountRequest, user: CurrentUser, request: Request, response: Response, db: DbSession) -> Message:
+    """Permanently delete the signed-in account and everything in it (simulated portfolio, strategies,
+    backtests, journal, alerts...). Asks for the password, so a session left open can't be used for it."""
+    if body.confirm.strip() != "DELETE":
+        raise ValidationFailedError('Type DELETE to confirm')
+    if not user.is_demo and not (body.password and verify_password(body.password, user.hashed_password)):
+        # 422, not 401: the session is valid; clients must not treat this as a logout.
+        raise ValidationFailedError("That password isn't right")
+    if user.role == UserRole.ADMIN:
+        admins = await db.scalar(
+            select(func.count()).select_from(User).where(User.role == UserRole.ADMIN, User.is_active.is_(True), User.id != user.id)
+        )
+        if not admins:
+            raise ValidationFailedError("You're the only admin. Make another account an admin before deleting this one")
+    uid = user.id
+    await account_service.delete_account(db, user)
+    await audit(db, "user.deleted", entity_type="user", entity_id=uid, ip_address=client_ip(request))
+    _clear_session_cookie(response)
+    return Message(message="Your account and all its data were deleted")
 
 
 @router.post("/change-password", response_model=Message, dependencies=[auth_rate_limit()])

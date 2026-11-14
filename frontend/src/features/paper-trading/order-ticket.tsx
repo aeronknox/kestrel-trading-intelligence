@@ -147,7 +147,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
         </div>
         <div className="grid grid-cols-2 gap-2">
           <button onClick={() => setSide("buy")} className={cn("h-9 rounded-md text-sm font-semibold transition-colors", side === "buy" ? "bg-gain text-gain-foreground" : "bg-muted text-muted-foreground hover:text-foreground")}>Buy</button>
-          <button onClick={() => setSide("sell")} className={cn("h-9 rounded-md text-sm font-semibold transition-colors", side === "sell" ? "bg-loss text-white" : "bg-muted text-muted-foreground hover:text-foreground")}>Sell</button>
+          <button onClick={() => setSide("sell")} className={cn("h-9 rounded-md text-sm font-semibold transition-colors", side === "sell" ? "bg-loss text-loss-foreground" : "bg-muted text-muted-foreground hover:text-foreground")}>Sell</button>
         </div>
         <Segmented value={type} onValueChange={(v) => setType(v as OrderType)} label="Order type" className="w-full">
             <SegmentedItem value="market" className="flex-1">Market</SegmentedItem>

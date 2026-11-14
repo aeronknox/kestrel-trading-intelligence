@@ -1,6 +1,7 @@
+import json
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
@@ -9,6 +10,7 @@ from app.core.exceptions import NotFoundError, PermissionDeniedError, Validation
 from app.models.audit import AuditLog
 from app.models.user import User, UserSettings
 from app.schemas.user import AdminUserUpdate, AuditLogOut, ProfileUpdate, UserOut, UserSettingsOut, UserSettingsUpdate
+from app.services import account as account_service
 from app.services import webhooks
 from app.services.alerts import DISCLAIMER
 from app.services.audit import audit
@@ -22,6 +24,19 @@ async def update_profile(body: ProfileUpdate, user: CurrentUser, db: DbSession) 
     user.full_name = body.full_name.strip()
     await audit(db, "user.profile_updated", user_id=user.id)
     return user
+
+
+@router.get("/users/me/export", dependencies=[rate_limit("export", "compute_rate_limit_per_minute")])
+async def export_my_data(user: CurrentUser, request: Request, db: DbSession) -> Response:
+    """Download everything stored about the signed-in user, as one JSON file."""
+    data = await account_service.export_user_data(db, user)
+    await audit(db, "user.data_exported", user_id=user.id, ip_address=client_ip(request))
+    filename = f"kestrel-data-{datetime.now(UTC):%Y%m%d}.json"
+    return Response(
+        content=json.dumps(data, indent=2, ensure_ascii=False, default=str),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"},
+    )
 
 
 @router.get("/users/me/settings", response_model=UserSettingsOut)

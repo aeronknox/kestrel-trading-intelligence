@@ -33,6 +33,7 @@
   --gain-foreground: oklch(0.18 0.03 155);
   --loss: oklch(0.68 0.2 22);
   --loss-soft: oklch(0.68 0.2 22 / 14%);
+  --loss-foreground: oklch(0.18 0.03 22);
   --warn: oklch(0.82 0.15 80);
   --warn-soft: oklch(0.82 0.15 80 / 14%);
   --info: oklch(0.72 0.13 250);
@@ -75,6 +76,7 @@
   --gain-foreground: oklch(0.99 0 0);
   --loss: oklch(0.5 0.2 25);
   --loss-soft: oklch(0.56 0.21 25 / 12%);
+  --loss-foreground: oklch(0.99 0 0);
   --warn: oklch(0.5 0.12 65);
   --warn-soft: oklch(0.66 0.15 70 / 14%);
   --info: oklch(0.5 0.15 255);
@@ -109,6 +111,7 @@
   --color-gain-soft: var(--gain-soft);
   --color-loss: var(--loss);
   --color-loss-soft: var(--loss-soft);
+  --color-loss-foreground: var(--loss-foreground);
   --color-warn: var(--warn);
   --color-warn-soft: var(--warn-soft);
   --color-info: var(--info);

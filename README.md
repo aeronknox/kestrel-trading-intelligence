@@ -18,6 +18,7 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 | Portfolio | Equity and drawdown history, allocation, trade statistics |
 | Journal | Every paper round trip (from flat, into a position, back to flat) with its P&L and holding time. Record the setup, your state of mind, how well you followed the plan, notes and the lesson; the journal shows win rate and expectancy by setup and by state of mind, flags unreviewed trades, and exports to CSV. Each trade's result is also measured in R (multiples of the initial risk), from the stop-loss on its entry, the first protective stop, or a planned stop you record; an R curve charts each trade's R and the running total, with the worst drawdown in R and the longest losing streak |
 | Assistant | Chat grounded in platform data through tool calls; reports missing data as unavailable |
+| Your data | Download everything stored about you as one JSON file (password hashes, sign-in tokens and the webhook secret are left out), or delete your account: it asks for your password and removes every strategy, backtest, simulated trade, journal entry, alert and chat. Security log entries stay, without your email address. The only admin can't delete their own account |
 | Admin | Role management, account disabling, audit log viewer |
 | Operations | Prometheus metrics from the API and worker (latency per route, background jobs, live-feed health, simulated orders), an optional Prometheus service with alert rules, and a [runbook](docs/OPERATIONS.md) for backups, restores, upgrades and secret rotation |
 
@@ -200,7 +201,7 @@ cd backend && python -m app.cli promote-admin you@example.com    # or demote-adm
 ### Tests
 
 ```bash
-cd backend  && pytest                  # 261 tests: indicators (incl. Wilder reference values),
+cd backend  && pytest                  # 266 tests: indicators (incl. Wilder reference values),
                                        # backtester (long and short), optimization and walk-forward
                                        # look-ahead checks, multi-asset tests, ML leakage, signals,
                                        # auth/RBAC, email tokens, demo sandboxes, rate limiting,
@@ -214,7 +215,7 @@ cd frontend && npm run lint            # ESLint
 cd frontend && npm test                # 30 unit tests: rule builder, formatters, sweep-grid helpers, CSP, form validation messages
 cd frontend && npm run typecheck && npm run build
 cd frontend && npx playwright install chromium && npm run e2e
-                                       # 44 browser flows against a running stack (:3000 + :8000)
+                                       # 45 browser flows against a running stack (:3000 + :8000)
 cd frontend && npm run a11y            # axe (WCAG 2.1 A/AA) on every page in both themes + no sideways
                                        # scrolling at 390px; fails on critical/serious findings
 ```
@@ -227,7 +228,7 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 - **Backend:** ruff lint, mypy type check and a dependency audit, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
 - **Frontend:** dependency audit, ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
-- **Docker:** `docker compose --profile worker --profile monitoring up --build --wait`, health checks, the 44 browser flows (with demo mode on), and the accessibility and phone-layout check against the containerized stack. It then checks that Prometheus loaded the alert rules, scrapes both the API and the worker, and sees exactly one job leader. A 20-visitor load test on PostgreSQL fails the build on any error or a p95 above 1.5 seconds. Finally it runs the runbook's backup, drop and restore sequence and checks that every account survives.
+- **Docker:** `docker compose --profile worker --profile monitoring up --build --wait`, health checks, the 45 browser flows (with demo mode on), and the accessibility and phone-layout check against the containerized stack. It then checks that Prometheus loaded the alert rules, scrapes both the API and the worker, and sees exactly one job leader. A 20-visitor load test on PostgreSQL fails the build on any error or a p95 above 1.5 seconds. Finally it runs the runbook's backup, drop and restore sequence and checks that every account survives.
 - **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
 
 See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.
