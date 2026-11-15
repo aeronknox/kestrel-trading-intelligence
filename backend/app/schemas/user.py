@@ -56,6 +56,16 @@ class DeleteAccountRequest(BaseModel):
     confirm: str = Field(description='Type "DELETE" to confirm')
 
 
+class SessionOut(BaseModel):
+    id: int
+    device: str  # e.g. "Chrome on Windows"
+    ip_address: str | None
+    created_at: datetime
+    last_seen_at: datetime
+    expires_at: datetime
+    current: bool  # the session making this request
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(max_length=128)

@@ -873,6 +873,19 @@ export interface JournalPage {
 }
 
 /** A simulated paper order that filled or failed in the background (not a strategy alert). */
+/** A browser or device signed in to the account. */
+export interface SignedInSession {
+  id: number;
+  /** e.g. "Chrome on Windows". */
+  device: string;
+  ip_address: string | null;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  /** The session viewing this. */
+  current: boolean;
+}
+
 /** Notify once an asset's market price reaches a level. Never places an order. */
 export interface PriceAlert {
   id: number;

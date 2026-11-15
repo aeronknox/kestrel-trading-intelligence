@@ -16,6 +16,7 @@ import { api } from "@/services/api";
 import { TIMEFRAMES, type Timeframe, type UserSettings } from "@/types/api";
 
 import { AccountDataCard } from "./account-data-card";
+import { SessionsCard } from "./sessions-card";
 import { WebhookCard } from "./webhook-card";
 
 export function SettingsView() {
@@ -158,6 +159,8 @@ export function SettingsView() {
             </CardContent>
           </Card>
         )}
+
+        <SessionsCard />
 
         <AccountDataCard isDemo={me.data.is_demo} />
       </div>

@@ -5,6 +5,7 @@
  */
 import { validationMessage } from "@/lib/validation-message";
 import type {
+  SignedInSession,
   PriceAlert,
   AlertEventsPage,
   AlertSettings,
@@ -137,6 +138,10 @@ export const api = {
     /** email_delivery "console": reset and verification links go to the server log, not an inbox. */
     config: () => get<{ demo_enabled: boolean; email_delivery?: "console" | "smtp" }>("/auth/config"),
     demo: () => post<User>("/auth/demo"),
+    /** Where this account is signed in. */
+    sessions: () => get<SignedInSession[]>("/auth/sessions"),
+    revokeSession: (id: number) => del<{ message: string }>(`/auth/sessions/${id}`),
+    revokeOtherSessions: () => post<{ message: string }>("/auth/sessions/revoke-others"),
     /** Permanently deletes the signed-in account and all of its data (password not needed for a demo). */
     deleteAccount: (password: string | null, confirm: string) => post<{ message: string }>("/auth/delete-account", { password, confirm }),
   },

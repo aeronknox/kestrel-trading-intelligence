@@ -18,6 +18,7 @@ from app.schemas.user import (
     LoginRequest,
     RegisterRequest,
     ResetPasswordRequest,
+    SessionOut,
     TokenRequest,
     UserOut,
 )
@@ -208,6 +209,41 @@ async def delete_account(body: DeleteAccountRequest, user: CurrentUser, request:
     await audit(db, "user.deleted", entity_type="user", entity_id=uid, ip_address=client_ip(request))
     _clear_session_cookie(response)
     return Message(message="Your account and all its data were deleted")
+
+
+@router.get("/sessions", response_model=list[SessionOut])
+async def list_sessions(ctx: CurrentSession, db: DbSession) -> list[SessionOut]:
+    """Where this account is signed in: each browser or device, when it was last used and from which address."""
+    user, current = ctx
+    return [
+        SessionOut(id=s.id, device=auth_service.describe_user_agent(s.user_agent), ip_address=s.ip_address,
+                   created_at=s.created_at, last_seen_at=s.last_seen_at, expires_at=s.expires_at, current=s.id == current.id)
+        for s in await auth_service.active_sessions(db, user.id)
+    ]  # fmt: skip
+
+
+@router.delete("/sessions/{session_id}", response_model=Message)
+async def revoke_session(session_id: int, ctx: CurrentSession, request: Request, response: Response, db: DbSession) -> Message:
+    """Sign out one session (yours only). Signing out the current one is the same as logging out."""
+    user, current = ctx
+    record = next((s for s in await auth_service.active_sessions(db, user.id) if s.id == session_id), None)
+    if record is None:
+        raise NotFoundError("No active session with that id")
+    await auth_service.revoke_session(db, record)
+    await audit(db, "auth.session_revoked", user_id=user.id, entity_type="session", entity_id=record.id, ip_address=client_ip(request))
+    if record.id == current.id:
+        _clear_session_cookie(response)
+    return Message(message="Signed out of that session")
+
+
+@router.post("/sessions/revoke-others", response_model=Message)
+async def revoke_other_sessions(ctx: CurrentSession, request: Request, db: DbSession) -> Message:
+    """Sign out everywhere except here."""
+    user, current = ctx
+    others = len(await auth_service.active_sessions(db, user.id)) - 1
+    await auth_service.revoke_all_sessions(db, user.id, except_id=current.id)
+    await audit(db, "auth.other_sessions_revoked", user_id=user.id, ip_address=client_ip(request), details={"count": others})
+    return Message(message=f"Signed out of {others} other session{'s' if others != 1 else ''}" if others else "No other sessions were signed in")
 
 
 @router.post("/change-password", response_model=Message, dependencies=[auth_rate_limit()])

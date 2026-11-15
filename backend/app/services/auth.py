@@ -87,6 +87,36 @@ async def resolve_session(session: AsyncSession, token: str) -> tuple[User, User
     return user, record
 
 
+# Checked in order: Edge and Opera also say "Chrome", Chrome also says "Safari".
+_BROWSERS = (("Edg/", "Edge"), ("OPR/", "Opera"), ("Firefox/", "Firefox"), ("Chrome/", "Chrome"), ("CriOS/", "Chrome"),
+             ("Safari/", "Safari"))  # fmt: skip
+_SYSTEMS = (("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("Windows", "Windows"), ("Mac OS X", "macOS"),
+            ("CrOS", "ChromeOS"), ("Linux", "Linux"))  # fmt: skip
+
+
+def describe_user_agent(user_agent: str | None) -> str:
+    """'Chrome on Windows' from a User-Agent header; good enough to recognise your own devices."""
+    ua = user_agent or ""
+    browser = next((name for key, name in _BROWSERS if key in ua), None)
+    system = next((name for key, name in _SYSTEMS if key in ua), None)
+    if browser and system:
+        return f"{browser} on {system}"
+    return browser or system or ("Unknown device" if not ua else ua[:40])
+
+
+async def active_sessions(session: AsyncSession, user_id: int) -> list[UserSession]:
+    """Signed-in sessions that still work (not signed out, not expired), most recently used first."""
+    return list(
+        (
+            await session.scalars(
+                select(UserSession)
+                .where(UserSession.user_id == user_id, UserSession.revoked_at.is_(None), UserSession.expires_at > datetime.now(UTC))
+                .order_by(UserSession.last_seen_at.desc(), UserSession.id.desc())
+            )
+        ).all()
+    )
+
+
 async def revoke_session(session: AsyncSession, record: UserSession) -> None:
     record.revoked_at = datetime.now(UTC)
 

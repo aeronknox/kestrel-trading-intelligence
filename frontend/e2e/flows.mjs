@@ -472,6 +472,24 @@ await step("settings save preferences", async () => {
   await toast(/Preferences saved/);
 });
 
+await step("sessions: see another sign-in and sign it out", async () => {
+  // A second browser signs in to the same account.
+  const elsewhere = await browser.newContext({ ignoreHTTPSErrors: process.env.IGNORE_HTTPS_ERRORS === "1" });
+  try {
+    const login = await elsewhere.request.post(`${BASE}/api/v1/auth/login`, { data: { email, password: "audit-passw0rd1" } });
+    if (!login.ok()) throw new Error(`second sign-in failed: ${login.status()}`);
+    await page.goto(`${BASE}/settings`);
+    await page.getByText("This device").waitFor();
+    await page.getByRole("button", { name: /^Sign out .*, last active / }).first().waitFor();
+    await page.getByRole("button", { name: "Sign out everywhere else" }).click();
+    await toast(/Signed out of \d+ other sessions?/);
+    if ((await elsewhere.request.get(`${BASE}/api/v1/auth/me`)).status() !== 401) throw new Error("the other session still works");
+    if ((await page.request.get(`${BASE}/api/v1/auth/me`)).status() !== 200) throw new Error("this session was signed out too");
+  } finally {
+    await elsewhere.close();
+  }
+});
+
 await step("alert webhook refuses internal addresses", async () => {
   expectedStatuses = [422];
   await page.goto(`${BASE}/settings`);
