@@ -141,7 +141,7 @@ function OrdersTable({ orders, cancellable }: { orders: Order[]; cancellable?: b
             <TD className="font-medium">{o.asset.symbol}</TD>
             <TD className={cn("font-semibold uppercase", o.side === "buy" ? "text-gain" : "text-loss")}>{o.side}</TD>
             <TD className="capitalize">
-              {o.order_type}
+              {o.order_type.replace("_", " ")}
               {o.strategy_id && (
                 <Link href={`/strategies/${o.strategy_id}`} className="ml-1.5" title="Placed by this strategy's forward test">
                   <Badge variant="info">Auto</Badge>
@@ -152,6 +152,10 @@ function OrdersTable({ orders, cancellable }: { orders: Order[]; cancellable?: b
             <TD className="text-right">
               {o.trail_pct ? (
                 <span title={`Follows the best price by ${o.trail_pct}%; becomes a market order at the stop`}>trail {o.trail_pct}% · {formatPrice(o.stop_price)}</span>
+              ) : o.stop_price && o.limit_price ? (
+                <span title="Stop-limit: at the stop it becomes a limit order, never filling past the limit">
+                  stop {formatPrice(o.stop_price)} · limit {formatPrice(o.limit_price)}
+                </span>
               ) : o.stop_price ? (
                 <span title="Stop: becomes a market order at this price">stop {formatPrice(o.stop_price)}</span>
               ) : (
@@ -162,6 +166,9 @@ function OrdersTable({ orders, cancellable }: { orders: Order[]; cancellable?: b
             <TD className="text-right text-muted-foreground">{o.fee ? formatUsd(o.fee) : "—"}</TD>
             <TD>
               <Badge variant={STATUS_VARIANT[o.status]} title={o.reject_reason ?? undefined}>{o.status}</Badge>
+              {o.status === "open" && o.triggered_at && (
+                <p className="mt-0.5 text-[11px] text-warn" title={`Stop reached ${formatDateTime(o.triggered_at)}`}>Triggered: waiting at the limit</p>
+              )}
               {o.status === "open" && o.expires_at && <p className="mt-0.5 text-[11px] text-muted-foreground">Expires {formatDateTime(o.expires_at)}</p>}
               {o.reject_reason && <p className="mt-0.5 max-w-56 truncate text-[11px] text-muted-foreground" title={o.reject_reason}>{o.reject_reason}</p>}
               {o.note && <p className={cn("mt-0.5 max-w-56 truncate text-[11px]", o.note.startsWith("Margin call") ? "text-warn" : "text-muted-foreground")} title={o.note}>{o.note}</p>}

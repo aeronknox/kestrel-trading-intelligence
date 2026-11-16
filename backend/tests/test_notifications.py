@@ -161,7 +161,7 @@ async def test_resting_orders_expire_release_their_reservation_and_notify(auth_c
 async def test_only_resting_orders_take_an_expiry(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
     await provider.set_price("SOL-USD", 100.0)
     resp = await auth_client.post(f"{API}/paper/orders", json={"symbol": "SOL-USD", "side": "buy", "quantity": 1, "expires_in_hours": 1})
-    assert resp.status_code == 422 and "only limit, stop and trailing-stop orders can expire" in resp.text
+    assert resp.status_code == 422 and "only resting orders (limit, stop, trailing-stop, stop-limit) can expire" in resp.text
     for hours in (0, -1, 24 * 91):
         resp = await auth_client.post(f"{API}/paper/orders", json={
             "symbol": "SOL-USD", "side": "buy", "order_type": "limit", "limit_price": 90, "quantity": 1, "expires_in_hours": hours})  # fmt: skip

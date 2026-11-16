@@ -313,7 +313,7 @@ await step("paper entry with stop-loss, sized by risk", async () => {
 });
 
 await step("paper limit order + cancel", async () => {
-  await page.getByRole("radio", { name: "Limit" }).click();
+  await page.getByRole("radio", { name: "Limit", exact: true }).click();
   await page.getByLabel(/Limit price/).fill("1");
   await page.getByPlaceholder("0.00").fill("50");
   // Good for a day only: the order shows when it expires.
@@ -331,14 +331,28 @@ await step("paper limit order + cancel", async () => {
 
 await step("paper stop order + position protection", async () => {
   // A buy stop far above the market rests (and reserves cash) until cancelled.
-  await page.getByRole("radio", { name: "Stop" }).click();
+  await page.getByRole("radio", { name: "Stop", exact: true }).click();
   await page.getByLabel(/Stop price/).fill("100000000");
   await page.getByPlaceholder("0.00").fill("50");
   await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
   await toast(/Stop order placed/);
-  await page.getByText(/^stop \$?100,000,000/).first().waitFor();
-  await page.getByRole("row").filter({ hasText: /stop \$?100,000,000/ }).getByLabel("Cancel order").click(); // its own row, not a protective order
+  await page.getByText(/^stop \$?100,000,000\.00$/).first().waitFor();
+  await page.getByRole("row").filter({ hasText: /stop \$?100,000,000\.00/ }).getByLabel("Cancel order").click(); // its own row, not a protective order
   await toast(/Order cancelled/);
+  // A stop-limit: the limit can't be below a buy's stop; once fixed, it rests showing both prices.
+  await page.getByRole("radio", { name: "Stop limit" }).click();
+  await page.getByLabel("Stop (USD)").fill("100000000");
+  await page.getByLabel("Limit (USD)").fill("90000000");
+  await page.getByText("Must be at or above the stop").waitFor();
+  await page.getByLabel("Limit (USD)").fill("100500000");
+  await page.getByPlaceholder("0.00").fill("50");
+  await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
+  await toast(/Stop-limit placed — at \$?100,000,000\.00 it becomes a limit order at \$?100,500,000\.00/);
+  const stopLimitRow = page.getByRole("row").filter({ hasText: /stop \$?100,000,000\.00 · limit \$?100,500,000\.00/ });
+  await stopLimitRow.getByText("stop limit").waitFor();
+  await stopLimitRow.getByLabel("Cancel order").click();
+  await toast(/Order cancelled/);
+  await page.getByRole("radio", { name: "Market" }).click();
   // One-cancels-other stop-loss and take-profit on the open ETH position.
   await page.getByRole("button", { name: "Protect ETH-USD" }).click();
   await page.getByLabel(/Stop-loss price/).fill("100");

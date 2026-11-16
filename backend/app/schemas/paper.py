@@ -16,7 +16,7 @@ class OrderCreate(BaseModel):
     order_type: OrderType = OrderType.MARKET
     quantity: float = Field(gt=0, le=1e12)
     limit_price: float | None = Field(None, gt=0)
-    stop_price: float | None = Field(None, gt=0, description="Trigger price for stop orders")
+    stop_price: float | None = Field(None, gt=0, description="Trigger price for stop and stop-limit orders")
     trail_pct: float | None = Field(None, gt=0, le=50, description="Trailing stops: distance from the best price, in %")
     reduce_only: bool = Field(False, description="Only ever shrink a position; cancelled once it is closed")
     stop_loss: float | None = Field(None, gt=0, description="Attach a stop-loss once this entry fills")
@@ -59,6 +59,7 @@ class OrderOut(ORMModel):
     created_at: datetime
     filled_at: datetime | None
     expires_at: datetime | None = None
+    triggered_at: datetime | None = None  # stop-limits: when the stop was reached
     strategy_id: int | None = None  # set when a strategy's forward test placed the order
     note: str | None = None  # e.g. "Margin call: ..." for orders the system placed
 

@@ -84,6 +84,8 @@ class SimulatedOrder(IdMixin, Base):
     # (trail_anchor: the highest price for a sell, the lowest for a buy) and only moves toward it.
     trail_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     trail_anchor: Mapped[float | None] = mapped_column(Money, nullable=True)
+    # Stop-limits: when the stop was reached and the order became a resting limit order.
+    triggered_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     # Where a stop or trailing stop started (a trailing stop's stop_price moves): the journal's initial risk.
     initial_stop: Mapped[float | None] = mapped_column(Money, nullable=True)
     # A partial take-profit can move the position's stop-loss here when it fills (breakeven). After the

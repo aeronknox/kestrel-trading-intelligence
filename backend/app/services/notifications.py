@@ -32,7 +32,8 @@ def describe(order: SimulatedOrder) -> str:
     """'Stop-loss', 'Limit buy', 'Trailing stop sell'…"""
     if order.note in NAMED:
         return order.note
-    kind = {OrderType.LIMIT: "Limit", OrderType.STOP: "Stop", OrderType.TRAILING_STOP: "Trailing stop"}.get(order.order_type, "Market")
+    kind = {OrderType.LIMIT: "Limit", OrderType.STOP: "Stop", OrderType.TRAILING_STOP: "Trailing stop",
+            OrderType.STOP_LIMIT: "Stop-limit"}.get(order.order_type, "Market")
     return f"{kind} {order.side.value}"
 
 

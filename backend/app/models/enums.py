@@ -37,6 +37,7 @@ class OrderType(StrEnum):
     LIMIT = "limit"
     STOP = "stop"  # stop-market: becomes a market order once the price reaches stop_price
     TRAILING_STOP = "trailing_stop"  # a stop that follows the best price by trail_pct
+    STOP_LIMIT = "stop_limit"  # once the price reaches stop_price, rests as a limit order at limit_price
 
 
 class OrderStatus(StrEnum):

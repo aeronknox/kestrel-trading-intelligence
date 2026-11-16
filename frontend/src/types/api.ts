@@ -391,7 +391,7 @@ export interface Backtest {
 // ----------------------------------------------------------- paper trading
 export type OrderSide = "buy" | "sell";
 /** "stop" is a stop-market order: it becomes a market order once the price reaches stop_price. */
-export type OrderType = "market" | "limit" | "stop" | "trailing_stop";
+export type OrderType = "market" | "limit" | "stop" | "trailing_stop" | "stop_limit";
 export type OrderStatus = "open" | "filled" | "cancelled" | "rejected" | "expired";
 
 export interface Order {
@@ -422,6 +422,7 @@ export interface Order {
   filled_at: string | null;
   /** Time in force: a resting order still open at this time expires. Null: good till cancelled. */
   expires_at?: string | null;
+  triggered_at?: string | null; // stop-limits: when the stop was reached
   /** Set when a strategy's forward test placed the order. */
   strategy_id?: number | null;
   /** Why the system placed it, e.g. a margin call. */

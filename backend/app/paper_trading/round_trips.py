@@ -68,7 +68,7 @@ class RoundTrip:
         return self.pnl / risk if risk and not self.is_open else None
 
 
-STOP_TYPES = (OrderType.STOP, OrderType.TRAILING_STOP)
+STOP_TYPES = (OrderType.STOP, OrderType.TRAILING_STOP, OrderType.STOP_LIMIT)
 
 
 def initial_stop(trip: RoundTrip, orders: list[SimulatedOrder]) -> tuple[float, str] | None:
@@ -84,7 +84,7 @@ def initial_stop(trip: RoundTrip, orders: list[SimulatedOrder]) -> tuple[float, 
         if o.created_at < trip.opened_at or (trip.closed_at is not None and o.created_at > trip.closed_at):
             continue
         # Plain stops never move; a trailing stop placed before initial_stop existed can't be reconstructed.
-        stop = o.initial_stop if o.initial_stop is not None else o.stop_price if o.order_type == OrderType.STOP else None
+        stop = o.initial_stop if o.initial_stop is not None else o.stop_price if o.order_type != OrderType.TRAILING_STOP else None
         if stop is not None:
             return stop, "stop order"
     return None

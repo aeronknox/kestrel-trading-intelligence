@@ -44,11 +44,22 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
   const [limitState, setLimitState] = useState({ symbol, value: "" });
   const limit = limitState.symbol === symbol ? limitState.value : "";
   const setLimit = (value: string) => setLimitState({ symbol, value });
+  // Stop-limits: `limit` holds the stop, this the limit it rests at once triggered.
+  const [capState, setCapState] = useState({ symbol, value: "" });
+  const cap = capState.symbol === symbol ? capState.value : "";
+  const setCap = (value: string) => setCapState({ symbol, value });
+  const capNum = Number(cap);
 
   const level = Number(limit);
   // For a trailing stop the field is a percentage; the stop starts that far from the current price.
   const trailStart = ticker && level > 0 ? ticker.price * (1 + ((side === "buy" ? 1 : -1) * level) / 100) : undefined;
-  const price = type === "trailing_stop" ? trailStart : type !== "market" && level > 0 ? level : ticker?.price;
+  // A stop-limit never fills worse than its limit, so estimates use the limit.
+  const price =
+    type === "trailing_stop" ? trailStart : type === "stop_limit" ? (capNum > 0 ? capNum : undefined) : type !== "market" && level > 0 ? level : ticker?.price;
+  const capError =
+    type === "stop_limit" && level > 0 && capNum > 0 && (side === "buy" ? capNum < level : capNum > level)
+      ? `Must be at or ${side === "buy" ? "above" : "below"} the stop`
+      : null;
   const num = Number(amount);
   const typedQty = !isNum(num) || num <= 0 || !price ? 0 : mode === "qty" ? num : num / price;
   const execPrice = price ? price * (1 + ((side === "buy" ? 1 : -1) * portfolio.slippage_bps) / 10_000) : 0;
@@ -96,8 +107,8 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
         side,
         order_type: type,
         quantity: Number(qty.toPrecision(12)),
-        limit_price: type === "limit" ? Number(limit) : null,
-        stop_price: type === "stop" ? Number(limit) : null,
+        limit_price: type === "limit" ? Number(limit) : type === "stop_limit" ? capNum : null,
+        stop_price: type === "stop" || type === "stop_limit" ? Number(limit) : null,
         trail_pct: type === "trailing_stop" ? Number(limit) : null,
         stop_loss: bracket ? slNum : null,
         take_profit: bracket ? tpNum : null,
@@ -110,6 +121,8 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
       if (o.status === "filled") toast.success(`Filled: ${o.side} ${formatQty(o.quantity)} ${o.asset.base_currency} @ ${formatPrice(o.filled_price)}${protectedBy ? `, protected by ${protectedBy}` : ""}`);
       else if (o.status === "open" && o.order_type === "trailing_stop")
         toast.info(`Trailing stop placed — ${o.trail_pct}% behind the price, stop now at ${formatPrice(o.stop_price)}`);
+      else if (o.status === "open" && o.order_type === "stop_limit")
+        toast.info(`Stop-limit placed — at ${formatPrice(o.stop_price)} it becomes a limit order at ${formatPrice(o.limit_price)}`);
       else if (o.status === "open" && o.order_type === "stop") toast.info(`Stop order placed — becomes a market order at ${formatPrice(o.stop_price)}`);
       else if (o.status === "open") toast.info(`Limit order placed — rests until price reaches ${formatPrice(o.limit_price)}${o.expires_at ? `, or expires ${formatDateTime(o.expires_at)}` : ""}`);
       else toast.error(`Order rejected: ${o.reject_reason}`);
@@ -120,6 +133,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
 
   const invalid =
     qty <= 0 || (type !== "market" && !(level > 0)) || (type === "trailing_stop" && level > 50) || !ticker ||
+    (type === "stop_limit" && (!(capNum > 0) || Boolean(capError))) ||
     (bracket && (!(slNum || tpNum) || Boolean(slError) || Boolean(tpError) || (riskOn && !riskSized))) ||
     missingStop || overRiskCap;
 
@@ -153,6 +167,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
             <SegmentedItem value="market" className="flex-1">Market</SegmentedItem>
             <SegmentedItem value="limit" className="flex-1">Limit</SegmentedItem>
             <SegmentedItem value="stop" className="flex-1">Stop</SegmentedItem>
+            <SegmentedItem value="stop_limit" className="flex-1">Stop limit</SegmentedItem>
             <SegmentedItem value="trailing_stop" className="flex-1">Trailing</SegmentedItem>
           </Segmented>
         {type === "trailing_stop" && (
@@ -176,6 +191,20 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
           >
             <Input type="number" min={0} step="any" value={limit} onChange={(e) => setLimit(e.target.value)} placeholder={formatPrice(ticker?.price)} />
           </Field>
+        )}
+        {type === "stop_limit" && (
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Stop (USD)">
+              <Input type="number" min={0} step="any" value={limit} onChange={(e) => setLimit(e.target.value)} placeholder={formatPrice(ticker?.price)} />
+            </Field>
+            <Field label="Limit (USD)" error={capError}>
+              <Input type="number" min={0} step="any" value={cap} onChange={(e) => setCap(e.target.value)} placeholder={side === "buy" ? "At or above stop" : "At or below stop"} />
+            </Field>
+            <p className="col-span-2 text-[11px] leading-relaxed text-muted-foreground">
+              Once the price {side === "buy" ? "rises" : "falls"} to the stop, it becomes a limit order: it never fills {side === "buy" ? "above" : "below"} the
+              limit. If the price gaps past the limit, it waits there unfilled — unlike a stop, which fills at any price.
+            </p>
+          </div>
         )}
         {type === "limit" && (
           <Field label="Limit price (USD)" hint={side === "buy" ? "Fills when the price is at or below this level." : "Fills when the price is at or above this level."}>

@@ -54,6 +54,7 @@ PARTIAL_TAKE_PROFIT = "Partial take-profit"
 MAX_TRAIL_PCT = 50.0
 MIN_NOTIONAL = 1.0
 SNAPSHOT_MIN_INTERVAL = timedelta(minutes=5)
+STOP_ORDER_TYPES = (OrderType.STOP, OrderType.TRAILING_STOP, OrderType.STOP_LIMIT)
 
 
 @dataclass
@@ -120,14 +121,14 @@ class PaperTradingService:
         return portfolio
 
     async def open_stops(self, portfolio: PaperPortfolio) -> list[SimulatedOrder]:
-        """Resting stop and trailing-stop orders: the exits a position's open risk is measured to."""
+        """Resting stop, trailing-stop and stop-limit orders: the exits a position's open risk is measured to."""
         return list(
             (
                 await self.session.scalars(
                     select(SimulatedOrder).where(
                         SimulatedOrder.portfolio_id == portfolio.id,
                         SimulatedOrder.status == OrderStatus.OPEN,
-                        SimulatedOrder.order_type.in_((OrderType.STOP, OrderType.TRAILING_STOP)),
+                        SimulatedOrder.order_type.in_(STOP_ORDER_TYPES),
                     )
                 )
             ).all()
@@ -148,7 +149,8 @@ class PaperTradingService:
             if take <= QTY_EPSILON:
                 break
             assert o.stop_price is not None
-            fill = o.stop_price * (1 - self.slip_rate if long else 1 + self.slip_rate)
+            # A stop-limit never fills worse than its limit (though in a gap past it, it may not fill at all).
+            fill = o.limit_price if o.limit_price is not None else o.stop_price * (1 - self.slip_rate if long else 1 + self.slip_rate)
             if view.price is not None:
                 risk += take * ((view.price - fill if long else fill - view.price) + fill * self.fee_rate)
             covered += take
@@ -193,7 +195,7 @@ class PaperTradingService:
                 groups[key] = max(groups.get(key, 0.0), order.quantity)
             elif reduces:
                 quantities[order.asset_id] = quantities.get(order.asset_id, 0.0) + order.quantity
-            elif order.stop_price is not None:
+            elif order.stop_price is not None and order.limit_price is None:
                 # A stop becomes a market order: allow for slippage past the stop.
                 cash += order.quantity * order.stop_price * (1 + self.slip_rate) * (1 + self.fee_rate)
             else:
@@ -315,17 +317,24 @@ class PaperTradingService:
         source = source or ("strategy" if strategy_id is not None else "user")
         if quantity <= 0:
             raise ValidationFailedError("Quantity must be positive")
-        if order_type == OrderType.LIMIT and (limit_price is None or limit_price <= 0):
-            raise ValidationFailedError("Limit orders require a positive limit price")
-        if order_type == OrderType.STOP and (stop_price is None or stop_price <= 0):
-            raise ValidationFailedError("Stop orders require a positive stop price")
+        if order_type in (OrderType.LIMIT, OrderType.STOP_LIMIT) and (limit_price is None or limit_price <= 0):
+            raise ValidationFailedError(f"{'Limit' if order_type == OrderType.LIMIT else 'Stop-limit'} orders require a positive limit price")
+        if order_type in (OrderType.STOP, OrderType.STOP_LIMIT) and (stop_price is None or stop_price <= 0):
+            raise ValidationFailedError(f"{'Stop' if order_type == OrderType.STOP else 'Stop-limit'} orders require a positive stop price")
+        if order_type == OrderType.STOP_LIMIT:
+            assert limit_price is not None and stop_price is not None
+            if limit_price < stop_price if side == OrderSide.BUY else limit_price > stop_price:
+                raise ValidationFailedError(
+                    f"A {side.value} stop-limit's limit must be at or {'above' if side == OrderSide.BUY else 'below'} its stop "
+                    f"({stop_price:,.2f}): it caps how far past the stop the order may fill"
+                )
         if order_type == OrderType.TRAILING_STOP and not (trail_pct is not None and 0 < trail_pct <= MAX_TRAIL_PCT):
             raise ValidationFailedError(f"Trailing stops require a trail between 0 and {MAX_TRAIL_PCT:g}%")
         if expires_at is not None and order_type == OrderType.MARKET:
-            raise ValidationFailedError("Market orders fill at once; only limit, stop and trailing-stop orders can expire")
-        if order_type != OrderType.LIMIT:
+            raise ValidationFailedError("Market orders fill at once; only resting orders (limit, stop, trailing-stop, stop-limit) can expire")
+        if order_type not in (OrderType.LIMIT, OrderType.STOP_LIMIT):
             limit_price = None
-        if order_type != OrderType.STOP:
+        if order_type not in (OrderType.STOP, OrderType.STOP_LIMIT):
             stop_price = None
         if order_type != OrderType.TRAILING_STOP:
             trail_pct = None
@@ -337,7 +346,7 @@ class PaperTradingService:
             stop_price = self._trail_stop(side, trail_anchor, trail_pct)
         if bracket_stop_loss is not None or bracket_take_profit is not None:
             await self._check_bracket(portfolio, asset, side, order_type, limit_price or ticker.price, bracket_stop_loss, bracket_take_profit)
-        if order_type == OrderType.STOP and stop_price is not None and self._triggered(side, stop_price, ticker.price):
+        if order_type in (OrderType.STOP, OrderType.STOP_LIMIT) and stop_price is not None and self._triggered(side, stop_price, ticker.price):
             direction = "at or above" if side == OrderSide.BUY else "at or below"
             raise ValidationFailedError(
                 f"A {side.value} stop at {stop_price:,.2f} would trigger at once: the price ({ticker.price:,.2f}) is already "
@@ -481,6 +490,8 @@ class PaperTradingService:
         if order.order_type in (OrderType.STOP, OrderType.TRAILING_STOP):
             assert order.stop_price is not None
             return cls._triggered(order.side, order.stop_price, price)
+        if order.order_type == OrderType.STOP_LIMIT and order.triggered_at is None:
+            return False  # not a limit order until its stop is reached
         assert order.limit_price is not None
         return price <= order.limit_price if order.side == OrderSide.BUY else price >= order.limit_price
 
@@ -867,6 +878,10 @@ class PaperTradingService:
                 continue
             if order.order_type == OrderType.TRAILING_STOP:
                 self._follow(order, t.price)
+            if order.order_type == OrderType.STOP_LIMIT and order.triggered_at is None:
+                assert order.stop_price is not None
+                if self._triggered(order.side, order.stop_price, t.price):
+                    order.triggered_at = now  # from here on it rests as a limit order
             if not self._is_marketable(order, t.price):
                 continue
             adds_risk = (order.side == OrderSide.BUY and held >= -QTY_EPSILON) or (order.side == OrderSide.SELL and held <= QTY_EPSILON)
