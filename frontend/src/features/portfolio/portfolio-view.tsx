@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { PieChart } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 import { StatCard } from "@/components/common/finance";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/common/states";
@@ -10,8 +11,9 @@ import { PageHeader } from "@/components/layout/page-header";
 import { DownloadButton } from "@/components/common/download-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/primitives";
+import { Badge, Label, Switch } from "@/components/ui/primitives";
 import { AllocationDonut, DrawdownChart, EquityAreaChart, hasChartableSpan, YoungHistoryNote } from "@/features/charts/recharts";
+import { BENCHMARK, TF_SECONDS, benchmarkTimeframe, buyAndHold } from "@/lib/benchmark";
 import { formatNumber, formatPct, formatUsd, pnlClass } from "@/lib/format";
 import { api } from "@/services/api";
 
@@ -30,6 +32,17 @@ export function PortfolioView() {
   const portfolio = useQuery({ queryKey: ["paper", "portfolio"], queryFn: api.paper.portfolio, refetchInterval: 30_000 });
   const history = useQuery({ queryKey: ["paper", "history"], queryFn: api.paper.history, refetchInterval: 60_000 });
   const analytics = useQuery({ queryKey: ["paper", "analytics"], queryFn: api.paper.analytics });
+  // BTC candles from the market data feed over the portfolio's life, for "what if you had just held BTC?".
+  const [compare, setCompare] = useState(true);
+  const first = history.data?.[0] ? new Date(history.data[0].ts).getTime() / 1000 : null;
+  const asOf = history.dataUpdatedAt / 1000; // when the snapshots were fetched: stable across renders
+  const benchTf = first ? benchmarkTimeframe(asOf - first) : null;
+  const btc = useQuery({
+    queryKey: ["candles", BENCHMARK, benchTf, "benchmark"],
+    queryFn: () => api.market.candles(BENCHMARK, benchTf!, Math.min(2000, Math.max(10, Math.ceil((asOf - first!) / TF_SECONDS[benchTf!]) + 2))),
+    enabled: compare && benchTf !== null,
+    staleTime: 60_000,
+  });
 
   if (portfolio.isLoading) return <LoadingRows rows={8} />;
   if (portfolio.error || !portfolio.data) return <Card><ErrorState error={portfolio.error} onRetry={() => portfolio.refetch()} /></Card>;
@@ -39,6 +52,8 @@ export function PortfolioView() {
   const curve = (history.data ?? []).map((s) => ({ time: Math.floor(new Date(s.ts).getTime() / 1000), equity: s.equity }));
   if (curve.length < 2) curve.push({ time: Math.floor(portfolio.dataUpdatedAt / 1000), equity: p.equity });
   const dd = drawdownCurve(curve);
+  const compared = compare ? buyAndHold(curve, btc.data?.candles ?? []) : null;
+  const last = compared?.at(-1);
   const allocation = [
     ...p.positions.map((pos) => ({ name: pos.quantity < 0 ? `${pos.asset.symbol} (short)` : pos.asset.symbol, value: Math.abs(pos.market_value) })),
     { name: "Cash", value: p.cash_balance },
@@ -68,6 +83,10 @@ export function PortfolioView() {
                 <CardDescription>Snapshots recorded after each fill and every few minutes while positions are open</CardDescription>
               </div>
               <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Switch id="compare-btc" checked={compare} onCheckedChange={setCompare} />
+                  <Label htmlFor="compare-btc" className="whitespace-nowrap text-xs">vs BTC</Label>
+                </div>
                 <Badge variant="outline">Simulated</Badge>
                 <DownloadButton href="/paper/history.csv" label="Download equity history as CSV">CSV</DownloadButton>
               </div>
@@ -75,7 +94,19 @@ export function PortfolioView() {
             <CardContent className="space-y-2">
               {hasChartableSpan(curve) ? (
                 <>
-                  <EquityAreaChart data={curve} baseline={p.starting_balance} height={260} />
+                  <EquityAreaChart data={compared ?? curve} baseline={p.starting_balance} height={260} labels={["Portfolio", "BTC held"]} />
+                  {compare && (
+                    <p className="text-xs text-muted-foreground">
+                      {last ? (
+                        <>
+                          Portfolio <span className={pnlClass(last.equity - curve[0].equity)}>{formatPct((last.equity / curve[0].equity - 1) * 100)}</span>
+                          {" · "}BTC held from the first snapshot <span className={pnlClass(last.benchmark - curve[0].equity)}>{formatPct((last.benchmark / curve[0].equity - 1) * 100)}</span>
+                          {" "}({BENCHMARK} {benchTf} candles from {btc.data?.meta.source ?? "the market feed"}, no fees
+                          {btc.data?.meta.is_sample && <span className="font-medium text-warn">; sample data, not real prices</span>}).
+                        </>
+                      ) : btc.isLoading ? "Loading BTC prices…" : `${BENCHMARK} candles don't reach back to the first snapshot, so there is nothing to compare with yet.`}
+                    </p>
+                  )}
                   <p className="pt-1 text-xs font-medium text-muted-foreground">Drawdown</p>
                   <DrawdownChart data={dd} height={120} />
                 </>

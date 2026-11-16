@@ -505,6 +505,7 @@ await step("portfolio page renders analytics", async () => {
   await page.goto(`${BASE}/portfolio`);
   await page.getByText("Equity history").waitFor();
   await page.getByText("Trade statistics").waitFor();
+  await page.getByRole("switch", { name: "vs BTC" }).waitFor(); // compares with real BTC candles once there is a history to chart
   // Today's closed trades land on today's square of the P&L calendar, in the browser's timezone.
   const today = await page.evaluate(() => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()));
   await page.getByRole("cell", { name: new RegExp(`^${today}: [+-]?\\$[\\d,.]+ from \\d+ closing fills? \\(\\d+ won, \\d+ lost\\)$`) }).waitFor();

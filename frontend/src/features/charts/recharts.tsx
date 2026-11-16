@@ -42,10 +42,13 @@ export function EquityAreaChart({
   data,
   height = 240,
   baseline,
+  labels = ["Strategy", "Buy & hold"],
 }: {
   data: { time: number; equity: number; benchmark?: number }[];
   height?: number;
   baseline?: number;
+  /** Names of the equity line and the benchmark line. */
+  labels?: [string, string];
 }) {
   const up = data.length < 2 || data[data.length - 1]!.equity >= data[0]!.equity;
   const color = up ? "var(--gain)" : "var(--loss)";
@@ -71,15 +74,15 @@ export function EquityAreaChart({
             return active && point ? (
               <TooltipBox>
                 <div className="text-muted-foreground">{formatDateTime(point.time)}</div>
-                <div className="font-medium">{hasBenchmark && "Strategy "}{formatUsd(point.equity)}</div>
-                {point.benchmark !== undefined && <div className="text-muted-foreground">Buy &amp; hold {formatUsd(point.benchmark)}</div>}
+                <div className="font-medium">{hasBenchmark && `${labels[0]} `}{formatUsd(point.equity)}</div>
+                {point.benchmark !== undefined && <div className="text-muted-foreground">{labels[1]} {formatUsd(point.benchmark)}</div>}
               </TooltipBox>
             ) : null;
           }}
         />
-        <Area type="linear" dataKey="equity" name="Strategy" stroke={color} strokeWidth={2} fill={`url(#${id})`} isAnimationActive={false} />
+        <Area type="linear" dataKey="equity" name={labels[0]} stroke={color} strokeWidth={2} fill={`url(#${id})`} isAnimationActive={false} />
         {hasBenchmark && (
-          <Line type="linear" dataKey="benchmark" name="Buy & hold" stroke="var(--muted-foreground)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+          <Line type="linear" dataKey="benchmark" name={labels[1]} stroke="var(--muted-foreground)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
         )}
         {hasBenchmark && <Legend verticalAlign="top" height={24} iconSize={10} wrapperStyle={{ fontSize: 11 }} />}
       </ComposedChart>
