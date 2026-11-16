@@ -26,6 +26,15 @@ class OrderCreate(BaseModel):
     )
 
 
+class OrderAmend(BaseModel):
+    """Change a resting order in place; leave out what stays the same."""
+
+    quantity: float | None = Field(None, gt=0, le=1e12)
+    limit_price: float | None = Field(None, gt=0)
+    stop_price: float | None = Field(None, gt=0)
+    trail_pct: float | None = Field(None, gt=0, le=50)
+
+
 class ProtectPosition(BaseModel):
     """A one-cancels-other stop-loss and take-profit for an open position (replaces earlier ones)."""
 

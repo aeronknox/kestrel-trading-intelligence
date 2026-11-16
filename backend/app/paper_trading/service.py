@@ -836,6 +836,84 @@ class PaperTradingService:
         await self.session.flush()
         return order
 
+    async def amend_order(
+        self,
+        portfolio: PaperPortfolio,
+        order_id: int,
+        *,
+        quantity: float | None = None,
+        limit_price: float | None = None,
+        stop_price: float | None = None,
+        trail_pct: float | None = None,
+    ) -> tuple[SimulatedOrder, dict[str, tuple[float | None, float | None]]]:
+        """Change a resting order's size or prices in place: the same checks as placing it, and nothing
+        changes if any fails. Keeps its place in the queue, its OCO group and the journal's initial stop.
+        Returns the order and what changed ({field: (before, after)})."""
+        order = await self.session.scalar(
+            select(SimulatedOrder).where(SimulatedOrder.id == order_id, SimulatedOrder.portfolio_id == portfolio.id)
+        )
+        if order is None:
+            raise NotFoundError("Order not found")
+        if order.status != OrderStatus.OPEN:
+            raise ValidationFailedError(f"Only open orders can be changed (status: {order.status.value})")
+        kind = order.order_type
+        if limit_price is not None and kind not in (OrderType.LIMIT, OrderType.STOP_LIMIT):
+            raise ValidationFailedError("Only limit and stop-limit orders have a limit price")
+        if stop_price is not None and kind not in (OrderType.STOP, OrderType.STOP_LIMIT):
+            raise ValidationFailedError(
+                "A trailing stop's stop follows the price: change its trail instead" if kind == OrderType.TRAILING_STOP
+                else "Only stop and stop-limit orders have a stop price"
+            )  # fmt: skip
+        if trail_pct is not None and kind != OrderType.TRAILING_STOP:
+            raise ValidationFailedError("Only trailing stops have a trail")
+        if stop_price is not None and order.triggered_at is not None:
+            raise ValidationFailedError("This stop-limit has already triggered: only its limit and quantity can change")
+        if trail_pct is not None and not 0 < trail_pct <= MAX_TRAIL_PCT:
+            raise ValidationFailedError(f"Trailing stops require a trail between 0 and {MAX_TRAIL_PCT:g}%")
+        if quantity is not None and quantity <= 0:
+            raise ValidationFailedError("Quantity must be positive")
+
+        new_qty = quantity if quantity is not None else order.quantity
+        new_limit = limit_price if limit_price is not None else order.limit_price
+        new_trail = trail_pct if trail_pct is not None else order.trail_pct
+        new_stop = stop_price if stop_price is not None else order.stop_price
+        if trail_pct is not None:
+            assert order.trail_anchor is not None
+            new_stop = self._trail_stop(order.side, order.trail_anchor, trail_pct)  # same best price, new distance
+        asset = order.asset
+        ticker = await self.market.get_ticker(asset)
+        if kind == OrderType.STOP_LIMIT:
+            assert new_limit is not None and new_stop is not None
+            if new_limit < new_stop if order.side == OrderSide.BUY else new_limit > new_stop:
+                raise ValidationFailedError(
+                    f"A {order.side.value} stop-limit's limit must be at or {'above' if order.side == OrderSide.BUY else 'below'} "
+                    f"its stop ({new_stop:,.2f})"
+                )
+        if (stop_price is not None or trail_pct is not None) and new_stop is not None and self._triggered(order.side, new_stop, ticker.price):
+            raise ValidationFailedError(
+                f"A {order.side.value} stop at {new_stop:,.2f} would trigger at once: the price is {ticker.price:,.2f}. "
+                "Close the position at market instead, or choose another stop."
+            )
+        if self._has_bracket(order):
+            await self._check_bracket(portfolio, asset, order.side, kind, new_limit or ticker.price,
+                                      order.bracket_stop_loss, order.bracket_take_profit)  # fmt: skip
+        if order.strategy_id is None:  # the trade plan covers your own orders, not strategy forward tests
+            await self._check_trade_plan(portfolio, asset, order.side, kind, new_qty, new_limit, ticker.price,
+                                         order.bracket_stop_loss, order.reduce_only)  # fmt: skip
+        reference = new_limit if new_limit is not None else new_stop if new_stop is not None else ticker.price
+        await self._check_risk(portfolio, asset, order.side, new_qty, reference, order_id=order.id,
+                               reduce_only=order.reduce_only, oco_group=order.oco_group)  # fmt: skip
+
+        changes: dict[str, tuple[float | None, float | None]] = {}
+        for name, value in (("quantity", new_qty), ("limit_price", new_limit), ("stop_price", new_stop), ("trail_pct", new_trail)):
+            before = getattr(order, name)
+            if value != before:
+                changes[name] = (before, value)
+                setattr(order, name, value)
+        await self.session.flush()
+        await self.process_open_orders(portfolio)  # a limit moved to (or past) the price fills now, as matching would
+        return order, changes
+
     async def process_open_orders(self, portfolio: PaperPortfolio) -> int:
         """Fill resting limit orders whose price has been reached and stops whose trigger has. Returns fills.
 

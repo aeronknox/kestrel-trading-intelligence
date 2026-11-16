@@ -119,6 +119,9 @@ const get = <T>(path: string, query?: Query) => request<T>("GET", path, undefine
 const post = <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {});
 const put = <T>(path: string, body: unknown) => request<T>("PUT", path, body);
 const patch = <T>(path: string, body: unknown) => request<T>("PATCH", path, body);
+
+/** A resting order's new size or prices; leave out what stays the same. */
+export type OrderAmend = { quantity?: number; limit_price?: number; stop_price?: number; trail_pct?: number };
 const del = <T>(path: string) => request<T>("DELETE", path);
 
 export const api = {
@@ -231,6 +234,7 @@ export const api = {
       post<Order[]>(`/paper/positions/${encodeURIComponent(symbol)}/protect`, body),
     orders: (status?: OrderStatus) => get<Order[]>("/paper/orders", { status }),
     cancelOrder: (id: number) => post<Order>(`/paper/orders/${id}/cancel`),
+    amendOrder: (id: number, body: OrderAmend) => patch<Order>(`/paper/orders/${id}`, body),
     trades: () => get<Trade[]>("/paper/trades"),
     history: () => get<Snapshot[]>("/paper/history"),
     analytics: () => get<PortfolioAnalytics>("/paper/analytics"),

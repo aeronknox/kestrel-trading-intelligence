@@ -323,7 +323,15 @@ await step("paper limit order + cancel", async () => {
   await toast(/Limit order placed .*, or expires /);
   const limitRow = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "1.00", exact: true }) }); // its own row, not a protective order
   await limitRow.getByText(/^Expires /).waitFor();
-  await limitRow.getByLabel("Cancel order").click();
+  // Change it in place: a new limit, same order.
+  await limitRow.getByRole("button", { name: "Change buy limit ETH-USD order" }).click();
+  const amend = page.getByRole("dialog");
+  await amend.getByLabel(/Limit price/).fill("2");
+  await amend.getByRole("button", { name: "Save changes" }).click();
+  await toast(/Order changed/);
+  const changedRow = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "2.00", exact: true }) });
+  await changedRow.getByText(/^Expires /).waitFor();
+  await changedRow.getByLabel("Cancel order").click();
   await toast(/Order cancelled/);
   await page.getByLabel("Time in force").click();
   await page.getByRole("option", { name: "Good till cancelled" }).click();

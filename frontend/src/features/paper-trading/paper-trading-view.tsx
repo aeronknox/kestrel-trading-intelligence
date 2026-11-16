@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import type { Order, Portfolio } from "@/types/api";
 
+import { AmendOrderDialog } from "./amend-order-dialog";
 import { OrderTicket } from "./order-ticket";
 import { ProtectDialog, protection } from "./protect-dialog";
 import { RiskLimitsDialog } from "./risk-limits-dialog";
@@ -174,7 +175,8 @@ function OrdersTable({ orders, cancellable }: { orders: Order[]; cancellable?: b
               {o.note && <p className={cn("mt-0.5 max-w-56 truncate text-[11px]", o.note.startsWith("Margin call") ? "text-warn" : "text-muted-foreground")} title={o.note}>{o.note}</p>}
             </TD>
             {cancellable && (
-              <TD className="text-right">
+              <TD className="whitespace-nowrap text-right">
+                <AmendOrderDialog order={o} />
                 <Button size="icon-sm" variant="ghost" aria-label="Cancel order" onClick={() => cancel.mutate(o.id)} disabled={cancel.isPending}><X /></Button>
               </TD>
             )}

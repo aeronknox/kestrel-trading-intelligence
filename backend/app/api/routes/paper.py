@@ -13,7 +13,17 @@ from app.models.enums import OrderStatus
 from app.models.paper import PaperPortfolio, SimulatedOrder
 from app.paper_trading.service import QTY_EPSILON, PaperTradingService
 from app.schemas.market import AssetOut
-from app.schemas.paper import OrderCreate, OrderOut, PortfolioOut, PositionOut, ProtectPosition, RiskLimits, SnapshotOut, TradeOut
+from app.schemas.paper import (
+    OrderAmend,
+    OrderCreate,
+    OrderOut,
+    PortfolioOut,
+    PositionOut,
+    ProtectPosition,
+    RiskLimits,
+    SnapshotOut,
+    TradeOut,
+)
 from app.services.audit import audit
 from app.services.export import csv_response, safe_filename
 
@@ -177,6 +187,20 @@ async def cancel_order(order_id: int, user: CurrentUser, db: DbSession) -> objec
     svc, pf = await _service_and_portfolio(db, user.id, lock=True)
     order = await svc.cancel_order(pf, order_id)
     await audit(db, "paper.order_cancelled", user_id=user.id, entity_type="order", entity_id=order.id)
+    return order
+
+
+@router.patch("/orders/{order_id}", response_model=OrderOut)
+async def amend_order(order_id: int, body: OrderAmend, user: CurrentUser, db: DbSession) -> object:
+    """Change a resting order's quantity or prices (simulated), with the same checks as placing it."""
+    fields = body.model_dump(exclude_none=True)
+    if not fields:
+        raise ValidationFailedError("Nothing to change: send a new quantity, limit price, stop price or trail")
+    svc, pf = await _service_and_portfolio(db, user.id, lock=True)
+    order, changes = await svc.amend_order(pf, order_id, **fields)
+    if changes:
+        await audit(db, "paper.order_amended", user_id=user.id, entity_type="order", entity_id=order.id,
+                    details={k: {"from": a, "to": b} for k, (a, b) in changes.items()})  # fmt: skip
     return order
 
 
