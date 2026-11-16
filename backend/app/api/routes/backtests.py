@@ -1,11 +1,14 @@
 import asyncio
+from dataclasses import asdict
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Query, Response
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession, rate_limit
 from app.backtesting.engine import BacktestConfig, downsample_equity, run_backtest
+from app.backtesting.monte_carlo import monte_carlo
 from app.core.exceptions import AppError, NotFoundError, ValidationFailedError
 from app.core.logging import get_logger
 from app.indicators.technical import candles_to_frame
@@ -161,6 +164,36 @@ async def get_backtest(backtest_id: int, user: CurrentUser, db: DbSession) -> Ba
 
 TRADE_COLUMNS = ("entry_time", "entry_price", "quantity", "entry_fee", "exit_time", "exit_price", "exit_fee",
                  "exit_reason", "pnl", "return_pct", "bars_held")  # fmt: skip
+
+
+class MonteCarloOut(BaseModel):
+    runs: int
+    trades: int
+    actual_return_pct: float
+    actual_max_drawdown_pct: float
+    return_pct: dict[int, float]  # percentile (5, 25, 50, 75, 95) -> final return %
+    max_drawdown_pct: dict[int, float]  # percentile -> worst trade-to-trade drawdown % (higher is worse)
+    loss_probability_pct: float
+    drawdown_worse_than_actual_pct: float
+    method: str = (
+        "The backtest's own closed trades, each as a share of the equity it was taken with, drawn at random with "
+        "replacement and compounded. Drawdowns are measured between trades. Resampled from hypothetical results: "
+        "it shows how much the order of trades mattered, not what will happen."
+    )
+
+
+@router.get("/{backtest_id}/monte-carlo", response_model=MonteCarloOut, dependencies=[rate_limit("backtest", "compute_rate_limit_per_minute")])
+async def backtest_monte_carlo(backtest_id: int, user: CurrentUser, db: DbSession, runs: int = Query(1000, ge=100, le=5000)) -> MonteCarloOut:
+    """Resample the backtest's trades to see how much luck (their order) shaped its return and drawdown."""
+    b = await _owned(db, backtest_id, user.id)
+    if b.status != BacktestStatus.COMPLETED or b.result is None:
+        raise ValidationFailedError("The backtest hasn't finished")
+    pnls = [float(t["pnl"]) for t in b.result.trades or [] if t.get("exit_time") is not None and t.get("pnl") is not None]
+    try:
+        mc = await asyncio.to_thread(monte_carlo, b.initial_capital, pnls, runs, b.id)
+    except ValueError as exc:
+        raise ValidationFailedError(str(exc)) from exc
+    return MonteCarloOut(**asdict(mc))
 
 
 @router.get("/{backtest_id}/trades.csv")

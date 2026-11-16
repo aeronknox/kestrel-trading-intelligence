@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import type { Backtest } from "@/types/api";
 
+import { MonteCarloCard } from "./monte-carlo-card";
+
 const EXIT_LABEL: Record<string, string> = {
   signal: "Exit signal",
   stop_loss: "Stop-loss",
@@ -215,6 +217,7 @@ export function BacktestDetailView({ id }: { id: number }) {
               </CardContent>
             </Card>
           </div>
+          <MonteCarloCard backtestId={bt.id} closedTrades={(bt.trades ?? []).filter((t) => t.exit_time != null).length} />
           <Card>
             <CardHeader><CardTitle>Trades ({bt.trades?.length ?? 0})</CardTitle></CardHeader>
             <CardContent className="px-2">

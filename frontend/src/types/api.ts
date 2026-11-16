@@ -948,3 +948,17 @@ export interface PnlCalendar {
   best_day: PnlDay | null;
   worst_day: PnlDay | null;
 }
+
+/** A backtest's own trades resampled: percentiles keyed "5", "25", "50", "75", "95". */
+export interface MonteCarlo {
+  runs: number;
+  trades: number;
+  actual_return_pct: number;
+  actual_max_drawdown_pct: number;
+  return_pct: Record<string, number>;
+  /** Worst trade-to-trade drawdown, positive: higher percentiles are deeper. */
+  max_drawdown_pct: Record<string, number>;
+  loss_probability_pct: number;
+  drawdown_worse_than_actual_pct: number;
+  method: string;
+}

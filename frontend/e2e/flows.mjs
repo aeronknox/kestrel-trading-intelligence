@@ -60,7 +60,9 @@ async function step(name, fn) {
     results.push(`PASS ${name}`);
   } catch (e) {
     results.push(`FAIL ${name}: ${String(e.message).split("\n")[0]}`);
-    annotate("Browser flow failed", `${name} at ${page.url()} after ${Math.round((Date.now() - started) / 1000)}s: ${e.message}`);
+    // What the page showed, so a failure can be understood from the annotation alone (no sign-in to fetch screenshots).
+    const seen = (await page.locator("main").innerText({ timeout: 2000 }).catch(() => "")).replace(/\s+/g, " ").slice(0, 400);
+    annotate("Browser flow failed", `${name} at ${page.url()} after ${Math.round((Date.now() - started) / 1000)}s: ${String(e.message).split("\n")[0]} · Page shows: ${seen}`);
     await page.screenshot({ path: `e2e/fail_${name.replace(/\W+/g, "_")}.png` }).catch(() => {});
   }
 }
@@ -215,6 +217,14 @@ await step("run backtest from dialog", async () => {
   await page.getByRole("dialog").getByRole("button", { name: /Run backtest/ }).click();
   await page.waitForURL(/\/backtests\/\d+$/, { timeout: 30000 });
   await page.getByText("Equity curve").waitFor();
+  // Luck check: resample the backtest's own trades (needs 5 closed trades).
+  const luck = page.getByRole("button", { name: "Run", exact: true });
+  if (await luck.isEnabled()) {
+    await luck.click();
+    await page.getByText(/of the 1,000 reshuffles ended below the starting capital/).waitFor();
+  } else {
+    await page.getByText("Needs at least 5 closed trades.").waitFor();
+  }
 });
 
 await step("backtest compare flow", async () => {
