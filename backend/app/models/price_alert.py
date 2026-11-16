@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Index, String, false
+from sqlalchemy import Boolean, Float, ForeignKey, Index, String, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, IdMixin, Money, UTCDateTime, utcnow
@@ -12,16 +12,18 @@ class PriceAlert(IdMixin, Base):
     it never places an order, simulated or real.
 
     `condition` is fixed at creation from where the price was: "above" fires once the price is at or
-    above `target`, "below" once it is at or below. Each alert fires once, then stays as history."""
+    above `target`, "below" once it is at or below. "move" fires once the price is `move_pct` % or more
+    away from `created_price`, either way. Each alert fires once, then stays as history."""
 
     __tablename__ = "price_alerts"
     __table_args__ = (Index("ix_price_alerts_active", "triggered_at"),)
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"))
-    condition: Mapped[str] = mapped_column(String(8))  # "above" | "below"
+    condition: Mapped[str] = mapped_column(String(8))  # "above" | "below" | "move"
     target: Mapped[float] = mapped_column(Money)
     created_price: Mapped[float] = mapped_column(Money)  # the price when it was set
+    move_pct: Mapped[float | None] = mapped_column(Float, nullable=True)  # "move" alerts: how far, either way
     note: Mapped[str] = mapped_column(String(120), default="")
     notify_webhook: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
@@ -31,4 +33,7 @@ class PriceAlert(IdMixin, Base):
     asset: Mapped[Asset] = relationship(lazy="selectin")
 
     def hit(self, price: float) -> bool:
+        if self.condition == "move":
+            assert self.move_pct is not None
+            return abs(price / self.created_price - 1) * 100 >= self.move_pct - 1e-9
         return price >= self.target if self.condition == "above" else price <= self.target

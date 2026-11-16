@@ -139,10 +139,19 @@ await step("price alert set, listed and deleted", async () => {
   await page.getByRole("button", { name: "Set alert" }).click();
   await toast(/Price alert set: ETH-USD rises to/);
   await page.getByText("Active alerts on ETH-USD").waitFor();
+  // A % move either way, measured from now.
+  await page.getByRole("radio", { name: "% move" }).click();
+  await page.getByLabel("Alert me when the price moves (%)").fill("90");
+  await page.getByText(/^Either way from .*: at or above .*, or at or below .*\.$/).waitFor();
+  await page.getByRole("button", { name: "Set alert" }).click();
+  await toast(/Price alert set: ETH-USD moves 90% either way from/);
   await page.keyboard.press("Escape");
   await page.goto(`${BASE}/alerts`);
   await page.getByText("Moon level").waitFor();
+  await page.getByText(/ETH-USD ± 90% from /).waitFor();
   await page.getByRole("button", { name: /^Delete price alert ETH-USD above / }).click();
+  await toast(/Price alert deleted/);
+  await page.getByRole("button", { name: "Delete price alert ETH-USD moves 90%" }).click();
   await toast(/Price alert deleted/);
   await page.getByText(/None yet\. Open an asset in/).waitFor();
 });

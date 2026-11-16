@@ -23,7 +23,8 @@ HISTORY = 50
 
 class PriceAlertIn(BaseModel):
     symbol: str = Field(min_length=1, max_length=32)
-    target: float = Field(gt=0, le=1e12)
+    target: float | None = Field(None, gt=0, le=1e12, description="A price level (alerts when the price reaches it)")
+    move_pct: float | None = Field(None, ge=0.1, le=100, description="Or: alert when the price moves this % either way from now")
     note: str = Field("", max_length=120)
     notify_webhook: bool = False
 
@@ -31,9 +32,10 @@ class PriceAlertIn(BaseModel):
 class PriceAlertOut(ORMModel):
     id: int
     asset: AssetOut
-    condition: Literal["above", "below"]
+    condition: Literal["above", "below", "move"]
     target: float
     created_price: float
+    move_pct: float | None = None
     note: str
     notify_webhook: bool
     created_at: datetime
@@ -63,18 +65,24 @@ async def create_price_alert(body: PriceAlertIn, user: CurrentUser, db: DbSessio
     )
     if (count or 0) >= MAX_ACTIVE:
         raise ValidationFailedError(f"You can have up to {MAX_ACTIVE} active price alerts; delete some first")
+    if (body.target is None) == (body.move_pct is None):
+        raise ValidationFailedError("Set either a price level or a % move, not both")
     price = (await market.get_ticker(asset)).price  # the real current price decides the direction
-    if body.target == price:
-        raise ValidationFailedError(f"{asset.symbol} is already at {price:,.2f}; choose a level above or below it")
+    if body.target is not None:
+        if body.target == price:
+            raise ValidationFailedError(f"{asset.symbol} is already at {price:,.2f}; choose a level above or below it")
+        condition, target = ("above" if body.target > price else "below"), body.target
+    else:
+        condition, target = "move", price  # measured from the price now, either way
     alert = PriceAlert(
-        user_id=user.id, asset_id=asset.id, condition="above" if body.target > price else "below", target=body.target,
+        user_id=user.id, asset_id=asset.id, condition=condition, target=target, move_pct=body.move_pct,
         created_price=price, note=" ".join(body.note.split()), notify_webhook=body.notify_webhook,
     )  # fmt: skip
     alert.asset = asset
     db.add(alert)
     await db.flush()
     await audit(db, "price_alert.created", user_id=user.id, entity_type="price_alert", entity_id=alert.id,
-                details={"symbol": asset.symbol, "condition": alert.condition, "target": body.target})  # fmt: skip
+                details={"symbol": asset.symbol, "condition": alert.condition, "target": body.target, "move_pct": body.move_pct})  # fmt: skip
     return alert
 
 

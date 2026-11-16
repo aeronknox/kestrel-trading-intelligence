@@ -251,7 +251,7 @@ export const api = {
   },
   priceAlerts: {
     list: (symbol?: string) => get<PriceAlert[]>("/price-alerts", symbol ? { symbol } : undefined),
-    create: (body: { symbol: string; target: number; note: string; notify_webhook: boolean }) => post<PriceAlert>("/price-alerts", body),
+    create: (body: { symbol: string; target?: number; move_pct?: number; note: string; notify_webhook: boolean }) => post<PriceAlert>("/price-alerts", body),
     remove: (id: number) => del<void>(`/price-alerts/${id}`),
   },
   notifications: {

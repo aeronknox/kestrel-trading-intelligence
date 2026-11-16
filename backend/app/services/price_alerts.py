@@ -24,7 +24,9 @@ def _price(v: float) -> str:
 
 
 def describe(alert: PriceAlert) -> str:
-    """'BTC-USD at or above 70,000.00'"""
+    """'BTC-USD at or above 70,000.00', or 'BTC-USD moves 5% from 70,000.00'"""
+    if alert.condition == "move":
+        return f"{alert.asset.symbol} moves {alert.move_pct:g}% from {_price(alert.created_price)}"
     return f"{alert.asset.symbol} at or {alert.condition} {_price(alert.target)}"
 
 
@@ -47,8 +49,13 @@ async def check_price_alerts() -> int:
             if alert.notify_webhook and alert.user_id not in webhook_ready:
                 s = await session.scalar(select(UserSettings).where(UserSettings.user_id == alert.user_id))
                 webhook_ready[alert.user_id] = bool(s and s.webhook_url and s.webhook_secret)
-            message = f"{alert.asset.symbol} traded at {_price(t.price)}, reaching your alert at {_price(alert.target)}"
-            message += f" (set when it was {_price(alert.created_price)})."
+            if alert.condition == "move":
+                change = (t.price / alert.created_price - 1) * 100
+                message = (f"{alert.asset.symbol} traded at {_price(t.price)}, {'up' if change > 0 else 'down'} {abs(change):.2f}% "
+                           f"from {_price(alert.created_price)} when you set the alert ({alert.move_pct:g}% either way).")  # fmt: skip
+            else:
+                message = f"{alert.asset.symbol} traded at {_price(t.price)}, reaching your alert at {_price(alert.target)}"
+                message += f" (set when it was {_price(alert.created_price)})."
             if alert.note:
                 message += f" Your note: {alert.note}"
             session.add(Notification(

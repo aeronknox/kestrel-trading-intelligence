@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/overlays";
 import { Badge, Field, Input, Label, Switch } from "@/components/ui/primitives";
+import { Segmented, SegmentedItem } from "@/components/ui/segmented";
 import { Table, TBody, TD, TR } from "@/components/ui/table";
 import { useMe } from "@/hooks/use-auth";
 import { WEBHOOK_KEY } from "@/features/settings/webhook-card";
@@ -37,13 +38,14 @@ function AlertRows({ alerts, showSymbol }: { alerts: PriceAlert[]; showSymbol: b
     <Table>
       <TBody>
         {alerts.map((a) => {
-          const name = `${a.asset.symbol} ${a.condition} ${formatPrice(a.target)}`;
+          const what = a.condition === "move" ? `± ${a.move_pct}% from ${formatPrice(a.created_price)}` : `${a.condition === "above" ? "≥" : "≤"} ${formatPrice(a.target)}`;
+          const name = a.condition === "move" ? `${a.asset.symbol} moves ${a.move_pct}%` : `${a.asset.symbol} ${a.condition} ${formatPrice(a.target)}`;
           return (
             <TR key={a.id}>
               <TD>
                 <span className="font-medium">
                   {showSymbol && <Link href={`/markets/${a.asset.symbol}`} className="hover:text-primary">{a.asset.symbol}</Link>}{showSymbol && " "}
-                  {a.condition === "above" ? "≥" : "≤"} {formatPrice(a.target)}
+                  {what}
                 </span>
                 <p className="text-xs text-muted-foreground">
                   {a.triggered_at
@@ -72,18 +74,27 @@ export function PriceAlertButton({ symbol, price }: { symbol: string; price: num
   const qc = useQueryClient();
   const me = useMe();
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"level" | "move">("level");
   const [target, setTarget] = useState("");
+  const [pct, setPct] = useState("5");
   const [note, setNote] = useState("");
   const [webhook, setWebhook] = useState(false);
   const alerts = useQuery({ queryKey: [...PRICE_ALERTS_KEY, symbol], queryFn: () => api.priceAlerts.list(symbol), enabled: open });
   const hook = useQuery({ queryKey: WEBHOOK_KEY, queryFn: api.users.webhook, enabled: open && me.data ? !me.data.is_demo : false });
   const level = Number(target);
   const distance = price && level > 0 ? ((level - price) / price) * 100 : null;
+  const move = Number(pct);
+  const moveOk = move >= 0.1 && move <= 100;
   const create = useMutation({
-    mutationFn: () => api.priceAlerts.create({ symbol, target: level, note, notify_webhook: webhook }),
+    mutationFn: () =>
+      api.priceAlerts.create(mode === "level" ? { symbol, target: level, note, notify_webhook: webhook } : { symbol, move_pct: move, note, notify_webhook: webhook }),
     onSuccess: (a) => {
       qc.invalidateQueries({ queryKey: PRICE_ALERTS_KEY });
-      toast.success(`Price alert set: ${a.asset.symbol} ${a.condition === "above" ? "rises to" : "falls to"} ${formatPrice(a.target)}`);
+      toast.success(
+        a.condition === "move"
+          ? `Price alert set: ${a.asset.symbol} moves ${a.move_pct}% either way from ${formatPrice(a.created_price)}`
+          : `Price alert set: ${a.asset.symbol} ${a.condition === "above" ? "rises to" : "falls to"} ${formatPrice(a.target)}`,
+      );
       setTarget("");
       setNote("");
     },
@@ -100,7 +111,7 @@ export function PriceAlertButton({ symbol, price }: { symbol: string; price: num
         <DialogHeader>
           <DialogTitle>Price alert · {symbol}</DialogTitle>
           <DialogDescription>
-            Get notified once {symbol} reaches a price (checked every 15 seconds against the market data feed). A notification only: no order is
+            Get notified once {symbol} reaches a price, or moves a set % either way (checked every 15 seconds against the market data feed). A notification only: no order is
             placed.
           </DialogDescription>
         </DialogHeader>
@@ -111,16 +122,29 @@ export function PriceAlertButton({ symbol, price }: { symbol: string; price: num
             create.mutate();
           }}
         >
-          <Field
-            label="Alert me when the price reaches"
-            hint={
-              distance !== null && distance !== 0
-                ? `${distance > 0 ? "Rises" : "Falls"} ${formatPct(Math.abs(distance), 2, false)} from ${formatPrice(price)}.`
-                : `Now ${formatPrice(price)}. Above it alerts on a rise, below it on a fall.`
-            }
-          >
-            <Input type="number" min={0} step="any" value={target} onChange={(e) => setTarget(e.target.value)} placeholder={formatPrice(price)} />
-          </Field>
+          <Segmented value={mode} onValueChange={(v) => setMode(v as typeof mode)} label="Alert type" className="w-full">
+            <SegmentedItem value="level" className="flex-1">Price level</SegmentedItem>
+            <SegmentedItem value="move" className="flex-1">% move</SegmentedItem>
+          </Segmented>
+          {mode === "move" ? (
+            <Field
+              label="Alert me when the price moves (%)"
+              hint={price && moveOk ? `Either way from ${formatPrice(price)}: at or above ${formatPrice(price * (1 + move / 100))}, or at or below ${formatPrice(price * (1 - move / 100))}.` : "0.1 – 100%, measured from the price when you set it."}
+            >
+              <Input type="number" min={0.1} max={100} step="0.1" value={pct} onChange={(e) => setPct(e.target.value)} />
+            </Field>
+          ) : (
+            <Field
+              label="Alert me when the price reaches"
+              hint={
+                distance !== null && distance !== 0
+                  ? `${distance > 0 ? "Rises" : "Falls"} ${formatPct(Math.abs(distance), 2, false)} from ${formatPrice(price)}.`
+                  : `Now ${formatPrice(price)}. Above it alerts on a rise, below it on a fall.`
+              }
+            >
+              <Input type="number" min={0} step="any" value={target} onChange={(e) => setTarget(e.target.value)} placeholder={formatPrice(price)} />
+            </Field>
+          )}
           <Field label="Note (optional)" hint="Why this level matters, e.g. resistance, breakout">
             <Input value={note} maxLength={120} onChange={(e) => setNote(e.target.value)} />
           </Field>
@@ -132,7 +156,7 @@ export function PriceAlertButton({ symbol, price }: { symbol: string; price: num
           ) : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Close</Button>
-            <Button type="submit" loading={create.isPending} disabled={!(level > 0) || level === price}>Set alert</Button>
+            <Button type="submit" loading={create.isPending} disabled={mode === "move" ? !moveOk : !(level > 0) || level === price}>Set alert</Button>
           </DialogFooter>
         </form>
         {active.length > 0 && (

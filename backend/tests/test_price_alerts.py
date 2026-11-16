@@ -100,3 +100,32 @@ async def test_price_alerts_go_to_the_webhook_when_asked(auth_client, provider, 
     assert payload["type"] == "price_alert" and payload["kind"] == "price_alert" and payload["symbol"] == "SOL-USD"
     assert payload["title"] == "Price alert · SOL-USD at or above 105.00"
     assert req.headers["x-kestrel-signature"] == webhooks.sign(hook["secret"], req.headers["x-kestrel-timestamp"], req.content)
+
+
+async def test_a_percent_move_alert_fires_either_way(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    move = await create(auth_client, target=None, move_pct=5)
+    assert (move["condition"], move["move_pct"], move["created_price"]) == ("move", 5, 100.0)
+    await provider.set_price("SOL-USD", 104.9)
+    assert await check_price_alerts() == 0
+    await provider.set_price("SOL-USD", 95.0)  # exactly 5% down
+    assert await check_price_alerts() == 1
+    (n,) = await notifications(auth_client)
+    assert n["title"] == "Price alert · SOL-USD moves 5% from 100.00"
+    assert "traded at 95.00, down 5.00% from 100.00 when you set the alert (5% either way)" in n["message"]
+
+    await provider.set_price("SOL-USD", 100.0)
+    up = await create(auth_client, target=None, move_pct=2.5)
+    await provider.set_price("SOL-USD", 102.6)
+    assert await check_price_alerts() == 1
+    assert "up 2.60%" in (await notifications(auth_client))[0]["message"]
+    assert (await auth_client.get(f"{API}/price-alerts")).json()[0]["id"] == up["id"]
+
+
+async def test_level_or_move_but_not_both(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    both = await create(auth_client, 422, target=120, move_pct=5)
+    assert "either a price level or a % move" in both["error"]["message"]
+    await create(auth_client, 422, target=None)
+    await create(auth_client, 422, target=None, move_pct=0)  # below 0.1%
+    await create(auth_client, 422, target=None, move_pct=101)

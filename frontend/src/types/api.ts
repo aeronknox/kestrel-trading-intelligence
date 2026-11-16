@@ -895,10 +895,12 @@ export interface SignedInSession {
 export interface PriceAlert {
   id: number;
   asset: Asset;
-  /** Fixed at creation from where the price was: fires at or above / at or below the target. */
-  condition: "above" | "below";
+  /** Fixed at creation from where the price was: fires at or above / at or below the target, or ("move")
+   * once the price is move_pct % or more from created_price, either way. */
+  condition: "above" | "below" | "move";
   target: number;
   created_price: number;
+  move_pct?: number | null;
   note: string;
   notify_webhook: boolean;
   created_at: string;
