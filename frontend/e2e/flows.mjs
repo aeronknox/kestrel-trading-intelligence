@@ -477,6 +477,10 @@ await step("portfolio page renders analytics", async () => {
   await page.goto(`${BASE}/portfolio`);
   await page.getByText("Equity history").waitFor();
   await page.getByText("Trade statistics").waitFor();
+  // Today's closed trades land on today's square of the P&L calendar, in the browser's timezone.
+  const today = await page.evaluate(() => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()));
+  await page.getByRole("cell", { name: new RegExp(`^${today}: [+-]?\\$[\\d,.]+ from \\d+ closing fills? \\(\\d+ won, \\d+ lost\\)$`) }).waitFor();
+  await page.getByText(/\d+ green, \d+ red$/).first().waitFor();
 });
 
 await step("assistant chat answers", async () => {

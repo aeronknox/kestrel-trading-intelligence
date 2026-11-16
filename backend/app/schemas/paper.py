@@ -104,6 +104,23 @@ class PositionOut(BaseModel):
     unprotected_qty: float = 0.0
 
 
+class PnlDay(BaseModel):
+    date: str  # YYYY-MM-DD in the requested timezone
+    realized_pnl: float  # closing fills that day, after fees
+    trades: int  # closing fills
+    wins: int
+    losses: int
+
+
+class PnlCalendar(BaseModel):
+    timezone: str
+    days: list[PnlDay]  # only days with closing fills, oldest first
+    green_days: int
+    red_days: int
+    best_day: PnlDay | None
+    worst_day: PnlDay | None
+
+
 class RiskLimits(BaseModel):
     max_position_pct: float = Field(ge=1, le=100)
     max_open_positions: int = Field(ge=1, le=100)

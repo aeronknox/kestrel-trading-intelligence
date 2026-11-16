@@ -12,6 +12,7 @@ redis==8.1.0
 httpx==0.28.1
 argon2-cffi==25.1.0
 pandas==3.1.1
+tzdata==2026.6  # zoneinfo data for P&L days in your own timezone (slim images have none)
 numpy==2.5.4
 scikit-learn==1.9.1
 openai==3.46.0

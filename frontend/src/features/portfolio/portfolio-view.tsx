@@ -15,6 +15,8 @@ import { AllocationDonut, DrawdownChart, EquityAreaChart, hasChartableSpan, Youn
 import { formatNumber, formatPct, formatUsd, pnlClass } from "@/lib/format";
 import { api } from "@/services/api";
 
+import { PnlCalendarCard } from "./pnl-calendar";
+
 /** Percent below the running peak at each point. */
 function drawdownCurve(curve: { time: number; equity: number }[]): { time: number; drawdown_pct: number }[] {
   let peak = 0;
@@ -150,6 +152,7 @@ export function PortfolioView() {
             </CardContent>
           </Card>
         </div>
+        <PnlCalendarCard />
       </div>
     </>
   );

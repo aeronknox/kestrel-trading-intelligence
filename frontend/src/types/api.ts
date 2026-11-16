@@ -923,3 +923,22 @@ export interface AlertEventsPage {
   unread: number;
   disclaimer: string;
 }
+
+/** One day of realized paper P&L (closing fills, after fees), in the requested timezone. */
+export interface PnlDay {
+  date: string;
+  realized_pnl: number;
+  trades: number;
+  wins: number;
+  losses: number;
+}
+
+export interface PnlCalendar {
+  timezone: string;
+  /** Only days with closing fills, oldest first. */
+  days: PnlDay[];
+  green_days: number;
+  red_days: number;
+  best_day: PnlDay | null;
+  worst_day: PnlDay | null;
+}

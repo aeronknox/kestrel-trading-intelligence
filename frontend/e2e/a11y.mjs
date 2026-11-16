@@ -67,6 +67,12 @@ const sweep = await (await page.request.post(`${BASE}/api/v1/research/sweeps`, {
   data: { strategy_id: sid, bars: 600, params: [{ path: "risk.stop_loss_pct", values: [2, 4, 6] }], min_trades: 0 }, timeout: 120000,
 })).json();
 
+// A closed paper trade, so the portfolio's P&L calendar has a coloured day to check.
+for (const side of ["buy", "sell"]) {
+  const resp = await page.request.post(`${BASE}/api/v1/paper/orders`, { data: { symbol: "SOL-USD", side, order_type: "market", quantity: 1 } });
+  if (!resp.ok()) throw new Error(`paper ${side} failed: ${resp.status()} ${await resp.text()}`);
+}
+
 const pages = ["/dashboard", "/markets", "/markets/BTC-USD", "/analysis", "/assistant", "/strategies", `/strategies/${sid}`,
   "/strategies/new", "/backtests", `/backtests/${backtests[0].id}`, "/research", "/research/new", `/research/${sweep.id}`,
   "/alerts", "/paper-trading", "/portfolio", "/journal", "/settings"];

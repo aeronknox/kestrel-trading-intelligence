@@ -1,6 +1,7 @@
 """Paper trading API — SIMULATED ONLY. No brokerage connectivity exists."""
 
 from datetime import timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Query, Response
 
@@ -17,6 +18,8 @@ from app.schemas.paper import (
     OrderAmend,
     OrderCreate,
     OrderOut,
+    PnlCalendar,
+    PnlDay,
     PortfolioOut,
     PositionOut,
     ProtectPosition,
@@ -214,6 +217,24 @@ async def list_trades(user: CurrentUser, db: DbSession, limit: int = Query(100, 
 async def equity_history(user: CurrentUser, db: DbSession, limit: int = Query(1000, le=5000)) -> object:
     svc, pf = await _service_and_portfolio(db, user.id)
     return await svc.equity_history(pf, limit)
+
+
+@router.get("/pnl-calendar", response_model=PnlCalendar)
+async def pnl_calendar(user: CurrentUser, db: DbSession, tz: str = Query("UTC", max_length=64, description="IANA timezone, e.g. Europe/London")) -> PnlCalendar:
+    """Realized P&L per day (simulated closing fills), grouped in your timezone."""
+    try:
+        zone = ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValidationFailedError(f"Unknown timezone: {tz}") from exc
+    svc, pf = await _service_and_portfolio(db, user.id)
+    days = [PnlDay(**d) for d in await svc.pnl_by_day(pf, zone)]
+    traded = [d for d in days if d.realized_pnl]
+    return PnlCalendar(
+        timezone=tz, days=days,
+        green_days=sum(d.realized_pnl > 0 for d in days), red_days=sum(d.realized_pnl < 0 for d in days),
+        best_day=max(traded, key=lambda d: d.realized_pnl) if traded and max(d.realized_pnl for d in traded) > 0 else None,
+        worst_day=min(traded, key=lambda d: d.realized_pnl) if traded and min(d.realized_pnl for d in traded) < 0 else None,
+    )  # fmt: skip
 
 
 @router.get("/analytics")

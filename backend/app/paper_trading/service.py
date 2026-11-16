@@ -26,6 +26,7 @@ are checked when an order is placed and again when a resting order fills.
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.exc import IntegrityError
@@ -1017,6 +1018,25 @@ class PaperTradingService:
             )
         ).all()
         return list(reversed(rows))
+
+    async def pnl_by_day(self, portfolio: PaperPortfolio, tz: ZoneInfo) -> list[dict]:
+        """Realized P&L of closing fills per calendar day in `tz` (days without any are left out), oldest first."""
+        rows = (
+            await self.session.execute(
+                select(SimulatedTrade.executed_at, SimulatedTrade.realized_pnl)
+                .where(SimulatedTrade.portfolio_id == portfolio.id, SimulatedTrade.is_closing.is_(True))
+                .order_by(SimulatedTrade.executed_at)
+            )
+        ).all()
+        days: dict[str, dict] = {}
+        for executed_at, pnl in rows:
+            key = executed_at.astimezone(tz).date().isoformat()
+            d = days.setdefault(key, {"date": key, "realized_pnl": 0.0, "trades": 0, "wins": 0, "losses": 0})
+            d["realized_pnl"] += pnl
+            d["trades"] += 1
+            d["wins"] += pnl > 0
+            d["losses"] += pnl < 0
+        return list(days.values())
 
     async def analytics(self, portfolio: PaperPortfolio) -> dict:
         sells = (  # closing trades: long sales and short covers
