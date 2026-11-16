@@ -87,3 +87,33 @@ async def test_journal_measures_r_from_a_stop_limit(auth_client, provider) -> No
     (trip,) = (await auth_client.get(f"{API}/journal")).json()["trips"]
     assert (trip["initial_stop"], trip["stop_source"]) == (95, "stop order")
     assert trip["r_multiple"] > 1.5  # risked ~5 a unit, made ~10
+
+
+async def test_a_gap_past_the_limit_is_notified_once(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    async def notes() -> list[dict]:
+        await auth_client.get(f"{API}/portfolio")  # runs order matching, as the background job does
+        return (await auth_client.get("/api/v1/notifications")).json()["notifications"]
+
+    await provider.set_price("SOL-USD", 100.0)
+    await order(auth_client)
+    await order(auth_client, side="sell", order_type="stop_limit", stop_price=95, limit_price=93, reduce_only=True)
+    await provider.set_price("SOL-USD", 90.0)
+    (n,) = await notes()
+    assert n["kind"] == "order_triggered" and n["title"] == "Stop-limit sell triggered, not filled · SOL-USD"
+    assert "reached its stop (95.00), but the price (90.00) is already below its limit (93.00)" in n["message"]
+    assert "the position is not protected" in n["message"]
+
+    await provider.set_price("SOL-USD", 91.0)  # still waiting: no repeat
+    assert len(await notes()) == 1
+    await provider.set_price("SOL-USD", 94.0)  # back above the limit: it fills, and that is notified as usual
+    assert [x["kind"] for x in await notes()] == ["order_filled", "order_triggered"]
+
+
+async def test_a_stop_limit_that_fills_when_triggered_sends_only_the_fill(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    await order(auth_client)
+    await order(auth_client, side="sell", order_type="stop_limit", stop_price=95, limit_price=93)
+    await provider.set_price("SOL-USD", 94.0)
+    await auth_client.get(f"{API}/portfolio")
+    kinds = [x["kind"] for x in (await auth_client.get("/api/v1/notifications")).json()["notifications"]]
+    assert kinds == ["order_filled"]

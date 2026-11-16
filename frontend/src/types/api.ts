@@ -904,7 +904,7 @@ export interface PriceAlert {
 
 export interface AppNotification {
   id: number;
-  kind: "order_filled" | "order_rejected" | "order_expired" | "margin_call" | "price_alert";
+  kind: "order_filled" | "order_rejected" | "order_expired" | "order_triggered" | "margin_call" | "price_alert";
   title: string;
   message: string;
   symbol: string | null;

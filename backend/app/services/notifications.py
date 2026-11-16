@@ -37,8 +37,11 @@ def describe(order: SimulatedOrder) -> str:
     return f"{kind} {order.side.value}"
 
 
-async def notify_order(session: AsyncSession, user_id: int, order: SimulatedOrder, *, margin_call: bool = False) -> Notification | None:
-    """Record a notification for an order the matching engine just filled or rejected."""
+async def notify_order(
+    session: AsyncSession, user_id: int, order: SimulatedOrder, *, margin_call: bool = False, market_price: float | None = None
+) -> Notification | None:
+    """Record a notification for an order the matching engine just filled or rejected (or, with `market_price`,
+    a stop-limit that reached its stop with the price already past its limit, so it didn't fill)."""
     symbol = order.asset.symbol
     verb = "bought" if order.side == OrderSide.BUY else "sold"
     if margin_call:
@@ -46,6 +49,17 @@ async def notify_order(session: AsyncSession, user_id: int, order: SimulatedOrde
         title = f"Margin call · {symbol}"
         message = f"{order.note or 'Margin call'}. The short was bought back: {order.quantity:g} {symbol}"
         message += f" at {_price(order.filled_price)}." if order.status == OrderStatus.FILLED else f", but it was rejected: {order.reject_reason}."
+    elif market_price is not None and order.status == OrderStatus.OPEN:
+        kind = "order_triggered"
+        title = f"{describe(order)} triggered, not filled · {symbol}"
+        past = "below" if order.side == OrderSide.SELL else "above"
+        message = (
+            f"{describe(order)} for {order.quantity:g} {symbol} reached its stop ({_price(order.stop_price)}), but the price "
+            f"({_price(market_price)}) is already {past} its limit ({_price(order.limit_price)}). It waits there as a limit order "
+            f"and only fills if the price comes back."
+        )
+        if order.reduce_only or order.note in NAMED:
+            message += " Until then the position is not protected."
     elif order.status == OrderStatus.FILLED:
         kind = "order_filled"
         title = f"{describe(order)} filled · {symbol}"

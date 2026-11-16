@@ -882,6 +882,8 @@ class PaperTradingService:
                 assert order.stop_price is not None
                 if self._triggered(order.side, order.stop_price, t.price):
                     order.triggered_at = now  # from here on it rests as a limit order
+                    if not self._is_marketable(order, t.price):  # gapped past the limit: say so, once
+                        await notify_order(self.session, portfolio.user_id, order, market_price=t.price)
             if not self._is_marketable(order, t.price):
                 continue
             adds_risk = (order.side == OrderSide.BUY and held >= -QTY_EPSILON) or (order.side == OrderSide.SELL and held <= QTY_EPSILON)
