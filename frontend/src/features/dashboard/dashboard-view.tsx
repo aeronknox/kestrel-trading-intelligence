@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ArrowRight, BrainCircuit, DollarSign, Landmark, LineChart, Sparkles, TrendingUp } from "lucide-react";
+import { Activity, ArrowRight, BrainCircuit, DollarSign, Landmark, LineChart, ShieldAlert, Sparkles, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 
@@ -82,6 +82,7 @@ export function DashboardView() {
           const history = d.equity_history.map((s) => ({ time: Math.floor(new Date(s.ts).getTime() / 1000), equity: s.equity }));
           if (history.length < 2) history.push({ time: Math.floor(q.dataUpdatedAt / 1000), equity: p.equity });
           const watchSymbols = d.watchlist.map((w) => w.asset.symbol);
+          const unprotected = p.positions.filter((pos) => (pos.unprotected_qty ?? 0) > 1e-12).map((pos) => pos.asset.symbol);
           return (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -94,8 +95,23 @@ export function DashboardView() {
                   hint="Change in equity versus the snapshot closest to 24 hours ago."
                 />
                 <StatCard label="Total P&L" icon={TrendingUp} value={<span className={pnlClass(p.total_pnl)}>{formatUsd(p.total_pnl, { sign: true })}</span>} sub={`Realized ${formatUsd(p.realized_pnl, { sign: true })} · Unrealized ${formatUsd(p.unrealized_pnl, { sign: true })}`} />
-                <StatCard label="Buying power" icon={DollarSign} value={formatUsd(p.available_cash)} sub={`${p.positions.length} open position${p.positions.length === 1 ? "" : "s"}`} />
+                <StatCard
+                  label="Buying power"
+                  icon={DollarSign}
+                  value={formatUsd(p.available_cash)}
+                  sub={`${p.positions.length} open position${p.positions.length === 1 ? "" : "s"}${p.open_risk ? ` · ${formatUsd(p.open_risk)} at risk to stops` : ""}`}
+                  hint="Open risk: what the positions would lose from here if every resting stop filled."
+                />
               </div>
+              {unprotected.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warn/40 bg-warn/5 px-4 py-2.5 text-sm" role="status">
+                  <span>
+                    <ShieldAlert className="mr-1.5 inline size-4 text-warn" aria-hidden />
+                    {unprotected.length === 1 ? `Part or all of your ${unprotected[0]} position has no stop-loss` : `${unprotected.length} positions are not fully covered by a stop-loss`}, so nothing caps the loss there.
+                  </span>
+                  <Button asChild size="sm" variant="outline"><Link href="/paper-trading">Protect {unprotected.length === 1 ? "it" : "them"}</Link></Button>
+                </div>
+              )}
 
               <div className="grid gap-4 xl:grid-cols-3">
                 <Card className="xl:col-span-2">

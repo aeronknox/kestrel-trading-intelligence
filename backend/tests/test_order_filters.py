@@ -30,3 +30,14 @@ async def test_an_old_open_order_is_listed_however_much_history_follows(auth_cli
     assert old["id"] not in [o["id"] for o in latest_two]  # pushed out of the recent history...
     open_now = (await auth_client.get(f"{API}/orders", params={"status": "open"})).json()
     assert [o["id"] for o in open_now] == [old["id"]]  # ...but the open-orders query still finds it
+
+
+async def test_trades_filter_by_symbol(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    await provider.set_price("BTC-USD", 50_000.0)
+    await order(auth_client)
+    await order(auth_client, symbol="BTC-USD", quantity=0.01)
+    await order(auth_client, side="sell", quantity=5)
+    sol = (await auth_client.get(f"{API}/trades", params={"symbol": "sol-usd"})).json()
+    assert [(t["asset"]["symbol"], t["side"]) for t in sol] == [("SOL-USD", "sell"), ("SOL-USD", "buy")]
+    assert len((await auth_client.get(f"{API}/trades")).json()) == 3

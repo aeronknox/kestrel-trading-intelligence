@@ -238,9 +238,14 @@ async def amend_order(order_id: int, body: OrderAmend, user: CurrentUser, db: Db
 
 
 @router.get("/trades", response_model=list[TradeOut])
-async def list_trades(user: CurrentUser, db: DbSession, limit: int = Query(100, le=500)) -> object:
+async def list_trades(
+    user: CurrentUser,
+    db: DbSession,
+    limit: int = Query(100, ge=1, le=500),
+    symbol: str | None = Query(None, max_length=32, description="Only this asset, e.g. BTC-USD"),
+) -> object:
     svc, pf = await _service_and_portfolio(db, user.id)
-    return await svc.list_trades(pf, limit)
+    return await svc.list_trades(pf, limit, symbol)
 
 
 @router.get("/history", response_model=list[SnapshotOut])

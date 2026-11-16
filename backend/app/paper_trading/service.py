@@ -1015,13 +1015,11 @@ class PaperTradingService:
             stmt = stmt.join(Asset, Asset.id == SimulatedOrder.asset_id).where(Asset.symbol == symbol.upper())
         return list((await self.session.scalars(stmt.order_by(SimulatedOrder.created_at.desc()).limit(limit))).all())
 
-    async def list_trades(self, portfolio: PaperPortfolio, limit: int) -> list[SimulatedTrade]:
-        stmt = (
-            select(SimulatedTrade)
-            .where(SimulatedTrade.portfolio_id == portfolio.id)
-            .order_by(SimulatedTrade.executed_at.desc())
-            .limit(limit)
-        )
+    async def list_trades(self, portfolio: PaperPortfolio, limit: int, symbol: str | None = None) -> list[SimulatedTrade]:
+        stmt = select(SimulatedTrade).where(SimulatedTrade.portfolio_id == portfolio.id)
+        if symbol:
+            stmt = stmt.join(Asset, Asset.id == SimulatedTrade.asset_id).where(Asset.symbol == symbol.upper())
+        stmt = stmt.order_by(SimulatedTrade.executed_at.desc()).limit(limit)
         return list((await self.session.scalars(stmt)).all())
 
     async def equity_history(self, portfolio: PaperPortfolio, limit: int = 1000) -> list[PortfolioSnapshot]:

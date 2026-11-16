@@ -40,6 +40,10 @@ export interface ChartMarker {
 
 const TF_SECONDS: Record<Timeframe, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "6h": 21600, "1d": 86400 };
 
+// Stable defaults: a fresh [] on every render would rebuild the whole chart (an effect dependency) on each live tick.
+const NO_LEVELS: PriceLevel[] = [];
+const NO_MARKERS: ChartMarker[] = [];
+
 const toPoints = (pts: Point[] | undefined) => (pts ?? []).map((p) => ({ time: p.time as UTCTimestamp, value: p.value }));
 
 export function PriceChart({
@@ -48,8 +52,8 @@ export function PriceChart({
   overlays,
   timeframe,
   livePrice,
-  levels = [],
-  markers = [],
+  levels = NO_LEVELS,
+  markers = NO_MARKERS,
   height = 460,
 }: {
   candles: Candle[];

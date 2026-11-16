@@ -6,8 +6,8 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 
 | Area | What you get |
 |---|---|
-| Dashboard | Virtual portfolio value, 24h P&L, equity curve, live market table, watchlist, AI insight, recent signals and orders, market sentiment |
-| Markets | Live prices streamed from Coinbase's public feed as trades happen (REST polling as fallback), catalog search to track new assets, candlestick charts (1m–1d), SMA 20/50/200, Bollinger Bands, volume, RSI, MACD |
+| Dashboard | Virtual portfolio value, 24h P&L, open risk to stops (and a warning when a position has no stop-loss), equity curve, live market table, watchlist, AI insight, recent signals and orders, market sentiment |
+| Markets | Live prices streamed from Coinbase's public feed as trades happen (REST polling as fallback), catalog search to track new assets, candlestick charts (1m–1d) with your own paper fills marked on them, SMA 20/50/200, Bollinger Bands, volume, RSI, MACD |
 | AI Analysis | Trend regression, support/resistance, pattern detection, a walk-forward ML model, an explainable composite signal with confidence, and a risk breakdown |
 | Strategy Builder | Visual rule builder (13 indicators, 6 operators, ALL/ANY logic), risk exits, templates, immutable versioning |
 | Backtesting | Long or short strategies (shorts use stops above entry and a margin call if price doubles); next-bar execution, fees, slippage, gap-aware stops; return, max drawdown, Sharpe/Sortino, a buy-and-hold benchmark with the same costs (overlaid on the equity curve, with excess return and beta), win rate, profit factor, CAGR, exposure; side-by-side comparison; a luck check (Monte Carlo) that redraws the backtest's own closed trades 1,000 times and shows the unlucky, median and lucky return and drawdown, and how often a reshuffle ended in a loss |
@@ -202,7 +202,7 @@ cd backend && python -m app.cli promote-admin you@example.com    # or demote-adm
 ### Tests
 
 ```bash
-cd backend  && pytest                  # 301 tests: indicators (incl. Wilder reference values),
+cd backend  && pytest                  # 302 tests: indicators (incl. Wilder reference values),
                                        # backtester (long and short), optimization and walk-forward
                                        # look-ahead checks, multi-asset tests, ML leakage, signals,
                                        # auth/RBAC, email tokens, demo sandboxes, rate limiting,
@@ -213,10 +213,10 @@ cd backend  && python scripts/loadtest.py --url http://localhost:8000 --users 20
                                        # load test: concurrent demo visitors browsing the API
                                        # (needs DEMO_MODE=true and raised rate limits on the target)
 cd frontend && npm run lint            # ESLint
-cd frontend && npm test                # 37 unit tests: rule builder, formatters, sweep-grid helpers, CSP, form validation messages, calendar grid, buy-and-hold benchmark
+cd frontend && npm test                # 40 unit tests: rule builder, formatters, sweep-grid helpers, CSP, form validation messages, calendar grid, buy-and-hold benchmark, trade markers
 cd frontend && npm run typecheck && npm run build
 cd frontend && npx playwright install chromium && npm run e2e
-                                       # 47 browser flows against a running stack (:3000 + :8000)
+                                       # 48 browser flows against a running stack (:3000 + :8000)
 cd frontend && npm run a11y            # axe (WCAG 2.1 A/AA) on every page in both themes + no sideways
                                        # scrolling at 390px; fails on critical/serious findings
 ```
@@ -229,7 +229,7 @@ Backend tests run against SQLite with the sample provider and need no network ac
 
 - **Backend:** ruff lint, mypy type check and a dependency audit, Alembic upgrade/check/downgrade/upgrade on PostgreSQL 17, then the test suite on SQLite and again on PostgreSQL.
 - **Frontend:** dependency audit, ESLint (Next.js core-web-vitals and TypeScript rules, zero warnings), typecheck, unit tests, production build.
-- **Docker:** `docker compose --profile worker --profile monitoring up --build --wait`, health checks, the 47 browser flows (with demo mode on), and the accessibility and phone-layout check against the containerized stack. It then checks that Prometheus loaded the alert rules, scrapes both the API and the worker, and sees exactly one job leader. A 20-visitor load test on PostgreSQL fails the build on any error or a p95 above 1.5 seconds. Finally it runs the runbook's backup, drop and restore sequence and checks that every account survives.
+- **Docker:** `docker compose --profile worker --profile monitoring up --build --wait`, health checks, the 48 browser flows (with demo mode on), and the accessibility and phone-layout check against the containerized stack. It then checks that Prometheus loaded the alert rules, scrapes both the API and the worker, and sees exactly one job leader. A 20-visitor load test on PostgreSQL fails the build on any error or a p95 above 1.5 seconds. Finally it runs the runbook's backup, drop and restore sequence and checks that every account survives.
 - **HTTPS:** the production override with `DOMAIN=localhost`. Checks the HTTP-to-HTTPS redirect, HSTS, that only Caddy's ports are reachable, and that the session cookie is `Secure`, then runs the browser flows over HTTPS.
 
 See [docs/AUDIT.md](docs/AUDIT.md) for the latest technical audit.

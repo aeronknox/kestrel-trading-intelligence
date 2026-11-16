@@ -61,7 +61,10 @@ async function step(name, fn) {
   } catch (e) {
     results.push(`FAIL ${name}: ${String(e.message).split("\n")[0]}`);
     // What the page showed, so a failure can be understood from the annotation alone (no sign-in to fetch screenshots).
-    const seen = (await page.locator("main").innerText({ timeout: 2000 }).catch(() => "")).replace(/\s+/g, " ").slice(0, 400);
+    const seen = (await page.locator("main").innerText({ timeout: 2000 }).catch(() => ""))
+      .replace(/\s+/g, " ")
+      .replace(/^Confirm your email address .*? Resend email /, "") // the unverified-email banner, on every page
+      .slice(0, 700);
     annotate("Browser flow failed", `${name} at ${page.url()} after ${Math.round((Date.now() - started) / 1000)}s: ${String(e.message).split("\n")[0]} · Page shows: ${seen}`);
     await page.screenshot({ path: `e2e/fail_${name.replace(/\W+/g, "_")}.png` }).catch(() => {});
   }
@@ -312,6 +315,12 @@ await step("paper market buy via ticket", async () => {
   // Bought without a stop: flagged, and not counted in open risk.
   await page.getByText("No stop", { exact: true }).waitFor();
   await page.getByText(/1 position has no stop, so no limit on its loss/).waitFor();
+  // The dashboard flags it too, with a way to protect it.
+  await page.goto(`${BASE}/dashboard`);
+  await page.getByText("Part or all of your ETH-USD position has no stop-loss, so nothing caps the loss there.").waitFor();
+  await page.getByRole("link", { name: "Protect it" }).waitFor();
+  await page.goto(`${BASE}/paper-trading?symbol=ETH-USD`);
+  await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).waitFor();
 });
 
 await step("paper entry with stop-loss, sized by risk", async () => {
@@ -433,6 +442,16 @@ await step("paper close position", async () => {
   await page.getByRole("option", { name: "DOGE-USD", exact: true }).click();
   await history.getByText("No orders match these filters").waitFor();
   await page.getByRole("tab", { name: /^Open orders/ }).click();
+});
+
+await step("my trades on the asset chart", async () => {
+  await page.goto(`${BASE}/markets/ETH-USD`);
+  const toggle = page.getByRole("button", { name: /^My trades \(\d+\)$/ });
+  await toggle.waitFor();
+  const n = Number((await toggle.innerText()).match(/\d+/)[0]);
+  if (n < 1) throw new Error("no trade markers on the ETH chart after trading ETH");
+  await toggle.click(); // off
+  await page.getByRole("button", { name: "My trades", exact: true, pressed: false }).waitFor();
 });
 
 await step("journal review of a closed trade", async () => {

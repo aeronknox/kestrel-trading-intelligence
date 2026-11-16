@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, BrainCircuit, Star, Wallet } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { AssetIcon, Change, DataSource } from "@/components/common/finance";
 import { ErrorState } from "@/components/common/states";
@@ -15,6 +15,7 @@ import { type Overlay, PriceChart } from "@/features/charts/price-chart";
 import { useMe } from "@/hooks/use-auth";
 import { useLiveTicker } from "@/hooks/use-market-stream";
 import { formatCompact, formatPrice } from "@/lib/format";
+import { tradeMarkers } from "@/lib/trade-markers";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import { TIMEFRAMES, type Timeframe } from "@/types/api";
@@ -38,6 +39,9 @@ export function AssetDetailView({ symbol }: { symbol: string }) {
   const me = useMe();
   const [timeframe, setTimeframe] = useState<Timeframe>(me.data?.settings?.default_timeframe ?? "1h");
   const [overlays, setOverlays] = useState<Set<Overlay>>(new Set(["sma_50", "sma_200", "volume", "rsi"]));
+  // Your simulated fills on this asset, as markers on the chart.
+  const [showTrades, setShowTrades] = useState(true);
+  const myTrades = useQuery({ queryKey: ["paper", "trades", symbol], queryFn: () => api.paper.trades({ symbol, limit: 500 }), enabled: showTrades });
   const { symbols: watched, toggle } = useWatchlist();
 
   const ticker = useQuery({ queryKey: ["ticker", symbol], queryFn: () => api.market.ticker(symbol), refetchInterval: 60_000 });
@@ -49,6 +53,11 @@ export function AssetDetailView({ symbol }: { symbol: string }) {
   const live = useLiveTicker(symbol, ticker.data);
   const isWatched = watched.has(symbol);
 
+  const markers = useMemo(
+    () => (candles.data && myTrades.data ? tradeMarkers(myTrades.data, candles.data.candles.map((c) => c.time)) : []),
+    [candles.data, myTrades.data],
+  );
+  const tradeMarkerCount = markers.length;
   const toggleOverlay = (k: Overlay) =>
     setOverlays((prev) => {
       const next = new Set(prev);
@@ -130,6 +139,17 @@ export function AssetDetailView({ symbol }: { symbol: string }) {
                 ))}
               </Segmented>
             <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setShowTrades((v) => !v)}
+                className={cn(
+                  "rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
+                  showTrades ? "border-primary/40 bg-primary/12 text-foreground" : "border-border text-muted-foreground hover:text-foreground",
+                )}
+                aria-pressed={showTrades}
+                title="Your simulated paper fills on this asset"
+              >
+                My trades{showTrades && myTrades.data ? ` (${tradeMarkerCount})` : ""}
+              </button>
               {OVERLAYS.map((o) => (
                 <button
                   key={o.key}
@@ -158,6 +178,7 @@ export function AssetDetailView({ symbol }: { symbol: string }) {
                   overlays={overlays}
                   timeframe={timeframe}
                   livePrice={live?.price}
+                  markers={showTrades ? markers : undefined}
                   height={overlays.has("rsi") && overlays.has("macd") ? 620 : 520}
                 />
                 <DataSource meta={candles.data.meta} className="px-2 pt-2" />

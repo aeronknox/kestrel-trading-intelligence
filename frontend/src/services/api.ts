@@ -239,7 +239,7 @@ export const api = {
     cancelOrder: (id: number) => post<Order>(`/paper/orders/${id}/cancel`),
     amendOrder: (id: number, body: OrderAmend) => patch<Order>(`/paper/orders/${id}`, body),
     closeEverything: () => post<{ message: string; cancelled_orders: number; closed: Order[] }>("/paper/close-everything"),
-    trades: () => get<Trade[]>("/paper/trades"),
+    trades: (q: { symbol?: string; limit?: number } = {}) => get<Trade[]>("/paper/trades", q),
     history: () => get<Snapshot[]>("/paper/history"),
     analytics: () => get<PortfolioAnalytics>("/paper/analytics"),
     pnlCalendar: (tz: string) => get<PnlCalendar>(`/paper/pnl-calendar?tz=${encodeURIComponent(tz)}`),

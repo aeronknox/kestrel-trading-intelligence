@@ -229,7 +229,7 @@ function OrdersTable({ orders, cancellable, filtered }: { orders: Order[]; cance
 }
 
 function TradesTable() {
-  const trades = useQuery({ queryKey: ["paper", "trades"], queryFn: api.paper.trades });
+  const trades = useQuery({ queryKey: ["paper", "trades"], queryFn: () => api.paper.trades() });
   if (trades.isLoading) return <LoadingRows rows={4} className="p-3" />;
   if (trades.error) return <ErrorState error={trades.error} onRetry={() => trades.refetch()} />;
   if (!trades.data?.length) return <EmptyState title="No executed trades yet" className="py-8" />;
