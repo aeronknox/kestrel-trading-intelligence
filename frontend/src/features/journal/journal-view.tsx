@@ -17,6 +17,7 @@ import { Segmented, SegmentedItem } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { RCurveChart } from "@/features/charts/recharts";
+import { localTimezone } from "@/lib/calendar";
 import { formatDateTime, formatPct, formatPrice, formatQty, formatUsd, pnlClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -287,7 +288,8 @@ function EntryDialog({ trip, setups, emotions, onClose }: { trip: JournalTrip; s
 }
 
 export function JournalView() {
-  const journal = useQuery({ queryKey: JOURNAL_KEY, queryFn: api.journal.get });
+  const [tz] = useState(localTimezone);
+  const journal = useQuery({ queryKey: [...JOURNAL_KEY, tz], queryFn: () => api.journal.get(tz) });
   const [filter, setFilter] = useState<"all" | "review" | "open">("all");
   const [editing, setEditing] = useState<JournalTrip | null>(null);
   const data = journal.data;
@@ -339,6 +341,20 @@ export function JournalView() {
               groups={data.by_emotion}
               empty="Record how you felt to see its effect."
               label={(n) => (n ? EMOTION_LABEL[n] ?? n : "Not recorded")}
+            />
+            <StatsTable
+              title="By weekday"
+              description={`The day you opened the trade (${data.timezone}). Some traders do worse on certain days.`}
+              groups={data.by_weekday}
+              empty="Close a trade to see it here."
+              label={(n) => n ?? ""}
+            />
+            <StatsTable
+              title="By time of day"
+              description={`When you opened the trade, in 4-hour blocks (${data.timezone}): late-night trades are often the worst.`}
+              groups={data.by_time_of_day}
+              empty="Close a trade to see it here."
+              label={(n) => n ?? ""}
             />
           </div>
           <Card>

@@ -406,6 +406,10 @@ await step("paper close position", async () => {
 await step("journal review of a closed trade", async () => {
   await page.goto(`${BASE}/journal`);
   await page.getByText(/closed trades? needs? a review/).waitFor();
+  // Today's trades show up under today's weekday, in the browser's timezone.
+  const weekday = await page.evaluate(() => new Date().toLocaleDateString("en-US", { weekday: "long" }));
+  await page.getByText("By weekday").waitFor();
+  await page.getByRole("cell", { name: weekday, exact: true }).first().waitFor();
   await page.getByRole("button", { name: /^Review ETH-USD trade/ }).first().click();
   await page.getByLabel("Setup").fill("Breakout");
   await page.getByLabel("State of mind when you entered").click();

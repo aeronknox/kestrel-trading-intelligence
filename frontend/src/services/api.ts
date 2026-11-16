@@ -244,7 +244,7 @@ export const api = {
     reset: () => post<Portfolio>("/paper/portfolio/reset"),
   },
   journal: {
-    get: () => get<JournalPage>("/paper/journal"),
+    get: (tz = "UTC") => get<JournalPage>(`/paper/journal?tz=${encodeURIComponent(tz)}`),
     save: (tradeId: number, body: { setup: string | null; emotion: string | null; rating: number | null; notes: string; lesson: string; planned_stop: number | null }) =>
       put<JournalEntry>(`/paper/journal/${tradeId}`, body),
     remove: (tradeId: number) => del<void>(`/paper/journal/${tradeId}`),

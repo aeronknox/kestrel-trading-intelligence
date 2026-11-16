@@ -5,8 +5,9 @@ from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_, select
 
@@ -107,6 +108,9 @@ class JournalPage(BaseModel):
     trips: list[TripOut]
     by_setup: list[GroupStats]
     by_emotion: list[GroupStats]
+    by_weekday: list[GroupStats] = []  # when the trade was opened, Monday first; only days with trades
+    by_time_of_day: list[GroupStats] = []  # 4-hour blocks of the opening time, e.g. "08:00–12:00"
+    timezone: str = "UTC"
     setups: list[str]
     emotions: list[str] = list(EMOTIONS)
     needs_review: int
@@ -172,6 +176,23 @@ def _stats(closed: list[Trip], key: Callable[[JournalEntry | None], str | None])
     return sorted(out, key=lambda g: (g.name is None, -g.trades, g.name or ""))
 
 
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+BLOCK_HOURS = 4
+
+
+def _by_time(closed: list[Trip], tz: ZoneInfo) -> tuple[list[GroupStats], list[GroupStats]]:
+    """Closed trips grouped by the weekday and the 4-hour block they were opened in (in `tz`), in calendar order."""
+    days: dict[int, list[Trip]] = defaultdict(list)
+    blocks: dict[int, list[Trip]] = defaultdict(list)
+    for t in closed:
+        opened = t.trip.opened_at.astimezone(tz)
+        days[opened.weekday()].append(t)
+        blocks[opened.hour // BLOCK_HOURS].append(t)
+    by_day = [_group(WEEKDAYS[d], days[d]) for d in sorted(days)]
+    by_block = [_group(f"{b * BLOCK_HOURS:02d}:00–{(b + 1) * BLOCK_HOURS % 24:02d}:00", blocks[b]) for b in sorted(blocks)]
+    return by_day, by_block
+
+
 def _trip_out(t: Trip) -> TripOut:
     trip, entry = t.trip, t.entry
     return TripOut(
@@ -201,12 +222,22 @@ def _r_curve(closed: list[Trip]) -> RCurve | None:
 
 
 @router.get("", response_model=JournalPage)
-async def get_journal(user: CurrentUser, db: DbSession) -> JournalPage:
+async def get_journal(
+    user: CurrentUser, db: DbSession, tz: str = Query("UTC", max_length=64, description="IANA timezone for the weekday and time-of-day stats")
+) -> JournalPage:
+    try:
+        zone = ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValidationFailedError(f"Unknown timezone: {tz}") from exc
     _, pf = await _service_and_portfolio(db, user.id)
     trips = await _load(db, pf)
     closed = [t for t in trips if not t.trip.is_open]
     setups = sorted({t.entry.setup for t in trips if t.entry and t.entry.setup}, key=str.lower)
+    by_weekday, by_time_of_day = _by_time(closed, zone)
     return JournalPage(
+        by_weekday=by_weekday,
+        by_time_of_day=by_time_of_day,
+        timezone=tz,
         trips=[_trip_out(t) for t in reversed(trips)],
         by_setup=_stats(closed, lambda e: e.setup if e else None),
         by_emotion=_stats(closed, lambda e: e.emotion if e else None),

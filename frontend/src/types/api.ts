@@ -863,6 +863,10 @@ export interface JournalPage {
   trips: JournalTrip[];
   by_setup: JournalGroup[];
   by_emotion: JournalGroup[];
+  /** When trades were opened, in `timezone`: weekdays Monday first, 4-hour blocks. Closed trades only. */
+  by_weekday: JournalGroup[];
+  by_time_of_day: JournalGroup[];
+  timezone: string;
   setups: string[];
   emotions: string[];
   needs_review: number;
