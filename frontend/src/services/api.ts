@@ -236,6 +236,7 @@ export const api = {
     orders: (q: { status?: OrderStatus; symbol?: string; limit?: number } = {}) => get<Order[]>("/paper/orders", q),
     cancelOrder: (id: number) => post<Order>(`/paper/orders/${id}/cancel`),
     amendOrder: (id: number, body: OrderAmend) => patch<Order>(`/paper/orders/${id}`, body),
+    closeEverything: () => post<{ message: string; cancelled_orders: number; closed: Order[] }>("/paper/close-everything"),
     trades: () => get<Trade[]>("/paper/trades"),
     history: () => get<Snapshot[]>("/paper/history"),
     analytics: () => get<PortfolioAnalytics>("/paper/analytics"),

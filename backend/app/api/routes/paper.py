@@ -4,6 +4,7 @@ from datetime import timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Query, Response
+from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, DbSession, rate_limit
 from app.core.config import get_settings
@@ -135,6 +136,31 @@ async def reset_portfolio(user: CurrentUser, db: DbSession) -> PortfolioOut:
     await svc.reset(pf)
     await audit(db, "paper.portfolio_reset", user_id=user.id, entity_type="portfolio", entity_id=pf.id)
     return await _portfolio_response(svc, pf)
+
+
+class CloseEverythingOut(BaseModel):
+    message: str
+    cancelled_orders: int
+    closed: list[OrderOut]  # the closing market orders, filled or rejected
+
+
+@router.post("/close-everything", response_model=CloseEverythingOut, dependencies=[rate_limit("orders")])
+async def close_everything(user: CurrentUser, db: DbSession) -> CloseEverythingOut:
+    """Cancel every open order and close every position at market (simulated)."""
+    svc, pf = await _service_and_portfolio(db, user.id, lock=True)
+    cancelled, closes = await svc.close_everything(pf)
+    filled = [o for o in closes if o.status == OrderStatus.FILLED]
+    rejected = [o for o in closes if o.status != OrderStatus.FILLED]
+    await audit(db, "paper.closed_everything", user_id=user.id, entity_type="portfolio", entity_id=pf.id,
+                details={"cancelled_orders": cancelled, "closed": [o.asset.symbol for o in filled],
+                         "rejected": [o.asset.symbol for o in rejected]})  # fmt: skip
+    parts = [f"Closed {len(filled)} position{'s' if len(filled) != 1 else ''}"] if closes else ["No positions were open"]
+    if cancelled:
+        parts.append(f"cancelled {cancelled} open order{'s' if cancelled != 1 else ''}")
+    message = ", ".join(parts)
+    if rejected:
+        message += ". Could not close " + "; ".join(f"{o.asset.symbol}: {o.reject_reason}" for o in rejected)
+    return CloseEverythingOut(message=message, cancelled_orders=cancelled, closed=[OrderOut.model_validate(o) for o in closes])
 
 
 @router.post("/orders", response_model=OrderOut, status_code=201, dependencies=[rate_limit("orders")])

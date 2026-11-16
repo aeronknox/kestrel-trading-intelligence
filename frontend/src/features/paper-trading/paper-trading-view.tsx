@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Landmark, RotateCcw, Wallet, X } from "lucide-react";
+import { Landmark, RotateCcw, Wallet, X, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
@@ -263,6 +263,16 @@ export function PaperTradingView() {
   const portfolio = useQuery({ queryKey: ["paper", "portfolio"], queryFn: api.paper.portfolio, refetchInterval: 20_000 });
   // Open orders on their own: a resting stop placed long ago must not drop out behind newer history.
   const orders = useQuery({ queryKey: ["paper", "orders", "open"], queryFn: () => api.paper.orders({ status: "open", limit: 500 }), refetchInterval: 20_000 });
+  const closeAll = useMutation({
+    mutationFn: api.paper.closeEverything,
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["paper"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      if (r.closed.some((o) => o.status !== "filled")) toast.warning(r.message);
+      else toast.success(r.message);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
   const reset = useMutation({
     mutationFn: api.paper.reset,
     onSuccess: () => {
@@ -286,6 +296,19 @@ export function PaperTradingView() {
             <>
               <DownloadButton href="/paper/trades.csv" label="Download trade history as CSV">Trades CSV</DownloadButton>
               <RiskLimitsDialog limits={p.risk_limits} />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!p.positions.length && !openOrders.length}
+                loading={closeAll.isPending}
+                onClick={() =>
+                  window.confirm(
+                    `Close everything? ${p.positions.length} position${p.positions.length === 1 ? "" : "s"} will be closed at market and ${openOrders.length} open order${openOrders.length === 1 ? "" : "s"} cancelled (simulated).`,
+                  ) && closeAll.mutate()
+                }
+              >
+                <XCircle /> Close everything
+              </Button>
               <Button variant="outline" size="sm" loading={reset.isPending} onClick={() => window.confirm("Reset the paper portfolio? All simulated positions, orders and trade history will be deleted.") && reset.mutate()}>
                 <RotateCcw /> Reset
               </Button>

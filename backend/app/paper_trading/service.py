@@ -713,6 +713,18 @@ class PaperTradingService:
         ).all():
             o.quantity = held
 
+    async def close_everything(self, portfolio: PaperPortfolio) -> tuple[int, list[SimulatedOrder]]:
+        """Cancel every open order, then close every position at market (simulated). Orders go first so
+        nothing they reserve can block a close. Returns the orders cancelled and the closing orders (a close
+        can still be rejected, e.g. not enough cash to buy back a short; that position stays open)."""
+        cancelled = await self._cancel_open(portfolio, "Cancelled: you closed everything")
+        closes = []
+        for position in [p for p in portfolio.positions if abs(p.quantity) > QTY_EPSILON]:
+            side = OrderSide.SELL if position.quantity > 0 else OrderSide.BUY
+            closes.append(await self.place_order(portfolio, position.asset, side, OrderType.MARKET, abs(position.quantity),
+                                                 note="Close everything"))  # fmt: skip
+        return cancelled, closes
+
     async def _cancel_open(self, portfolio: PaperPortfolio, note: str, *conditions: ColumnElement[bool]) -> int:
         orders = (
             await self.session.scalars(

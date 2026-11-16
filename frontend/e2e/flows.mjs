@@ -476,6 +476,16 @@ await step("paper short sale and cover", async () => {
   await toast(/Closed SOL/);
 });
 
+await step("close everything", async () => {
+  await page.getByRole("button", { name: "Buy", exact: true }).click();
+  await page.getByPlaceholder("0.00").fill("200");
+  await page.getByRole("button", { name: /^Buy SOL \(paper\)/ }).click();
+  await toast(/Filled: buy/);
+  await page.getByRole("button", { name: "Close everything" }).click(); // the confirm is accepted by the global dialog handler
+  await toast(/^Closed 1 position/);
+  await page.getByText("No open positions").waitFor();
+});
+
 await step("risk limits dialog saves", async () => {
   await page.getByRole("button", { name: /Risk limits/ }).click();
   await page.getByLabel(/Max open positions/).fill("5");
