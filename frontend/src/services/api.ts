@@ -233,7 +233,7 @@ export const api = {
       body: { stop_loss: number | null; trailing_stop_pct?: number | null; take_profit: number | null; partial_take_profit?: number | null; partial_pct?: number; breakeven_after_partial?: boolean },
     ) =>
       post<Order[]>(`/paper/positions/${encodeURIComponent(symbol)}/protect`, body),
-    orders: (status?: OrderStatus) => get<Order[]>("/paper/orders", { status }),
+    orders: (q: { status?: OrderStatus; symbol?: string; limit?: number } = {}) => get<Order[]>("/paper/orders", q),
     cancelOrder: (id: number) => post<Order>(`/paper/orders/${id}/cancel`),
     amendOrder: (id: number, body: OrderAmend) => patch<Order>(`/paper/orders/${id}`, body),
     trades: () => get<Trade[]>("/paper/trades"),

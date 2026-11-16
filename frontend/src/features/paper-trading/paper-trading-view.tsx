@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/overlays";
 import { Badge, Skeleton } from "@/components/ui/primitives";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useMarketStream } from "@/hooks/use-market-stream";
 import { formatDateTime, formatPct, formatPrice, formatQty, formatUsd, pnlClass } from "@/lib/format";
@@ -119,7 +120,45 @@ function PositionsTable({ portfolio, openOrders }: { portfolio: Portfolio; openO
   );
 }
 
-function OrdersTable({ orders, cancellable }: { orders: Order[]; cancellable?: boolean }) {
+const HISTORY_STATUSES = ["all", "filled", "open", "cancelled", "rejected", "expired"] as const;
+
+/** The latest orders, optionally only one status or one asset. */
+function OrderHistory() {
+  const [status, setStatus] = useState<(typeof HISTORY_STATUSES)[number]>("all");
+  const [asset, setAsset] = useState("all");
+  const assets = useQuery({ queryKey: ["assets"], queryFn: () => api.market.assets(), staleTime: 300_000 });
+  const q = { status: status === "all" ? undefined : status, symbol: asset === "all" ? undefined : asset };
+  const history = useQuery({ queryKey: ["paper", "orders", "history", q], queryFn: () => api.paper.orders(q), refetchInterval: 20_000 });
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2 px-3">
+        <Select value={status} onValueChange={(v) => setStatus(v as typeof status)}>
+          <SelectTrigger aria-label="Filter by status" className="h-8 w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {HISTORY_STATUSES.map((s) => <SelectItem key={s} value={s} className="capitalize">{s === "all" ? "All statuses" : s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={asset} onValueChange={setAsset}>
+          <SelectTrigger aria-label="Filter by asset" className="h-8 w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All assets</SelectItem>
+            {(assets.data ?? []).map((a) => <SelectItem key={a.symbol} value={a.symbol}>{a.symbol}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {history.data?.length === 100 && <p className="self-center text-xs text-muted-foreground">Latest 100 shown</p>}
+      </div>
+      {history.isLoading ? (
+        <LoadingRows rows={3} className="p-3" />
+      ) : history.error ? (
+        <ErrorState error={history.error} onRetry={() => history.refetch()} />
+      ) : (
+        <OrdersTable orders={history.data ?? []} filtered={status !== "all" || asset !== "all"} />
+      )}
+    </div>
+  );
+}
+
+function OrdersTable({ orders, cancellable, filtered }: { orders: Order[]; cancellable?: boolean; filtered?: boolean }) {
   const qc = useQueryClient();
   const cancel = useMutation({
     mutationFn: api.paper.cancelOrder,
@@ -129,7 +168,7 @@ function OrdersTable({ orders, cancellable }: { orders: Order[]; cancellable?: b
     },
     onError: (e: Error) => toast.error(e.message),
   });
-  if (!orders.length) return <EmptyState title={cancellable ? "No open orders" : "No orders yet"} className="py-8" />;
+  if (!orders.length) return <EmptyState title={cancellable ? "No open orders" : filtered ? "No orders match these filters" : "No orders yet"} className="py-8" />;
   return (
     <Table>
       <THead>
@@ -222,7 +261,8 @@ export function PaperTradingView() {
   const [symbol, setSymbol] = useState(params.get("symbol") ?? "BTC-USD");
   const qc = useQueryClient();
   const portfolio = useQuery({ queryKey: ["paper", "portfolio"], queryFn: api.paper.portfolio, refetchInterval: 20_000 });
-  const orders = useQuery({ queryKey: ["paper", "orders"], queryFn: () => api.paper.orders(), refetchInterval: 20_000 });
+  // Open orders on their own: a resting stop placed long ago must not drop out behind newer history.
+  const orders = useQuery({ queryKey: ["paper", "orders", "open"], queryFn: () => api.paper.orders({ status: "open", limit: 500 }), refetchInterval: 20_000 });
   const reset = useMutation({
     mutationFn: api.paper.reset,
     onSuccess: () => {
@@ -234,7 +274,7 @@ export function PaperTradingView() {
   });
 
   const p = portfolio.data;
-  const openOrders = orders.data?.filter((o) => o.status === "open") ?? [];
+  const openOrders = orders.data ?? [];
 
   return (
     <>
@@ -305,7 +345,7 @@ export function PaperTradingView() {
                   ) : (
                     <>
                       <TabsContent value="open"><OrdersTable orders={openOrders} cancellable /></TabsContent>
-                      <TabsContent value="orders"><OrdersTable orders={orders.data ?? []} /></TabsContent>
+                      <TabsContent value="orders"><OrderHistory /></TabsContent>
                     </>
                   )}
                   <TabsContent value="trades"><TradesTable /></TabsContent>

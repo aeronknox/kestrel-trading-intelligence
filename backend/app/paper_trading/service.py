@@ -993,10 +993,14 @@ class PaperTradingService:
         return fills
 
     # --------------------------------------------------------------- history
-    async def list_orders(self, portfolio: PaperPortfolio, status: OrderStatus | None, limit: int) -> list[SimulatedOrder]:
+    async def list_orders(
+        self, portfolio: PaperPortfolio, status: OrderStatus | None, limit: int, symbol: str | None = None
+    ) -> list[SimulatedOrder]:
         stmt = select(SimulatedOrder).where(SimulatedOrder.portfolio_id == portfolio.id)
         if status:
             stmt = stmt.where(SimulatedOrder.status == status)
+        if symbol:
+            stmt = stmt.join(Asset, Asset.id == SimulatedOrder.asset_id).where(Asset.symbol == symbol.upper())
         return list((await self.session.scalars(stmt.order_by(SimulatedOrder.created_at.desc()).limit(limit))).all())
 
     async def list_trades(self, portfolio: PaperPortfolio, limit: int) -> list[SimulatedTrade]:

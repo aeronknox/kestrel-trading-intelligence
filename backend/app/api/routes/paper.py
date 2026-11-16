@@ -179,10 +179,14 @@ async def protect_position(symbol: str, body: ProtectPosition, user: CurrentUser
 
 @router.get("/orders", response_model=list[OrderOut])
 async def list_orders(
-    user: CurrentUser, db: DbSession, status: OrderStatus | None = None, limit: int = Query(100, le=500)
+    user: CurrentUser,
+    db: DbSession,
+    status: OrderStatus | None = None,
+    symbol: str | None = Query(None, max_length=32, description="Only this asset, e.g. BTC-USD"),
+    limit: int = Query(100, ge=1, le=500),
 ) -> object:
     svc, pf = await _service_and_portfolio(db, user.id)
-    return await svc.list_orders(pf, status, limit)
+    return await svc.list_orders(pf, status, limit, symbol)
 
 
 @router.post("/orders/{order_id}/cancel", response_model=OrderOut)

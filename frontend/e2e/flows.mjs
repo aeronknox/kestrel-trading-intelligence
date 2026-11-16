@@ -401,6 +401,19 @@ await step("paper close position", async () => {
   await closePosition("ETH-USD");
   await toast(/Closed ETH-USD/);
   await page.getByText("No open orders").waitFor();
+  // Order history filtered to cancelled ETH orders: every row is one, and another asset has none.
+  await page.getByRole("tab", { name: "Order history" }).click();
+  await page.getByLabel("Filter by status").click();
+  await page.getByRole("option", { name: "cancelled" }).click();
+  await page.getByLabel("Filter by asset").click();
+  await page.getByRole("option", { name: "ETH-USD", exact: true }).click();
+  const history = page.getByRole("tabpanel");
+  await history.getByText("cancelled", { exact: true }).first().waitFor();
+  if (await history.getByText(/^(filled|open|rejected|expired)$/).count()) throw new Error("the status filter let other orders through");
+  await page.getByLabel("Filter by asset").click();
+  await page.getByRole("option", { name: "DOGE-USD", exact: true }).click();
+  await history.getByText("No orders match these filters").waitFor();
+  await page.getByRole("tab", { name: /^Open orders/ }).click();
 });
 
 await step("journal review of a closed trade", async () => {
