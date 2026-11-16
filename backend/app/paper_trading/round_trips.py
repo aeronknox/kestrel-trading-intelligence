@@ -14,7 +14,9 @@ from datetime import datetime
 from app.models.enums import OrderSide, OrderType
 from app.models.paper import SimulatedOrder, SimulatedTrade
 
-QTY_EPSILON = 1e-12
+# Quantities are stored to 10 decimal places (Money): fills rounded one by one can leave up to a few
+# 1e-10 behind when a position is closed in parts, which is still flat.
+FLAT_TOLERANCE = 1e-9
 
 
 @dataclass
@@ -99,7 +101,7 @@ def round_trips(trades: list[SimulatedTrade]) -> list[RoundTrip]:
         q = held.get(t.asset_id, 0.0)
         signed = t.quantity if t.side == OrderSide.BUY else -t.quantity
         trip = current.get(t.asset_id)
-        if trip is None or abs(q) <= QTY_EPSILON:
+        if trip is None or abs(q) <= FLAT_TOLERANCE:
             trip = RoundTrip(trade_id=t.id, asset_id=t.asset_id, symbol=t.asset.symbol, side="long" if signed > 0 else "short", opened_at=t.executed_at)
             current[t.asset_id] = trip
             trips.append(trip)
@@ -116,7 +118,7 @@ def round_trips(trades: list[SimulatedTrade]) -> list[RoundTrip]:
         q += signed
         held[t.asset_id] = q
         trip.quantity = max(trip.quantity, abs(q))
-        if abs(q) <= QTY_EPSILON:
+        if abs(q) <= FLAT_TOLERANCE:
             trip.closed_at = t.executed_at
             del current[t.asset_id]
     return trips

@@ -202,7 +202,7 @@ cd backend && python -m app.cli promote-admin you@example.com    # or demote-adm
 ### Tests
 
 ```bash
-cd backend  && pytest                  # 302 tests: indicators (incl. Wilder reference values),
+cd backend  && pytest                  # 304 tests: indicators (incl. Wilder reference values),
                                        # backtester (long and short), optimization and walk-forward
                                        # look-ahead checks, multi-asset tests, ML leakage, signals,
                                        # auth/RBAC, email tokens, demo sandboxes, rate limiting,

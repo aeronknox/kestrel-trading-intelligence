@@ -51,6 +51,7 @@ from app.services.notifications import notify_order
 logger = get_logger(__name__)
 
 QTY_EPSILON = 1e-12
+QTY_DECIMALS = 10  # quantities are stored as Numeric(28, 10)
 PARTIAL_TAKE_PROFIT = "Partial take-profit"
 MAX_TRAIL_PCT = 50.0
 MIN_NOTIONAL = 1.0
@@ -316,6 +317,8 @@ class PaperTradingService:
         expires_at: datetime | None = None,
     ) -> SimulatedOrder:
         source = source or ("strategy" if strategy_id is not None else "user")
+        # The precision quantities are stored with: the fill, the trade and the position then agree exactly.
+        quantity = round(quantity, QTY_DECIMALS)
         if quantity <= 0:
             raise ValidationFailedError("Quantity must be positive")
         if order_type in (OrderType.LIMIT, OrderType.STOP_LIMIT) and (limit_price is None or limit_price <= 0):
@@ -886,7 +889,7 @@ class PaperTradingService:
         if quantity is not None and quantity <= 0:
             raise ValidationFailedError("Quantity must be positive")
 
-        new_qty = quantity if quantity is not None else order.quantity
+        new_qty = round(quantity, QTY_DECIMALS) if quantity is not None else order.quantity
         new_limit = limit_price if limit_price is not None else order.limit_price
         new_trail = trail_pct if trail_pct is not None else order.trail_pct
         new_stop = stop_price if stop_price is not None else order.stop_price
