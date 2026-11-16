@@ -23,6 +23,7 @@ import { api } from "@/services/api";
 import type { Order, Portfolio } from "@/types/api";
 
 import { AmendOrderDialog } from "./amend-order-dialog";
+import { ClosePartDialog } from "./close-part-dialog";
 import { OrderTicket } from "./order-ticket";
 import { ProtectDialog, protection } from "./protect-dialog";
 import { RiskLimitsDialog } from "./risk-limits-dialog";
@@ -100,6 +101,7 @@ function PositionsTable({ portfolio, openOrders }: { portfolio: Portfolio; openO
               <TD className="hidden text-right text-muted-foreground 2xl:table-cell">{formatPct(p.allocation_pct, 1, false)}</TD>
               <TD className="whitespace-nowrap text-right">
                 <ProtectDialog position={p} price={price} openOrders={openOrders} />
+                <ClosePartDialog position={p} price={price} />
                 <Button
                   size="sm"
                   variant="outline"

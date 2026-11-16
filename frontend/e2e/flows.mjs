@@ -386,6 +386,17 @@ await step("paper stop order + position protection", async () => {
 });
 
 await step("paper close position", async () => {
+  // Take half off first: the position halves and stays protected.
+  const qtyCell = page.getByRole("row").filter({ hasText: "ETH-USD" }).first().getByRole("cell").nth(1);
+  const before = Number((await qtyCell.innerText()).replace(/[^\d.]/g, ""));
+  await page.getByRole("button", { name: "Close part of ETH-USD" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Close 50%" }).click();
+  await toast(/Closed 50% of ETH-USD/);
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  for (let i = 0; i < 50 && Math.abs(Number((await qtyCell.innerText()).replace(/[^\d.]/g, "")) - before / 2) > before * 0.01; i++) await page.waitForTimeout(100);
+  const after = Number((await qtyCell.innerText()).replace(/[^\d.]/g, ""));
+  if (Math.abs(after - before / 2) > before * 0.01) throw new Error(`position ${before} → ${after}, expected half`);
+  await page.getByText(/^Trail 5% · SL/).first().waitFor(); // still protected
   // Protection never blocks closing; closing cancels it.
   await closePosition("ETH-USD");
   await toast(/Closed ETH-USD/);
