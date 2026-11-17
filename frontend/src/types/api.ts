@@ -863,6 +863,8 @@ export interface JournalPage {
   trips: JournalTrip[];
   by_setup: JournalGroup[];
   by_emotion: JournalGroup[];
+  /** Closed trades per symbol, most traded first. */
+  by_asset: JournalGroup[];
   /** When trades were opened, in `timezone`: weekdays Monday first, 4-hour blocks. Closed trades only. */
   by_weekday: JournalGroup[];
   by_time_of_day: JournalGroup[];

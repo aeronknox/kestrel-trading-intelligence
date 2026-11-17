@@ -52,3 +52,18 @@ async def test_open_trips_are_not_counted(auth_client, provider) -> None:  # typ
     await trade(auth_client, "buy", 1)
     page = (await auth_client.get(f"{API}/journal")).json()
     assert page["by_weekday"] == [] and page["by_time_of_day"] == []
+
+
+async def test_by_asset(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    await provider.set_price("BTC-USD", 50_000.0)
+    for _ in range(2):
+        await trade(auth_client, "buy", 1)
+        await trade(auth_client, "sell", 1)
+    await trade(auth_client, "buy", 0.01, symbol="BTC-USD")
+    await provider.set_price("BTC-USD", 55_000.0)
+    await trade(auth_client, "sell", 0.01, symbol="BTC-USD")
+    page = (await auth_client.get(f"{API}/journal")).json()
+    assert [(g["name"], g["trades"]) for g in page["by_asset"]] == [("SOL-USD", 2), ("BTC-USD", 1)]
+    btc = page["by_asset"][1]
+    assert btc["win_rate"] == 100 and btc["total_pnl"] > 40

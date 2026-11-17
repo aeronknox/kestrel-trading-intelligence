@@ -343,6 +343,13 @@ export function JournalView() {
               label={(n) => (n ? EMOTION_LABEL[n] ?? n : "Not recorded")}
             />
             <StatsTable
+              title="By asset"
+              description="Closed trades per coin: where your edge is, and where you give it back."
+              groups={data.by_asset}
+              empty="Close a trade to see it here."
+              label={(n) => n ?? ""}
+            />
+            <StatsTable
               title="By weekday"
               description={`The day you opened the trade (${data.timezone}). Some traders do worse on certain days.`}
               groups={data.by_weekday}

@@ -108,6 +108,7 @@ class JournalPage(BaseModel):
     trips: list[TripOut]
     by_setup: list[GroupStats]
     by_emotion: list[GroupStats]
+    by_asset: list[GroupStats] = []  # closed trips per symbol, most traded first
     by_weekday: list[GroupStats] = []  # when the trade was opened, Monday first; only days with trades
     by_time_of_day: list[GroupStats] = []  # 4-hour blocks of the opening time, e.g. "08:00–12:00"
     timezone: str = "UTC"
@@ -234,7 +235,12 @@ async def get_journal(
     closed = [t for t in trips if not t.trip.is_open]
     setups = sorted({t.entry.setup for t in trips if t.entry and t.entry.setup}, key=str.lower)
     by_weekday, by_time_of_day = _by_time(closed, zone)
+    per_asset: dict[str, list[Trip]] = defaultdict(list)
+    for t in closed:
+        per_asset[t.trip.symbol].append(t)
+    by_asset = sorted((_group(sym, items) for sym, items in per_asset.items()), key=lambda g: (-g.trades, g.name or ""))
     return JournalPage(
+        by_asset=by_asset,
         by_weekday=by_weekday,
         by_time_of_day=by_time_of_day,
         timezone=tz,
