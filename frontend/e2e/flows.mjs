@@ -118,6 +118,13 @@ await step("markets watchlist star toggle", async () => {
   await toast(/DOT-USD added/);
   await page.getByLabel("Remove DOT-USD from watchlist").click();
   await toast(/DOT-USD removed/);
+  // Sort by 24h change, biggest gain first: the column reads high to low.
+  await page.getByRole("button", { name: "24h" }).first().click();
+  await page.locator('th[aria-sort="descending"]').filter({ hasText: "24h" }).first().waitFor();
+  const table = page.locator("table").filter({ has: page.locator('th[aria-sort="descending"]') }).first();
+  const changes = (await table.locator("tbody tr td:nth-child(4)").allInnerTexts()).map((s) => Number(s.replace(/[^\d.-]/g, "").replace(/^-?$/, "NaN")));
+  const known = changes.filter((n) => Number.isFinite(n));
+  if (known.length < 2 || known.some((n, i) => i && n > known[i - 1] + 1e-9)) throw new Error(`24h change not sorted high to low: ${changes.join(", ")}`);
 });
 
 await step("markets track-asset catalog search", async () => {

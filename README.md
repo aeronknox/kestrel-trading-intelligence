@@ -7,7 +7,7 @@ An AI-assisted market research, backtesting and **paper-trading** platform for c
 | Area | What you get |
 |---|---|
 | Dashboard | Virtual portfolio value, 24h P&L, open risk to stops (and a warning when a position has no stop-loss), equity curve, live market table, watchlist, AI insight, recent signals and orders, market sentiment |
-| Markets | Live prices streamed from Coinbase's public feed as trades happen (REST polling as fallback), catalog search to track new assets, candlestick charts (1m–1d) with your own paper fills marked on them, SMA 20/50/200, Bollinger Bands, volume, RSI, MACD |
+| Markets | A market table sortable by name, price, 24h change and USD volume; live prices streamed from Coinbase's public feed as trades happen (REST polling as fallback), catalog search to track new assets, candlestick charts (1m–1d) with your own paper fills marked on them, SMA 20/50/200, Bollinger Bands, volume, RSI, MACD |
 | AI Analysis | Trend regression, support/resistance, pattern detection, a walk-forward ML model, an explainable composite signal with confidence, and a risk breakdown |
 | Strategy Builder | Visual rule builder (13 indicators, 6 operators, ALL/ANY logic), risk exits, templates, immutable versioning |
 | Backtesting | Long or short strategies (shorts use stops above entry and a margin call if price doubles); next-bar execution, fees, slippage, gap-aware stops; return, max drawdown, Sharpe/Sortino, a buy-and-hold benchmark with the same costs (overlaid on the equity curve, with excess return and beta), win rate, profit factor, CAGR, exposure; side-by-side comparison; a luck check (Monte Carlo) that redraws the backtest's own closed trades 1,000 times and shows the unlucky, median and lucky return and drawdown, and how often a reshuffle ended in a loss |
@@ -213,7 +213,7 @@ cd backend  && python scripts/loadtest.py --url http://localhost:8000 --users 20
                                        # load test: concurrent demo visitors browsing the API
                                        # (needs DEMO_MODE=true and raised rate limits on the target)
 cd frontend && npm run lint            # ESLint
-cd frontend && npm test                # 40 unit tests: rule builder, formatters, sweep-grid helpers, CSP, form validation messages, calendar grid, buy-and-hold benchmark, trade markers
+cd frontend && npm test                # 44 unit tests: rule builder, formatters, sweep-grid helpers, CSP, form validation messages, calendar grid, buy-and-hold benchmark, trade markers, market sorting
 cd frontend && npm run typecheck && npm run build
 cd frontend && npx playwright install chromium && npm run e2e
                                        # 48 browser flows against a running stack (:3000 + :8000)
