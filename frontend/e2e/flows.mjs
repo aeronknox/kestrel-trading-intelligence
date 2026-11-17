@@ -546,8 +546,17 @@ await step("close everything", async () => {
 await step("risk limits dialog saves", async () => {
   await page.getByRole("button", { name: /Risk limits/ }).click();
   await page.getByLabel(/Max open positions/).fill("5");
+  // A cap on total open risk: shown with the limits, and it makes a stop-loss mandatory.
+  await page.getByLabel(/Max open risk/).fill("10");
+  await page.getByRole("switch", { name: "Require a stop-loss on new positions" }).and(page.locator("[disabled]")).waitFor();
   await page.getByRole("button", { name: /Save limits/ }).click();
   await toast(/Risk limits updated/);
+  await page.getByText(/· 10% max open risk/).waitFor();
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: /Risk limits/ }).click();
+  await page.getByLabel(/Max open risk/).fill("");
+  await page.getByRole("button", { name: /Save limits/ }).click();
+  await page.getByText(/· 10% max open risk/).waitFor({ state: "detached" });
 });
 
 await step("trade plan: 1% risk per trade needs a stop-loss", async () => {

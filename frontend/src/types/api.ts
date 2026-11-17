@@ -473,6 +473,8 @@ export interface RiskLimits {
   require_stop_loss?: boolean;
   /** Cap on what a new position's stop-loss would lose, as % of equity; implies a stop. Null: off. */
   max_risk_per_trade_pct?: number | null;
+  /** Cap on what all positions would lose to their stops, a new one included, as % of equity. */
+  max_open_risk_pct?: number | null;
 }
 
 export interface Portfolio {

@@ -459,3 +459,33 @@ async def test_breakeven_needs_a_fixed_stop_and_a_first_target(auth_client, prov
     await provider.set_price("SOL-USD", 111.0)
     after = await orders(auth_client)
     assert after[plain["Stop-loss"]["id"]]["stop_price"] == 90  # not asked: the stop stays where it was
+
+
+async def test_trade_plan_caps_open_risk_across_positions(auth_client, provider) -> None:  # type: ignore[no-untyped-def]
+    await provider.set_price("SOL-USD", 100.0)
+    await provider.set_price("ETH-USD", 3000.0)
+    pf = await limits(auth_client, max_open_risk_pct=2)  # $2,000 of a $100k account
+    assert pf["risk_limits"]["max_open_risk_pct"] == 2
+
+    no_stop = await order(auth_client, quantity=1)
+    assert no_stop["status"] == "rejected" and "2% open-risk limit" in no_stop["reject_reason"]
+    assert (await order(auth_client, quantity=100, stop_loss=90))["status"] == "filled"  # about $1,030 at risk
+    open_risk = (await auth_client.get(f"{API}/portfolio")).json()["open_risk"]
+    assert 1000 < open_risk < 1100
+
+    # Another ~$1,200 at risk would take the total over $2,000; ~$600 fits.
+    big = await order(auth_client, symbol="ETH-USD", quantity=4, stop_loss=2700)
+    assert big["status"] == "rejected" and "over your 2% open-risk limit" in big["reject_reason"]
+    assert (await order(auth_client, symbol="ETH-USD", quantity=2, stop_loss=2700))["status"] == "filled"
+
+    # Exits are never blocked, and turning the limit off lifts it.
+    assert (await order(auth_client, side="sell", quantity=50))["status"] == "filled"
+    await limits(auth_client)
+    assert (await order(auth_client, symbol="ETH-USD", quantity=1))["status"] == "filled"
+
+
+async def test_open_risk_limit_range(auth_client) -> None:  # type: ignore[no-untyped-def]
+    for bad in (0.1, 51):
+        resp = await auth_client.put(f"{API}/portfolio/risk-limits", json={
+            "max_position_pct": 25, "max_open_positions": 10, "daily_loss_limit_pct": 5, "max_open_risk_pct": bad})  # fmt: skip
+        assert resp.status_code == 422

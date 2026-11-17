@@ -66,8 +66,9 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
 
   // Optional stop-loss / take-profit riding on an entry, and sizing the entry by what the stop would cost.
   const riskCap = portfolio.risk_limits.max_risk_per_trade_pct ?? null;
+  const heatCap = portfolio.risk_limits.max_open_risk_pct ?? null;
   // The trade plan in the risk limits: new positions need a stop-loss (always, when risk per trade is capped).
-  const stopRequired = Boolean(portfolio.risk_limits.require_stop_loss || riskCap) && opensRiskFor(side, portfolio, symbol);
+  const stopRequired = Boolean(portfolio.risk_limits.require_stop_loss || riskCap || heatCap) && opensRiskFor(side, portfolio, symbol);
   const canBracket = (type === "market" || type === "limit") && opensRiskFor(side, portfolio, symbol);
   const [bracketOn, setBracketOn] = useState(false);
   const [sl, setSl] = useState("");
@@ -89,6 +90,9 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
   const qty = riskSized ?? typedQty;
   const riskUsd = lossPerUnit ? qty * lossPerUnit : null;
   const overRiskCap = riskCap !== null && riskUsd !== null && riskUsd > (portfolio.equity * riskCap) / 100 * (1 + 1e-6);
+  // Portfolio heat: the open positions' risk to their stops plus this trade's.
+  const heatAfter = heatCap !== null && riskUsd !== null && opensRiskFor(side, portfolio, symbol) ? (portfolio.open_risk ?? 0) + riskUsd : null;
+  const overHeatCap = heatAfter !== null && heatCap !== null && heatAfter > (portfolio.equity * heatCap) / 100 * (1 + 1e-6);
   const missingStop = stopRequired && !(bracket && slNum);
   const rewardRisk = lossPerUnit && tpNum && !tpError && execPrice ? (Math.abs(tpNum - execPrice) - (tpNum + execPrice) * feeRate) / lossPerUnit : null;
   const notional = qty * execPrice;
@@ -139,7 +143,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
     qty <= 0 || (type !== "market" && !(level > 0)) || (type === "trailing_stop" && level > 50) || !ticker ||
     (type === "stop_limit" && (!(capNum > 0) || Boolean(capError))) ||
     (bracket && (!(slNum || tpNum) || Boolean(slError) || Boolean(tpError) || (riskOn && !riskSized))) ||
-    missingStop || overRiskCap;
+    missingStop || overRiskCap || overHeatCap;
 
   return (
     <Card>
@@ -318,6 +322,12 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
           <p className="text-xs text-loss" role="status">
             Hitting the stop-loss would lose {formatPct((riskUsd / portfolio.equity) * 100, 2, false)} of equity, above your {riskCap}% risk-per-trade
             limit. Trade a smaller size or move the stop closer.
+          </p>
+        )}
+        {heatAfter !== null && heatCap !== null && (
+          <p className={cn("text-xs", overHeatCap ? "text-loss" : "text-muted-foreground")} role="status">
+            Open risk with this trade: {formatUsd(heatAfter)} ({formatPct((heatAfter / portfolio.equity) * 100, 2, false)} of equity)
+            {overHeatCap ? `, over your ${heatCap}% limit. Trade smaller, move the stop closer, or reduce another position.` : ` of your ${heatCap}% limit.`}
           </p>
         )}
         {riskSized !== null && (notional / portfolio.equity) * 100 > portfolio.risk_limits.max_position_pct && (

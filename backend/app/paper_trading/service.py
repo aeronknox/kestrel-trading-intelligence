@@ -444,30 +444,47 @@ class PaperTradingService:
     ) -> None:
         """The portfolio's trade-plan rules for an order that opens or adds to a position."""
         cap = portfolio.max_risk_per_trade_pct
-        if not (portfolio.require_stop_loss or cap):
+        heat = portfolio.max_open_risk_pct
+        if not (portfolio.require_stop_loss or cap or heat):
             return
         position = await self._position(portfolio, asset.id)
         held = position.quantity if position else 0.0
         if reduce_only or (side == OrderSide.BUY and held < -QTY_EPSILON) or (side == OrderSide.SELL and held > QTY_EPSILON):
             return  # reduces a position: never blocked
         if stop_loss is None:
-            why = f"to measure it against your {cap:g}% risk-per-trade limit" if cap else "by your risk limits"
+            why = (
+                f"to measure it against your {cap:g}% risk-per-trade limit" if cap
+                else f"to measure it against your {heat:g}% open-risk limit" if heat
+                else "by your risk limits"
+            )  # fmt: skip
             how = "add one to this order" if order_type in (OrderType.MARKET, OrderType.LIMIT) else "use a market or limit order with one"
             raise RiskLimitError(f"New positions need a stop-loss {why}: {how}")
-        if not cap:
+        if not (cap or heat):
             return
         long = side == OrderSide.BUY
         # Worst case: a limit entry fills at its limit, a market one with slippage; the stop fills with slippage; fees both ways.
         entry = limit_price if limit_price is not None else market_price * (1 + (1 if long else -1) * self.slip_rate)
         stop_fill = stop_loss * (1 - self.slip_rate if long else 1 + self.slip_rate)
         risk = quantity * (abs(entry - stop_fill) + (entry + stop_fill) * self.fee_rate)
-        equity = (await self.summary(portfolio))["equity"]
-        allowed = equity * cap / 100
-        if risk > allowed * (1 + 1e-6) + 1e-9:
-            raise RiskLimitError(
-                f"Hitting the stop-loss would lose ${risk:,.2f} ({risk / equity * 100:.2f}% of equity); your limit is {cap:g}% "
-                f"(${allowed:,.2f}). Trade a smaller size or move the stop closer"
-            )
+        summary = await self.summary(portfolio)
+        equity = summary["equity"]
+        if cap:
+            allowed = equity * cap / 100
+            if risk > allowed * (1 + 1e-6) + 1e-9:
+                raise RiskLimitError(
+                    f"Hitting the stop-loss would lose ${risk:,.2f} ({risk / equity * 100:.2f}% of equity); your limit is {cap:g}% "
+                    f"(${allowed:,.2f}). Trade a smaller size or move the stop closer"
+                )
+        if heat:
+            stops = await self.open_stops(portfolio)
+            open_risk = sum(self.stop_risk(v, stops).risk or 0.0 for v in summary["positions"])
+            allowed = equity * heat / 100
+            if open_risk + risk > allowed * (1 + 1e-6) + 1e-9:
+                raise RiskLimitError(
+                    f"Your open positions already risk ${open_risk:,.2f} to their stops; with this one it would be "
+                    f"${open_risk + risk:,.2f} ({(open_risk + risk) / equity * 100:.2f}% of equity), over your {heat:g}% open-risk "
+                    f"limit (${allowed:,.2f}). Trade smaller, move the stop closer, or tighten or close another position first"
+                )
 
     @staticmethod
     def _triggered(side: OrderSide, stop_price: float, price: float) -> bool:

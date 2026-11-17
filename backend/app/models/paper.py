@@ -43,6 +43,8 @@ class PaperPortfolio(IdMixin, TimestampMixin, Base):
     # needs a stop-loss, and/or what that stop would lose is capped at a share of equity (implies the stop).
     require_stop_loss: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     max_risk_per_trade_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Portfolio heat: what all open positions would lose to their stops, plus the new one, as % of equity.
+    max_open_risk_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     positions: Mapped[list["PortfolioPosition"]] = relationship(

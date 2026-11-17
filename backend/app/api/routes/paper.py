@@ -64,6 +64,7 @@ def portfolio_out(summary: dict, svc: PaperTradingService, stops: list[Simulated
             allow_short=pf.allow_short,
             require_stop_loss=pf.require_stop_loss,
             max_risk_per_trade_pct=pf.max_risk_per_trade_pct,
+            max_open_risk_pct=pf.max_open_risk_pct,
         ),
         positions=[
             PositionOut(
@@ -126,6 +127,7 @@ async def update_risk_limits(body: RiskLimits, user: CurrentUser, db: DbSession)
     pf.allow_short = body.allow_short
     pf.require_stop_loss = body.require_stop_loss
     pf.max_risk_per_trade_pct = body.max_risk_per_trade_pct
+    pf.max_open_risk_pct = body.max_open_risk_pct
     await audit(db, "paper.risk_limits_updated", user_id=user.id, entity_type="portfolio", entity_id=pf.id, details=body.model_dump())
     return await _portfolio_response(svc, pf)
 

@@ -130,6 +130,9 @@ class RiskLimits(BaseModel):
     max_risk_per_trade_pct: float | None = Field(
         None, ge=0.1, le=10, description="Cap on what a new position's stop-loss would lose, as % of equity (needs a stop)"
     )
+    max_open_risk_pct: float | None = Field(
+        None, ge=0.5, le=50, description="Cap on what all positions would lose to their stops, the new one included, as % of equity"
+    )
 
 
 class PortfolioOut(BaseModel):
