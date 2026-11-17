@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellPlus, Trash2 } from "lucide-react";
+import { BellPlus, RotateCcw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -32,8 +32,27 @@ function useDelete() {
   });
 }
 
+/** Set a fired alert again: the same level (its direction from the price now), or the same % move from now. */
+function useRearm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (a: PriceAlert) =>
+      api.priceAlerts.create(
+        a.condition === "move"
+          ? { symbol: a.asset.symbol, move_pct: a.move_pct ?? undefined, note: a.note, notify_webhook: a.notify_webhook }
+          : { symbol: a.asset.symbol, target: a.target, note: a.note, notify_webhook: a.notify_webhook },
+      ),
+    onSuccess: (a) => {
+      qc.invalidateQueries({ queryKey: PRICE_ALERTS_KEY });
+      toast.success(`Price alert set again: ${a.condition === "move" ? `${a.asset.symbol} moves ${a.move_pct}% from ${formatPrice(a.created_price)}` : `${a.asset.symbol} ${a.condition === "above" ? "rises to" : "falls to"} ${formatPrice(a.target)}`}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+}
+
 function AlertRows({ alerts, showSymbol }: { alerts: PriceAlert[]; showSymbol: boolean }) {
   const remove = useDelete();
+  const rearm = useRearm();
   return (
     <Table>
       <TBody>
@@ -56,7 +75,12 @@ function AlertRows({ alerts, showSymbol }: { alerts: PriceAlert[]; showSymbol: b
                 {a.note && <p className="max-w-64 truncate text-xs text-muted-foreground" title={a.note}>{a.note}</p>}
               </TD>
               <TD>{a.triggered_at ? <Badge variant="secondary">Fired</Badge> : <Badge variant="info">Active</Badge>}</TD>
-              <TD className="text-right">
+              <TD className="whitespace-nowrap text-right">
+                {a.triggered_at && (
+                  <Button size="icon-sm" variant="ghost" aria-label={`Set price alert ${name} again`} title="Set again" onClick={() => rearm.mutate(a)} disabled={rearm.isPending}>
+                    <RotateCcw />
+                  </Button>
+                )}
                 <Button size="icon-sm" variant="ghost" aria-label={`Delete price alert ${name}`} onClick={() => remove.mutate(a.id)} disabled={remove.isPending}>
                   <Trash2 />
                 </Button>
