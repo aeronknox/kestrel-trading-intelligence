@@ -73,7 +73,7 @@ for (const side of ["buy", "sell"]) {
   if (!resp.ok()) throw new Error(`paper ${side} failed: ${resp.status()} ${await resp.text()}`);
 }
 
-const pages = ["/dashboard", "/markets", "/markets/BTC-USD", "/analysis", "/assistant", "/strategies", `/strategies/${sid}`,
+const pages = ["/dashboard", "/markets", "/markets?view=heatmap", "/markets/BTC-USD", "/analysis", "/assistant", "/strategies", `/strategies/${sid}`,
   "/strategies/new", "/backtests", `/backtests/${backtests[0].id}`, "/research", "/research/new", `/research/${sweep.id}`,
   "/alerts", "/paper-trading", "/portfolio", "/journal", "/settings"];
 

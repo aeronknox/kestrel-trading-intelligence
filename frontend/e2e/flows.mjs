@@ -125,6 +125,12 @@ await step("markets watchlist star toggle", async () => {
   const changes = (await table.locator("tbody tr td:nth-child(4)").allInnerTexts()).map((s) => Number(s.replace(/[^\d.-]/g, "").replace(/^-?$/, "NaN")));
   const known = changes.filter((n) => Number.isFinite(n));
   if (known.length < 2 || known.some((n, i) => i && n > known[i - 1] + 1e-9)) throw new Error(`24h change not sorted high to low: ${changes.join(", ")}`);
+  // The heatmap view: a tile per asset, kept in the URL, each linking to its asset page.
+  await page.getByRole("radio", { name: "Heatmap" }).click();
+  await page.waitForURL(/\/markets\?view=heatmap$/);
+  await page.getByRole("link", { name: /^BTC [+-]?[\d.]+% 24h change,/ }).click();
+  await page.waitForURL(/\/markets\/BTC-USD$/);
+  await page.goto(`${BASE}/markets`);
 });
 
 await step("markets track-asset catalog search", async () => {

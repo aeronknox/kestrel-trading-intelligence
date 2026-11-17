@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Search, Star } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { DataSource } from "@/components/common/finance";
@@ -10,37 +11,33 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Segmented, SegmentedItem } from "@/components/ui/segmented";
 import { Input } from "@/components/ui/primitives";
-import { useMarketStream } from "@/hooks/use-market-stream";
 import { api } from "@/services/api";
 
 import { AddAssetDialog } from "./add-asset-dialog";
+import { MarketHeatmap } from "./market-heatmap";
 import { MarketTable } from "./market-table";
 import { useWatchlist } from "./use-watchlist";
 
-type SortKey = "default" | "gainers" | "losers";
+type View = "table" | "heatmap";
 
 export function MarketsView() {
   const overview = useQuery({ queryKey: ["market-overview"], queryFn: api.market.overview, refetchInterval: 60_000 });
   const { symbols: watched, toggle } = useWatchlist();
-  const { tickers } = useMarketStream();
   const [tab, setTab] = useState<"all" | "watchlist">("all");
   const [filter, setFilter] = useState("");
-  const [sort, setSort] = useState<SortKey>("default");
+  // The view is in the URL (?view=heatmap), so it survives a reload and can be linked to.
+  const params = useSearchParams();
+  const router = useRouter();
+  const view: View = params.get("view") === "heatmap" ? "heatmap" : "table";
+  const setView = (v: View) => router.replace(v === "heatmap" ? "/markets?view=heatmap" : "/markets", { scroll: false });
 
   const rows = useMemo(() => {
     let r = overview.data?.assets ?? [];
     if (tab === "watchlist") r = r.filter((a) => watched.has(a.asset.symbol));
     const f = filter.trim().toLowerCase();
     if (f) r = r.filter((a) => a.asset.symbol.toLowerCase().includes(f) || a.asset.name.toLowerCase().includes(f));
-    if (sort !== "default") {
-      const chg = (s: string, fallback?: number) => tickers[s]?.change_pct_24h ?? fallback ?? 0;
-      r = [...r].sort((a, b) => {
-        const d = chg(b.asset.symbol, b.ticker?.change_pct_24h) - chg(a.asset.symbol, a.ticker?.change_pct_24h);
-        return sort === "gainers" ? d : -d;
-      });
-    }
     return r;
-  }, [overview.data, tab, watched, filter, sort, tickers]);
+  }, [overview.data, tab, watched, filter]);
 
   return (
     <>
@@ -58,10 +55,9 @@ export function MarketsView() {
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter…" className="h-8 pl-8 text-xs" />
             </div>
-            <Segmented value={sort} onValueChange={(v) => setSort(v as SortKey)} label="Sort by">
-                <SegmentedItem value="default">Default</SegmentedItem>
-                <SegmentedItem value="gainers">Gainers</SegmentedItem>
-                <SegmentedItem value="losers">Losers</SegmentedItem>
+            <Segmented value={view} onValueChange={(v) => setView(v as View)} label="View">
+                <SegmentedItem value="table">Table</SegmentedItem>
+                <SegmentedItem value="heatmap">Heatmap</SegmentedItem>
               </Segmented>
           </div>
         </CardHeader>
@@ -73,7 +69,7 @@ export function MarketsView() {
           ) : rows.length === 0 ? (
             <EmptyState icon={Star} title={tab === "watchlist" ? "No assets on your watchlist" : "No assets match"} description={tab === "watchlist" ? "Click the star next to any asset to add it." : undefined} />
           ) : (
-            <MarketTable rows={rows} watchlist={watched} onToggleWatch={toggle} />
+            view === "heatmap" ? <MarketHeatmap rows={rows} /> : <MarketTable rows={rows} watchlist={watched} onToggleWatch={toggle} />
           )}
           <DataSource meta={overview.data?.meta} className="px-3 pt-3" />
         </CardContent>
