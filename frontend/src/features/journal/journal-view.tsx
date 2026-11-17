@@ -286,8 +286,10 @@ export function JournalView() {
   const [filter, setFilter] = useState<"all" | "review" | "open">("all");
   const [editing, setEditing] = useState<JournalTrip | null>(null);
   const data = journal.data;
-  const trips = (data?.trips ?? []).filter((t) =>
-    filter === "review" ? t.closed_at && !t.entry : filter === "open" ? !t.closed_at : true,
+  const [asset, setAsset] = useState("all");
+  const symbols = [...new Set((data?.trips ?? []).map((t) => t.symbol))].sort();
+  const trips = (data?.trips ?? []).filter(
+    (t) => (asset === "all" || t.symbol === asset) && (filter === "review" ? t.closed_at && !t.entry : filter === "open" ? !t.closed_at : true),
   );
 
   return (
@@ -360,15 +362,29 @@ export function JournalView() {
           <Card>
             <CardHeader>
               <CardTitle>Trades</CardTitle>
-              <Segmented value={filter} onValueChange={(v) => setFilter(v as typeof filter)} label="Show trades">
-                <SegmentedItem value="all">All</SegmentedItem>
-                <SegmentedItem value="review">Needs review</SegmentedItem>
-                <SegmentedItem value="open">Open</SegmentedItem>
-              </Segmented>
+              <div className="flex flex-wrap items-center gap-2">
+                {symbols.length > 1 && (
+                  <Select value={asset} onValueChange={setAsset}>
+                    <SelectTrigger aria-label="Show trades in" className="h-8 w-32"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All assets</SelectItem>
+                      {symbols.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
+                <Segmented value={filter} onValueChange={(v) => setFilter(v as typeof filter)} label="Show trades">
+                  <SegmentedItem value="all">All</SegmentedItem>
+                  <SegmentedItem value="review">Needs review</SegmentedItem>
+                  <SegmentedItem value="open">Open</SegmentedItem>
+                </Segmented>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               {!trips.length ? (
-                <EmptyState title={filter === "review" ? "Every closed trade is reviewed" : "No open trades"} className="py-8" />
+                <EmptyState
+                  title={filter === "review" ? "Every closed trade is reviewed" : filter === "open" ? "No open trades" : "No trades in this asset"}
+                  className="py-8"
+                />
               ) : (
                 <Table>
                   <THead>

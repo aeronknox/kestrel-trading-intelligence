@@ -555,6 +555,14 @@ await step("close everything", async () => {
   await page.getByRole("button", { name: "Close everything" }).click(); // the confirm is accepted by the global dialog handler
   await toast(/^Closed 1 position/);
   await page.getByText("No open positions").waitFor();
+  // The journal's trade list filtered to one asset (ETH and SOL have both been traded by now).
+  await page.goto(`${BASE}/journal`);
+  await page.getByLabel("Show trades in").click();
+  await page.getByRole("option", { name: "SOL-USD", exact: true }).click();
+  const tradesCard = page.locator("table").filter({ has: page.getByRole("columnheader", { name: /^Opened$/i }) });
+  await tradesCard.getByRole("cell", { name: /^SOL-USD (long|short)$/ }).first().waitFor();
+  if (await tradesCard.getByRole("cell", { name: /^ETH-USD (long|short)$/ }).count()) throw new Error("asset filter let ETH trades through");
+  await page.goto(`${BASE}/paper-trading?symbol=SOL-USD`); // where the next steps trade
 });
 
 await step("risk limits dialog saves", async () => {
