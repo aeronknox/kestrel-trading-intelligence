@@ -175,8 +175,15 @@ await step("price alert set, listed and deleted", async () => {
 });
 
 await step("header asset search navigates", async () => {
-  await page.getByLabel("Search assets").fill("sol");
-  await page.getByRole("button", { name: /SOL-USD/ }).first().click();
+  // Keyboard only: "/" focuses the search, the arrows move through the results, Enter opens one.
+  await page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
+  await page.keyboard.press("/");
+  await page.keyboard.type("sol");
+  const option = page.getByRole("option", { name: /SOL-USD/ });
+  await option.waitFor();
+  if ((await option.getAttribute("aria-selected")) !== "true") throw new Error("first result not highlighted");
+  await page.keyboard.press("ArrowDown"); // wraps round to the only match
+  await page.keyboard.press("Enter");
   await page.waitForURL("**/markets/SOL-USD");
 });
 

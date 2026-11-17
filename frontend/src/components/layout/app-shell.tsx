@@ -110,7 +110,9 @@ function AssetSearch() {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
   const { tickers } = useMarketStream();
   const assets = useQuery({ queryKey: ["assets"], queryFn: () => api.market.assets(), staleTime: 300_000 });
 
@@ -119,52 +121,97 @@ function AssetSearch() {
     if (!term) return [];
     return (assets.data ?? []).filter((a) => a.symbol.toLowerCase().includes(term) || a.name.toLowerCase().includes(term)).slice(0, 7);
   }, [q, assets.data]);
+  const current = Math.min(active, Math.max(results.length - 1, 0));
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    // "/" jumps to the search from anywhere, unless you're typing somewhere else.
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
+      if (e.key === "/" && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        input.current?.focus();
+      }
+    };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   const go = (symbol: string) => {
     setQ("");
     setOpen(false);
+    input.current?.blur();
     router.push(`/markets/${symbol}`);
   };
+  const listOpen = open && Boolean(q);
 
   return (
     <div ref={ref} className="relative w-full max-w-xs">
       <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
+        ref={input}
         value={q}
         onChange={(e) => {
           setQ(e.target.value);
+          setActive(0);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && results[0]) go(results[0].symbol);
-          if (e.key === "Escape") setOpen(false);
+          if (e.key === "ArrowDown" && results.length) {
+            e.preventDefault();
+            setOpen(true);
+            setActive((current + 1) % results.length);
+          } else if (e.key === "ArrowUp" && results.length) {
+            e.preventDefault();
+            setActive((current - 1 + results.length) % results.length);
+          } else if (e.key === "Enter" && results[current]) {
+            go(results[current].symbol);
+          } else if (e.key === "Escape") {
+            setOpen(false);
+          }
         }}
-        placeholder="Search assets…"
+        placeholder="Search assets…  ( / )"
         className="h-8 pl-8 text-xs"
         aria-label="Search assets"
+        role="combobox"
+        aria-expanded={listOpen && results.length > 0}
+        aria-controls="asset-search-results"
+        aria-autocomplete="list"
+        aria-activedescendant={listOpen && results[current] ? `asset-search-${results[current].id}` : undefined}
+        aria-keyshortcuts="/"
       />
-      {open && q && (
+      {listOpen && (
         <div className="absolute top-full z-50 mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-xl">
           {results.length === 0 ? (
             <p className="px-3 py-3 text-xs text-muted-foreground">
               No tracked asset matches. Add new ones from <Link className="text-primary" href="/markets" onClick={() => setOpen(false)}>Markets</Link>.
             </p>
           ) : (
-            results.map((a) => (
-              <button key={a.id} onClick={() => go(a.symbol)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent">
-                <AssetIcon symbol={a.symbol} className="size-6" />
-                <span className="font-medium">{a.symbol}</span>
-                <span className="truncate text-xs text-muted-foreground">{a.name}</span>
-                <span className="ml-auto text-xs tabular text-muted-foreground">{formatPrice(tickers[a.symbol]?.price)}</span>
-              </button>
-            ))
+            <ul id="asset-search-results" role="listbox" aria-label="Matching assets">
+              {results.map((a, i) => (
+                <li
+                  key={a.id}
+                  id={`asset-search-${a.id}`}
+                  role="option"
+                  aria-selected={i === current}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => go(a.symbol)}
+                  onMouseEnter={() => setActive(i)}
+                  className={cn("flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm", i === current && "bg-accent")}
+                >
+                  <AssetIcon symbol={a.symbol} className="size-6" />
+                  <span className="font-medium">{a.symbol}</span>
+                  <span className="truncate text-xs text-muted-foreground">{a.name}</span>
+                  <span className="ml-auto text-xs tabular text-muted-foreground">{formatPrice(tickers[a.symbol]?.price)}</span>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}
