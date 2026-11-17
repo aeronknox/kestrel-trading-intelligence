@@ -228,7 +228,7 @@ export const api = {
   },
   paper: {
     portfolio: () => get<Portfolio>("/paper/portfolio"),
-    placeOrder: (body: { symbol: string; side: OrderSide; order_type: OrderType; quantity: number; limit_price?: number | null; stop_price?: number | null; trail_pct?: number | null; stop_loss?: number | null; take_profit?: number | null; expires_in_hours?: number | null }) =>
+    placeOrder: (body: { symbol: string; side: OrderSide; order_type: OrderType; quantity: number; limit_price?: number | null; stop_price?: number | null; trail_pct?: number | null; stop_loss?: number | null; take_profit?: number | null; expires_in_hours?: number | null; reduce_only?: boolean }) =>
       post<Order>("/paper/orders", body),
     protect: (
       symbol: string,

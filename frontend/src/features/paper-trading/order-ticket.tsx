@@ -99,6 +99,9 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
   const action =
     side === "buy" ? (held < 0 ? "Buy to cover" : "Buy") : held > 0 ? "Sell" : portfolio.risk_limits.allow_short ? "Sell short" : "Sell";
   const opensRisk = action === "Buy" || action === "Sell short";
+  // An exit order can be reduce-only: it never opens a position the other way, and follows the position.
+  const [reduceOnly, setReduceOnly] = useState(false);
+  const canReduceOnly = !opensRisk && Math.abs(held) > 0;
 
   const place = useMutation({
     mutationFn: () =>
@@ -113,6 +116,7 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
         stop_loss: bracket ? slNum : null,
         take_profit: bracket ? tpNum : null,
         expires_in_hours: type !== "market" && tif !== "gtc" ? Number(tif) : null,
+        reduce_only: canReduceOnly && reduceOnly,
       }),
     onSuccess: (o) => {
       qc.invalidateQueries({ queryKey: ["paper"] });
@@ -223,6 +227,18 @@ export function OrderTicket({ portfolio, symbol, onSymbolChange }: { portfolio: 
               </SelectContent>
             </Select>
           </Field>
+        )}
+        {canReduceOnly && (
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
+            <div>
+              <Label htmlFor="ticket-reduce-only" className="text-sm">Reduce only</Label>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                Only shrinks your {held > 0 ? "long" : "short"}: never opens a {held > 0 ? "short" : "long"}. It shrinks with the position and is
+                cancelled once the position is closed.
+              </p>
+            </div>
+            <Switch id="ticket-reduce-only" checked={reduceOnly} onCheckedChange={setReduceOnly} />
+          </div>
         )}
         <Field label={mode === "usd" ? "Amount (USD)" : `Quantity (${symbol.split("-")[0]})`}>
           <div className="flex gap-2">

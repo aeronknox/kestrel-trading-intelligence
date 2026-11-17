@@ -420,6 +420,25 @@ await step("paper stop order + position protection", async () => {
   await page.getByText(/^trail 5% · /).first().waitFor();
 });
 
+await step("reduce-only exit order", async () => {
+  // Selling against the ETH long offers "Reduce only"; the resting order is marked as such.
+  await page.getByRole("button", { name: "Sell", exact: true }).click();
+  await page.getByRole("radio", { name: "Limit", exact: true }).click();
+  await page.getByLabel(/Limit price/).fill("100000000");
+  await page.getByRole("switch", { name: "Reduce only" }).click();
+  await page.getByRole("button", { name: "USD", exact: true }).click(); // enter a quantity in ETH
+  await page.getByPlaceholder("0.00").fill("0.01");
+  await page.getByRole("button", { name: /^Sell ETH \(paper\)/ }).click();
+  await toast(/Limit order placed/);
+  const row = page.getByRole("row").filter({ hasText: "Reduce only" }).first();
+  await row.waitFor();
+  await row.getByLabel("Cancel order").click();
+  await toast(/Order cancelled/);
+  await page.getByRole("radio", { name: "Market" }).click();
+  await page.getByRole("button", { name: "ETH", exact: true }).click(); // back to amounts in USD
+  await page.getByRole("button", { name: "Buy", exact: true }).click();
+});
+
 await step("paper close position", async () => {
   // Take half off first: the position halves and stays protected.
   const qtyCell = page.getByRole("row").filter({ hasText: "ETH-USD" }).first().getByRole("cell").nth(1);

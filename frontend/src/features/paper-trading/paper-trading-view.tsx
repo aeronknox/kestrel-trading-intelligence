@@ -184,6 +184,9 @@ function OrdersTable({ orders, cancellable, filtered }: { orders: Order[]; cance
             <TD className={cn("font-semibold uppercase", o.side === "buy" ? "text-gain" : "text-loss")}>{o.side}</TD>
             <TD className="capitalize">
               {o.order_type.replace("_", " ")}
+              {o.reduce_only && !o.note && (
+                <Badge variant="secondary" className="ml-1.5 normal-case" title="Only shrinks the position; cancelled once it is closed">Reduce only</Badge>
+              )}
               {o.strategy_id && (
                 <Link href={`/strategies/${o.strategy_id}`} className="ml-1.5" title="Placed by this strategy's forward test">
                   <Badge variant="info">Auto</Badge>
