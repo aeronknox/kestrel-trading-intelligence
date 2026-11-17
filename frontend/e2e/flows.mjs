@@ -319,6 +319,7 @@ await step("paper market buy via ticket", async () => {
   await page.getByRole("button", { name: /Buy ETH \(paper\)/ }).click();
   await toast(/Filled: buy/);
   await page.getByRole("row").filter({ hasText: "ETH-USD" }).getByRole("button", { name: "Close", exact: true }).waitFor();
+  await page.getByText(/^Held (<1m|\d+m)$/).first().waitFor(); // how long it has been open
   // Bought without a stop: flagged, and not counted in open risk.
   await page.getByText("No stop", { exact: true }).waitFor();
   await page.getByText(/1 position has no stop, so no limit on its loss/).waitFor();

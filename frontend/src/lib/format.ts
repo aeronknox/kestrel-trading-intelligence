@@ -111,3 +111,13 @@ export function timeAxisFormatter(spanSeconds: number): (t: number) => string {
   return (t) => formatDate(t);
 }
 
+
+/** A holding time: "<1m", "45m", "5h", "3d". */
+export function formatDuration(seconds: number | null | undefined): string {
+  if (!isNum(seconds) || seconds < 0) return DASH;
+  const m = seconds / 60;
+  if (m < 1) return "<1m";
+  if (m < 60) return `${Math.round(m)}m`;
+  if (m < 60 * 48) return `${Math.round(m / 60)}h`;
+  return `${Math.round(m / 1440)}d`;
+}

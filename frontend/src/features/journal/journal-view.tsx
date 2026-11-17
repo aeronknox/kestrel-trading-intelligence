@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { RCurveChart } from "@/features/charts/recharts";
 import { localTimezone } from "@/lib/calendar";
-import { formatDateTime, formatPct, formatPrice, formatQty, formatUsd, pnlClass } from "@/lib/format";
+import { formatDateTime, formatDuration, formatPct, formatPrice, formatQty, formatUsd, pnlClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import type { JournalGroup, JournalTrip, RCurve } from "@/types/api";
@@ -30,14 +30,7 @@ const EMOTION_LABEL: Record<string, string> = {
 };
 const NO_EMOTION = "none";
 
-function held(seconds: number | null): string {
-  if (seconds === null) return "—";
-  const m = seconds / 60;
-  if (m < 1) return "<1m";
-  if (m < 60) return `${Math.round(m)}m`;
-  if (m < 60 * 48) return `${Math.round(m / 60)}h`;
-  return `${Math.round(m / 1440)}d`;
-}
+const held = formatDuration;
 
 function formatR(r: number | null | undefined): string {
   return r === null || r === undefined ? "—" : `${r >= 0 ? "+" : "−"}${Math.abs(r).toFixed(2)}R`;

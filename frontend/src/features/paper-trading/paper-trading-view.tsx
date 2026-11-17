@@ -18,7 +18,7 @@ import { Badge, Skeleton } from "@/components/ui/primitives";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useMarketStream } from "@/hooks/use-market-stream";
-import { formatDateTime, formatPct, formatPrice, formatQty, formatUsd, pnlClass } from "@/lib/format";
+import { formatDateTime, formatDuration, formatPct, formatPrice, formatQty, formatUsd, pnlClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import type { Order, Portfolio } from "@/types/api";
@@ -31,7 +31,7 @@ import { RiskLimitsDialog } from "./risk-limits-dialog";
 
 const STATUS_VARIANT = { filled: "gain", open: "info", rejected: "loss", cancelled: "secondary", expired: "secondary" } as const;
 
-function PositionsTable({ portfolio, openOrders }: { portfolio: Portfolio; openOrders: Order[] }) {
+function PositionsTable({ portfolio, openOrders, asOf }: { portfolio: Portfolio; openOrders: Order[]; asOf: number }) {
   const { tickers } = useMarketStream();
   const qc = useQueryClient();
   const close = useMutation({
@@ -72,6 +72,9 @@ function PositionsTable({ portfolio, openOrders }: { portfolio: Portfolio; openO
                   <span className="font-medium">{p.asset.symbol}</span>
                   {short && <Badge variant="loss">Short</Badge>}
                 </Link>
+                <p className="mt-0.5 text-[11px] text-muted-foreground" title={`Opened ${formatDateTime(p.opened_at)}`}>
+                  Held {formatDuration((asOf - new Date(p.opened_at).getTime()) / 1000)}
+                </p>
                 {(guard.stopLoss || guard.takeProfit || guard.partialTakeProfit) && (
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
                     {guard.stopLoss && <>{guard.trailPct ? `Trail ${guard.trailPct}% · SL` : "SL"} {formatPrice(guard.stopLoss)}</>}
@@ -351,7 +354,7 @@ export function PaperTradingView() {
                     ) : null}
                   </p>
                 )}
-                <PositionsTable portfolio={p} openOrders={openOrders} />
+                <PositionsTable portfolio={p} openOrders={openOrders} asOf={portfolio.dataUpdatedAt} />
               </CardContent>
             </Card>
             <Card>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatPct, formatPrice, formatUsd, pnlClass, timeAgo } from "./format";
+import { formatDuration, formatPct, formatPrice, formatUsd, pnlClass, timeAgo } from "./format";
 
 describe("formatters", () => {
   it("adapts price precision to magnitude", () => {
@@ -59,3 +59,15 @@ describe("axis formatters", () => {
   });
 });
 
+
+describe("formatDuration", () => {
+  it("rounds to the largest sensible unit", () => {
+    expect(formatDuration(30)).toBe("<1m");
+    expect(formatDuration(45 * 60)).toBe("45m");
+    expect(formatDuration(5 * 3600)).toBe("5h");
+    expect(formatDuration(47 * 3600)).toBe("47h");
+    expect(formatDuration(3 * 86400)).toBe("3d");
+    expect(formatDuration(null)).toBe("—");
+    expect(formatDuration(-5)).toBe("—");
+  });
+});

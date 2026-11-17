@@ -213,7 +213,7 @@ cd backend  && python scripts/loadtest.py --url http://localhost:8000 --users 20
                                        # load test: concurrent demo visitors browsing the API
                                        # (needs DEMO_MODE=true and raised rate limits on the target)
 cd frontend && npm run lint            # ESLint
-cd frontend && npm test                # 44 unit tests: rule builder, formatters, sweep-grid helpers, CSP, form validation messages, calendar grid, buy-and-hold benchmark, trade markers, market sorting
+cd frontend && npm test                # 45 unit tests: rule builder, formatters, sweep-grid helpers, CSP, form validation messages, calendar grid, buy-and-hold benchmark, trade markers, market sorting
 cd frontend && npm run typecheck && npm run build
 cd frontend && npx playwright install chromium && npm run e2e
                                        # 49 browser flows against a running stack (:3000 + :8000)
