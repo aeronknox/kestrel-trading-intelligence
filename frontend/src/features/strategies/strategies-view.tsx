@@ -1,8 +1,9 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, MoreHorizontal, Pencil, Plus, Trash2, Workflow } from "lucide-react";
+import { Archive, Copy, MoreHorizontal, Pencil, Plus, Trash2, Workflow } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { EmptyState, ErrorState, LoadingRows } from "@/components/common/states";
@@ -17,7 +18,8 @@ import { cn } from "@/lib/utils";
 import { api } from "@/services/api";
 import type { Strategy } from "@/types/api";
 
-import { describeRuleSet } from "./rules";
+import { describeRuleSet, normalizeRisk } from "./rules";
+import { draftFromStrategy } from "./strategy-editor";
 
 function StrategyCard({ s }: { s: Strategy }) {
   const qc = useQueryClient();
@@ -27,6 +29,24 @@ function StrategyCard({ s }: { s: Strategy }) {
       toast.success(`Deleted “${s.name}”`);
       qc.invalidateQueries({ queryKey: ["strategies"] });
       qc.invalidateQueries({ queryKey: ["backtests"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const router = useRouter();
+  // A copy of the current version, to try a variation without touching this one or its backtests.
+  const duplicate = useMutation({
+    mutationFn: () => {
+      const d = draftFromStrategy(s);
+      const name = `${s.name} (copy)`.slice(0, 120);
+      return api.strategies.create({
+        name, description: d.description,
+        config: { symbol: d.symbol, timeframe: d.timeframe, entry: d.entry, exit: d.exit, risk: normalizeRisk(d.risk) },
+      });
+    },
+    onSuccess: (copy) => {
+      qc.invalidateQueries({ queryKey: ["strategies"] });
+      toast.success(`Created “${copy.name}”`);
+      router.push(`/strategies/${copy.id}`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -56,6 +76,7 @@ function StrategyCard({ s }: { s: Strategy }) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem asChild><Link href={`/strategies/${s.id}`}><Pencil /> Edit</Link></DropdownMenuItem>
+            {c && <DropdownMenuItem onSelect={() => duplicate.mutate()}><Copy /> Duplicate</DropdownMenuItem>}
             <DropdownMenuItem onSelect={() => archive.mutate()}><Archive /> Archive</DropdownMenuItem>
             <DropdownMenuItem
               className="text-loss"

@@ -619,6 +619,15 @@ await step("settings save preferences", async () => {
   await toast(/Preferences saved/);
 });
 
+await step("duplicate a strategy", async () => {
+  await page.goto(`${BASE}/strategies`);
+  await page.getByRole("button", { name: "Strategy actions" }).first().click();
+  await page.getByRole("menuitem", { name: "Duplicate" }).click();
+  await toast(/Created “.* \(copy\)”/);
+  await page.waitForURL(/\/strategies\/\d+$/);
+  await page.getByText(/\(copy\)/).first().waitFor();
+});
+
 await step("sessions: see another sign-in and sign it out", async () => {
   // A second browser signs in to the same account.
   const elsewhere = await browser.newContext({ ignoreHTTPSErrors: process.env.IGNORE_HTTPS_ERRORS === "1" });
