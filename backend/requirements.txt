@@ -1,12 +1,12 @@
-fastapi==0.162.2
+fastapi==0.163.0
 uvicorn[standard]==0.54.0
 pydantic==2.14.3
-pydantic-settings==2.16.2
-email-validator==2.3.0
+pydantic-settings==2.16.3
+email-validator==2.4.0
 SQLAlchemy[asyncio]==2.1.8
 greenlet==3.5.6
 alembic==1.20.1
-psycopg[binary]==3.3.8
+psycopg[binary]==3.3.9
 aiosqlite==0.22.1
 redis==8.1.0
 httpx==0.28.1
@@ -15,7 +15,7 @@ pandas==3.1.1
 tzdata==2026.6  # zoneinfo data for P&L days in your own timezone (slim images have none)
 numpy==2.5.4
 scikit-learn==1.9.1
-openai==3.46.0
+openai==3.51.0
 structlog==26.1.0
 websockets==17.4
 prometheus-client==0.26.0
