@@ -3,8 +3,10 @@
 import pytest
 
 from app.backtesting.monte_carlo import monte_carlo, trade_fractions
+from app.strategies.definition import TEMPLATES
 from tests.conftest import register
-from tests.test_export import _strategy
+
+MA_CROSSOVER = next(t for t in TEMPLATES if t["key"] == "ma_crossover")["definition"]
 
 PNLS = [100.0, -50.0, 200.0, -150.0, 80.0, -20.0, 60.0]
 
@@ -42,8 +44,11 @@ def test_too_few_trades() -> None:
 
 
 async def test_endpoint_on_a_real_backtest(auth_client, client) -> None:  # type: ignore[no-untyped-def]
-    sid = await _strategy(auth_client, "RSI")
-    bt = (await auth_client.post("/api/v1/backtests", json={"strategy_id": sid, "bars": 1500})).json()
+    # A moving-average crossover trades often on any stretch of the sample data (the RSI template can trade
+    # fewer than 5 times, depending on the date the synthetic prices are generated for).
+    body = {"name": "MA", "config": {"symbol": "BTC-USD", "timeframe": "1h", **MA_CROSSOVER}}
+    sid = (await auth_client.post("/api/v1/strategies", json=body)).json()["id"]
+    bt = (await auth_client.post("/api/v1/backtests", json={"strategy_id": sid, "bars": 3000})).json()
     closed = [t for t in bt["trades"] if t["exit_time"] is not None]
     resp = await auth_client.get(f"/api/v1/backtests/{bt['id']}/monte-carlo", params={"runs": 300})
     assert len(closed) >= 5  # the sample data gives this strategy enough trades to resample
