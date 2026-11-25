@@ -257,7 +257,9 @@ export function RCurveChart({
   points: { trade_id: number; symbol: string; closed_at: string; r: number; cumulative_r: number }[];
   height?: number;
 }) {
-  const data = points.map((p, i) => ({ ...p, n: i + 1 }));
+  // `r` is renamed: chart dots (recharts 3.11+) read an `r` on the data point as their SVG radius, so a
+  // losing trade's negative R would draw a circle with a negative radius.
+  const data = points.map(({ r, ...p }, i) => ({ ...p, r_multiple: r, n: i + 1 }));
   const fmt = (v: number) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}R`;
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -273,18 +275,18 @@ export function RCurveChart({
             return active && p ? (
               <TooltipBox>
                 <div className="text-muted-foreground">Trade {p.n} · {p.symbol} · closed {formatDate(p.closed_at)}</div>
-                <div className={p.r >= 0 ? "font-medium text-gain" : "font-medium text-loss"}>{fmt(p.r)}</div>
+                <div className={p.r_multiple >= 0 ? "font-medium text-gain" : "font-medium text-loss"}>{fmt(p.r_multiple)}</div>
                 <div>Total {fmt(p.cumulative_r)}</div>
               </TooltipBox>
             ) : null;
           }}
         />
-        <Bar dataKey="r" isAnimationActive={false} maxBarSize={18}>
+        <Bar dataKey="r_multiple" isAnimationActive={false} maxBarSize={18}>
           {data.map((d) => (
-            <Cell key={d.trade_id} fill={d.r >= 0 ? "var(--gain)" : "var(--loss)"} fillOpacity={0.55} />
+            <Cell key={d.trade_id} fill={d.r_multiple >= 0 ? "var(--gain)" : "var(--loss)"} fillOpacity={0.55} />
           ))}
         </Bar>
-        <Line type="linear" dataKey="cumulative_r" stroke="var(--chart-1)" strokeWidth={2} dot={data.length <= 40} isAnimationActive={false} />
+        <Line type="linear" dataKey="cumulative_r" stroke="var(--chart-1)" strokeWidth={2} dot={data.length <= 40 ? { r: 3 } : false} isAnimationActive={false} />
       </ComposedChart>
     </ResponsiveContainer>
   );
