@@ -23,10 +23,12 @@ from app.services.alerts import evaluate_alerts
 from app.services.demo import purge_expired_demo_users
 from app.services.notifications import deliver_pending_webhooks
 from app.services.price_alerts import check_price_alerts
+from app.services.recurring import run_due_recurring_buys
 
 logger = get_logger(__name__)
 
 ORDER_INTERVAL_SECONDS = 15
+RECURRING_INTERVAL_SECONDS = 60
 SNAPSHOT_INTERVAL_SECONDS = 300
 BACKFILL_INTERVAL_SECONDS = 60
 ALERT_INTERVAL_SECONDS = 60
@@ -120,6 +122,7 @@ class BackgroundJobs:
             asyncio.create_task(self._loop(snapshot_all_portfolios, SNAPSHOT_INTERVAL_SECONDS), name="paper-snapshots"),
             asyncio.create_task(self._loop(evaluate_alerts, ALERT_INTERVAL_SECONDS), name="strategy-alerts"),
             asyncio.create_task(self._loop(check_price_alerts, ORDER_INTERVAL_SECONDS), name="price-alerts"),
+            asyncio.create_task(self._loop(run_due_recurring_buys, RECURRING_INTERVAL_SECONDS), name="recurring-buys"),
             asyncio.create_task(self._loop(deliver_pending_webhooks, ORDER_INTERVAL_SECONDS), name="order-webhooks"),
         ]
         if get_settings().demo_mode:

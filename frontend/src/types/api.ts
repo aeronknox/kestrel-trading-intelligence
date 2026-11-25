@@ -966,3 +966,21 @@ export interface MonteCarlo {
   drawdown_worse_than_actual_pct: number;
   method: string;
 }
+
+/** A simulated dollar-cost-averaging plan: a paper market buy of amount_usd every interval_days. */
+export interface RecurringBuy {
+  id: number;
+  asset: Asset;
+  amount_usd: number;
+  interval_days: number;
+  active: boolean;
+  next_run_at: string;
+  created_at: string;
+  last_run_at: string | null;
+  last_status: "filled" | "rejected" | "failed" | null;
+  last_message: string | null;
+  runs: number;
+  invested_usd: number;
+  quantity_bought: number;
+  average_price: number | null;
+}

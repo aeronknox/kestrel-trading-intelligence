@@ -15,6 +15,7 @@ from app.models.paper import (
     SimulatedTrade,
 )
 from app.models.price_alert import PriceAlert
+from app.models.recurring import RecurringBuy
 from app.models.strategy import Strategy, StrategyConfiguration
 from app.models.user import AuthToken, User, UserSession, UserSettings
 
@@ -35,6 +36,7 @@ __all__ = [
     "PortfolioPosition",
     "PortfolioSnapshot",
     "PriceAlert",
+    "RecurringBuy",
     "ResearchRun",
     "SimulatedOrder",
     "SimulatedTrade",

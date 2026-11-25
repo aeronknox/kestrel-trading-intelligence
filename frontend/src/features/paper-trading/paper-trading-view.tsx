@@ -26,6 +26,7 @@ import type { Order, Portfolio } from "@/types/api";
 import { AmendOrderDialog } from "./amend-order-dialog";
 import { ClosePartDialog } from "./close-part-dialog";
 import { OrderTicket } from "./order-ticket";
+import { RecurringBuysCard } from "./recurring-buys-card";
 import { ProtectDialog, protection } from "./protect-dialog";
 import { RiskLimitsDialog } from "./risk-limits-dialog";
 
@@ -381,6 +382,7 @@ export function PaperTradingView() {
                 </CardContent>
               </Tabs>
             </Card>
+            <RecurringBuysCard symbol={symbol} />
           </div>
           <div className="lg:sticky lg:top-20 lg:self-start">
             <OrderTicket portfolio={p} symbol={symbol} onSymbolChange={setSymbol} />

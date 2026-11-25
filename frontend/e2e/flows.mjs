@@ -565,6 +565,23 @@ await step("close everything", async () => {
   await page.goto(`${BASE}/paper-trading?symbol=SOL-USD`); // where the next steps trade
 });
 
+await step("recurring buy set, paused, resumed and stopped", async () => {
+  // Starting in a week, so it doesn't buy during the flows (the backend tests cover the buying).
+  await page.getByLabel("Amount per buy (USD)").fill("50");
+  await page.getByRole("switch", { name: /First buy now/ }).click();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await toast(/Recurring buy set: \$50\.00 of SOL-USD every week/);
+  await page.getByText(/^\$50\.00 of SOL-USD every week\s*(Paused)?$/).waitFor();
+  await page.getByRole("button", { name: "Pause recurring buy of SOL-USD" }).click();
+  await toast(/^Paused$/);
+  await page.getByText("Not running").waitFor();
+  await page.getByRole("button", { name: "Resume recurring buy of SOL-USD" }).click();
+  await toast(/Resumed: next buy/);
+  await page.getByRole("button", { name: "Stop recurring buy of SOL-USD" }).click();
+  await toast(/Recurring buy stopped/);
+  await page.getByText(/^\$50\.00 of SOL-USD every week\s*(Paused)?$/).waitFor({ state: "detached" });
+});
+
 await step("risk limits dialog saves", async () => {
   await page.getByRole("button", { name: /Risk limits/ }).click();
   await page.getByLabel(/Max open positions/).fill("5");

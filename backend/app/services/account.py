@@ -18,6 +18,7 @@ from app.models.market import Watchlist, WatchlistItem
 from app.models.notification import Notification
 from app.models.paper import PaperPortfolio, PortfolioPosition, PortfolioSnapshot, SimulatedOrder, SimulatedTrade
 from app.models.price_alert import PriceAlert
+from app.models.recurring import RecurringBuy
 from app.models.strategy import Strategy, StrategyConfiguration
 from app.models.user import User, UserSession, UserSettings
 
@@ -53,6 +54,7 @@ SECTIONS: list[tuple[str, type, Callable[[int], ColumnElement[bool]]]] = [
     ("strategy_alerts", StrategyAlert, lambda uid: StrategyAlert.user_id == uid),
     ("alert_events", AlertEvent, lambda uid: AlertEvent.user_id == uid),
     ("price_alerts", PriceAlert, lambda uid: PriceAlert.user_id == uid),
+    ("recurring_buys", RecurringBuy, lambda uid: RecurringBuy.user_id == uid),
     ("notifications", Notification, lambda uid: Notification.user_id == uid),
     ("ai_analyses", AIAnalysisResult, lambda uid: AIAnalysisResult.user_id == uid),
     ("ai_signals", TradingSignal,

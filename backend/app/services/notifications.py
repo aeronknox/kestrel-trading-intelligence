@@ -21,7 +21,8 @@ logger = get_logger(__name__)
 
 DISCLAIMER = "Simulated paper trading: no real money or brokerage is involved."
 DELIVERY_BATCH = 100
-NAMED = ("Stop-loss", "Take-profit", "Trailing stop", "Partial take-profit")  # notes set by position protection
+PROTECTIVE = ("Stop-loss", "Take-profit", "Trailing stop", "Partial take-profit")  # notes set by position protection
+NAMED = (*PROTECTIVE, "Recurring buy")  # notes the system sets, used as the order's name
 
 
 def _price(v: float | None) -> str:
@@ -58,7 +59,7 @@ async def notify_order(
             f"({_price(market_price)}) is already {past} its limit ({_price(order.limit_price)}). It waits there as a limit order "
             f"and only fills if the price comes back."
         )
-        if order.reduce_only or order.note in NAMED:
+        if order.reduce_only or order.note in PROTECTIVE:
             message += " Until then the position is not protected."
     elif order.status == OrderStatus.FILLED:
         kind = "order_filled"

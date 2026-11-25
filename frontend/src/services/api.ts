@@ -31,6 +31,7 @@ import type {
   Portfolio,
   PortfolioRequestBody,
   MonteCarlo,
+  RecurringBuy,
   PnlCalendar,
   PortfolioAnalytics,
   ResearchRequest,
@@ -251,6 +252,13 @@ export const api = {
     save: (tradeId: number, body: { setup: string | null; emotion: string | null; rating: number | null; notes: string; lesson: string; planned_stop: number | null }) =>
       put<JournalEntry>(`/paper/journal/${tradeId}`, body),
     remove: (tradeId: number) => del<void>(`/paper/journal/${tradeId}`),
+  },
+  recurringBuys: {
+    list: () => get<RecurringBuy[]>("/paper/recurring-buys"),
+    create: (body: { symbol: string; amount_usd: number; interval_days: number; start_now: boolean }) =>
+      post<RecurringBuy>("/paper/recurring-buys", body),
+    setActive: (id: number, active: boolean) => patch<RecurringBuy>(`/paper/recurring-buys/${id}`, { active }),
+    remove: (id: number) => del<void>(`/paper/recurring-buys/${id}`),
   },
   priceAlerts: {
     list: (symbol?: string) => get<PriceAlert[]>("/price-alerts", symbol ? { symbol } : undefined),
