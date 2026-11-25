@@ -26,6 +26,7 @@ import type { Order, Portfolio } from "@/types/api";
 import { AmendOrderDialog } from "./amend-order-dialog";
 import { ClosePartDialog } from "./close-part-dialog";
 import { OrderTicket } from "./order-ticket";
+import { RebalanceDialog } from "./rebalance-dialog";
 import { RecurringBuysCard } from "./recurring-buys-card";
 import { ProtectDialog, protection } from "./protect-dialog";
 import { RiskLimitsDialog } from "./risk-limits-dialog";
@@ -302,6 +303,7 @@ export function PaperTradingView() {
           p && (
             <>
               <DownloadButton href="/paper/trades.csv" label="Download trade history as CSV">Trades CSV</DownloadButton>
+              <RebalanceDialog portfolio={p} />
               <RiskLimitsDialog limits={p.risk_limits} />
               <Button
                 variant="outline"

@@ -582,6 +582,26 @@ await step("recurring buy set, paused, resumed and stopped", async () => {
   await page.getByText(/^\$50\.00 of SOL-USD every week\s*(Paused)?$/).waitFor({ state: "detached" });
 });
 
+await step("rebalance to target weights, then back to cash", async () => {
+  // No positions now: the dialog starts with BTC at 10%.
+  await page.getByRole("button", { name: "Rebalance", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Target % for BTC-USD").fill("10");
+  await dialog.getByRole("button", { name: "Preview orders" }).click();
+  await dialog.getByRole("cell", { name: /^buy / }).waitFor();
+  await dialog.getByRole("button", { name: "Rebalance now" }).click();
+  await toast(/^Rebalanced: 1 of 1 orders? filled$/);
+  await page.getByRole("row").filter({ hasText: "BTC-USD" }).getByRole("button", { name: "Close", exact: true }).waitFor();
+  // Target 0 sells it all.
+  await page.getByRole("button", { name: "Rebalance", exact: true }).click();
+  await dialog.getByLabel("Target % for BTC-USD").fill("0");
+  await dialog.getByRole("button", { name: "Preview orders" }).click();
+  await dialog.getByRole("cell", { name: /^sell / }).waitFor();
+  await dialog.getByRole("button", { name: "Rebalance now" }).click();
+  await toast(/^Rebalanced: 1 of 1 orders? filled$/);
+  await page.getByText("No open positions").waitFor();
+});
+
 await step("risk limits dialog saves", async () => {
   await page.getByRole("button", { name: /Risk limits/ }).click();
   await page.getByLabel(/Max open positions/).fill("5");

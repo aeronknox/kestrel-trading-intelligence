@@ -984,3 +984,12 @@ export interface RecurringBuy {
   quantity_bought: number;
   average_price: number | null;
 }
+
+/** Orders that would bring the listed assets to their target weights (nothing is placed by a preview). */
+export interface RebalancePlan {
+  equity: number;
+  legs: { symbol: string; side: OrderSide; quantity: number; price: number; value: number; current_pct: number; target_pct: number }[];
+  unchanged: string[];
+  cash_after_pct: number;
+  drift_band_usd: number;
+}
