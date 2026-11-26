@@ -49,6 +49,7 @@ const ORDER_BADGE = {
   order_expired: { label: "Expired", variant: "secondary" },
   order_triggered: { label: "Not filled", variant: "warn" },
   margin_call: { label: "Margin call", variant: "loss" },
+  drawdown: { label: "Drawdown", variant: "warn" },
   price_alert: { label: "Price", variant: "info" },
 } as const;
 

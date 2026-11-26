@@ -45,6 +45,9 @@ class PaperPortfolio(IdMixin, TimestampMixin, Base):
     max_risk_per_trade_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Portfolio heat: what all open positions would lose to their stops, plus the new one, as % of equity.
     max_open_risk_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Notify when equity is this % below its high; drawdown_alert_peak is the high last alerted on (re-arms above it).
+    drawdown_alert_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    drawdown_alert_peak: Mapped[float | None] = mapped_column(Money, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     positions: Mapped[list["PortfolioPosition"]] = relationship(

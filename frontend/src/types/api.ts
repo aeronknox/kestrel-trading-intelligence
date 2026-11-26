@@ -475,6 +475,8 @@ export interface RiskLimits {
   max_risk_per_trade_pct?: number | null;
   /** Cap on what all positions would lose to their stops, a new one included, as % of equity. */
   max_open_risk_pct?: number | null;
+  /** Notify when equity is this % below its high (a notification only). */
+  drawdown_alert_pct?: number | null;
 }
 
 export interface Portfolio {
@@ -914,7 +916,7 @@ export interface PriceAlert {
 
 export interface AppNotification {
   id: number;
-  kind: "order_filled" | "order_rejected" | "order_expired" | "order_triggered" | "margin_call" | "price_alert";
+  kind: "order_filled" | "order_rejected" | "order_expired" | "order_triggered" | "margin_call" | "price_alert" | "drawdown";
   title: string;
   message: string;
   symbol: string | null;

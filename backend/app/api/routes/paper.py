@@ -65,6 +65,7 @@ def portfolio_out(summary: dict, svc: PaperTradingService, stops: list[Simulated
             require_stop_loss=pf.require_stop_loss,
             max_risk_per_trade_pct=pf.max_risk_per_trade_pct,
             max_open_risk_pct=pf.max_open_risk_pct,
+            drawdown_alert_pct=pf.drawdown_alert_pct,
         ),
         positions=[
             PositionOut(
@@ -128,6 +129,9 @@ async def update_risk_limits(body: RiskLimits, user: CurrentUser, db: DbSession)
     pf.require_stop_loss = body.require_stop_loss
     pf.max_risk_per_trade_pct = body.max_risk_per_trade_pct
     pf.max_open_risk_pct = body.max_open_risk_pct
+    if body.drawdown_alert_pct != pf.drawdown_alert_pct:
+        pf.drawdown_alert_peak = None  # a new threshold applies to the drawdown as it is now
+    pf.drawdown_alert_pct = body.drawdown_alert_pct
     await audit(db, "paper.risk_limits_updated", user_id=user.id, entity_type="portfolio", entity_id=pf.id, details=body.model_dump())
     return await _portfolio_response(svc, pf)
 

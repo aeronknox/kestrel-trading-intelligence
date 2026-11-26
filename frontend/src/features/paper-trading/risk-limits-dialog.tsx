@@ -26,11 +26,12 @@ export function RiskLimitsDialog({ limits }: { limits: RiskLimits }) {
   });
   const cap = v.max_risk_per_trade_pct ?? null;
   const heat = v.max_open_risk_pct ?? null;
+  const ddAlert = v.drawdown_alert_pct ?? null;
   const stopForced = cap !== null || heat !== null;
   const valid =
     v.max_position_pct >= 1 && v.max_position_pct <= 100 && v.max_open_positions >= 1 && v.max_open_positions <= 100 &&
     v.daily_loss_limit_pct >= 0.5 && v.daily_loss_limit_pct <= 100 && (cap === null || (cap >= 0.1 && cap <= 10)) &&
-    (heat === null || (heat >= 0.5 && heat <= 50));
+    (heat === null || (heat >= 0.5 && heat <= 50)) && (ddAlert === null || (ddAlert >= 1 && ddAlert <= 90));
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (o) setV(limits); }}>
       <DialogTrigger asChild>
@@ -58,6 +59,10 @@ export function RiskLimitsDialog({ limits }: { limits: RiskLimits }) {
           <Field label="Max open risk (% of equity)" hint="0.5 – 50, or empty for no limit. What all your positions would lose to their stops together, a new one included. Positions without a stop aren't counted, so this also requires one.">
             <Input type="number" step="0.5" placeholder="No limit" value={heat ?? ""}
               onChange={(e) => setV({ ...v, max_open_risk_pct: e.target.value === "" ? null : Number(e.target.value) })} />
+          </Field>
+          <Field label="Drawdown alert (%)" hint="1 – 90, or empty for none. Notifies you once when equity falls this far below its highest; again only after a new high. Nothing is sold.">
+            <Input type="number" step="1" placeholder="No alert" value={ddAlert ?? ""}
+              onChange={(e) => setV({ ...v, drawdown_alert_pct: e.target.value === "" ? null : Number(e.target.value) })} />
           </Field>
           <div className="flex items-start justify-between gap-4 rounded-md border border-border p-3">
             <div>

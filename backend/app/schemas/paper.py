@@ -133,6 +133,9 @@ class RiskLimits(BaseModel):
     max_open_risk_pct: float | None = Field(
         None, ge=0.5, le=50, description="Cap on what all positions would lose to their stops, the new one included, as % of equity"
     )
+    drawdown_alert_pct: float | None = Field(
+        None, ge=1, le=90, description="Notify when equity is this % below its highest (a notification only)"
+    )
 
 
 class PortfolioOut(BaseModel):
